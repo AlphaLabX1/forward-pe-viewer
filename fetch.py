@@ -8,7 +8,12 @@ import re
 import sys
 from pathlib import Path
 
-import cloudscraper
+try:
+    from curl_cffi import requests as _requests
+    _USE_CFFI = True
+except ImportError:
+    import cloudscraper
+    _USE_CFFI = False
 
 SERIES = {
     20052: "S&P 500",
@@ -31,7 +36,15 @@ SEED_URL = f"{BASE}/series/{SEED_SERIES_ID}/sp500-forward-pe-ratio"
 TOKEN_RE = re.compile(r'stk["\s]*[:=]["\s]*["\']([^"\']+)["\']')
 
 
-def get_token(scraper: cloudscraper.CloudScraper) -> str:
+def _make_session():
+    if _USE_CFFI:
+        return _requests.Session(impersonate="chrome124")
+    return cloudscraper.create_scraper(
+        browser={"browser": "chrome", "platform": "windows", "desktop": True}
+    )
+
+
+def get_token(scraper) -> str:
     r = scraper.get(SEED_URL, timeout=30)
     r.raise_for_status()
     m = TOKEN_RE.search(r.text)
@@ -40,7 +53,7 @@ def get_token(scraper: cloudscraper.CloudScraper) -> str:
     return m.group(1)
 
 
-def fetch_data(scraper: cloudscraper.CloudScraper, token: str) -> dict:
+def fetch_data(scraper, token: str) -> dict:
     ids = ",".join(str(i) for i in SERIES)
     url = f"{BASE}/stats/data/{ids}"
     headers = {
@@ -94,8 +107,8 @@ def write_combined(data: dict, out_path: Path) -> None:
 
 def main() -> None:
     out_dir = Path(__file__).parent / "data"
-    scraper = cloudscraper.create_scraper()
-    print("[1/3] resolving token ...")
+    scraper = _make_session()
+    print(f"[1/3] resolving token (backend={'curl_cffi' if _USE_CFFI else 'cloudscraper'}) ...")
     token = get_token(scraper)
     print(f"      token: {token[:12]}... ({len(token)} chars)")
     print("[2/3] fetching 12 series in one call ...")
