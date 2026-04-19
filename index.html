@@ -268,8 +268,9 @@
     cursor: pointer;
     animation: rowIn 0.45s ease-out both;
     position: relative;
+    z-index: 1;
   }
-  .row:hover { background: var(--paper-sub); }
+  .row:hover { background: var(--paper-sub); z-index: 200; }
   .row:last-child { border-bottom: 0; }
   .row.is-index {
     background: linear-gradient(to right, rgba(27,24,19,0.05), rgba(27,24,19,0.01) 60%);
@@ -529,8 +530,8 @@
     to   { opacity: 1; transform: translateX(-50%) translateY(0); }
   }
   @keyframes rowIn {
-    from { opacity: 0; transform: translateX(-6px); }
-    to   { opacity: 1; transform: translateX(0); }
+    from { opacity: 0; }
+    to   { opacity: 1; }
   }
   .kicker       { animation: rise .55s ease-out .00s both; }
   .wordmark     { animation: rise .80s cubic-bezier(.2,.6,.2,1) .10s both; }
