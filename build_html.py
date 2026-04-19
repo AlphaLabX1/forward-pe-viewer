@@ -1,9 +1,10 @@
-"""Generate a self-contained index.html from data/raw.json."""
+"""Generate a self-contained index.html with 5Y valuation rank as the headline."""
 
 from __future__ import annotations
 
 import json
 import statistics
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from fetch import SERIES
@@ -12,19 +13,117 @@ ROOT = Path(__file__).parent
 DATA = ROOT / "data"
 
 SECTOR_COLORS = {
-    20052: "#0a0a0a",  # S&P 500 - black (index)
-    20517: "#2563eb",  # Information Technology - blue
-    20518: "#8b5cf6",  # Communication Services - violet
-    20519: "#ec4899",  # Consumer Discretionary - pink
-    20520: "#10b981",  # Financials - emerald
-    20521: "#f59e0b",  # Industrials - amber
-    20522: "#06b6d4",  # Utilities - cyan
-    20523: "#b45309",  # Energy - brown
-    20524: "#6366f1",  # Real Estate - indigo
-    20525: "#84cc16",  # Materials - lime
-    20526: "#ef4444",  # Consumer Staples - red
-    20527: "#14b8a6",  # Health Care - teal
+    20052: "#1b1813",  # S&P 500 - ink
+    20517: "#2d6a8a",  # Information Technology - slate blue
+    20518: "#7a5ba8",  # Communication Services - violet
+    20519: "#a8406a",  # Consumer Discretionary - berry
+    20520: "#2f7d5e",  # Financials - pine
+    20521: "#c2711d",  # Industrials - amber
+    20522: "#3e8a95",  # Utilities - teal
+    20523: "#8c4418",  # Energy - umber
+    20524: "#4a4a94",  # Real Estate - indigo
+    20525: "#718a2c",  # Materials - olive
+    20526: "#b8421c",  # Consumer Staples - vermillion
+    20527: "#2d7066",  # Health Care - spruce
 }
+
+SECTOR_TICKERS = {
+    20052: "SPX",
+    20517: "IT",
+    20518: "COMM",
+    20519: "DISC",
+    20520: "FIN",
+    20521: "IND",
+    20522: "UTIL",
+    20523: "EGY",
+    20524: "RE",
+    20525: "MAT",
+    20526: "STPL",
+    20527: "HLTH",
+}
+
+
+def compute_5y(points):
+    latest_date_str, current = points[-1]
+    latest = date.fromisoformat(latest_date_str)
+    cutoff = latest - timedelta(days=365 * 5)
+    window_vals = [
+        v for d, v in points
+        if v is not None and date.fromisoformat(d) >= cutoff
+    ]
+    if not window_vals:
+        return None
+    lower = sum(1 for v in window_vals if v <= current)
+    return {
+        "rank": lower / len(window_vals) * 100,
+        "current": current,
+        "min": min(window_vals),
+        "median": statistics.median(window_vals),
+        "max": max(window_vals),
+        "n": len(window_vals),
+    }
+
+
+def assign_rows(rows_asc, row_count=3, min_gap=7.0):
+    """Assign each item a row index so labels don't overlap. rows_asc is sorted by rank asc."""
+    last = [-999.0] * row_count
+    out = []
+    for r in rows_asc:
+        placed = None
+        for ri in range(row_count):
+            if r["rank_5y"] - last[ri] >= min_gap:
+                placed = ri
+                break
+        if placed is None:
+            placed = min(range(row_count), key=lambda i: last[i])
+        last[placed] = r["rank_5y"]
+        out.append({**r, "_row": placed})
+    return out
+
+
+def render_strip(rows_with_row):
+    parts = []
+    for r in rows_with_row:
+        pct = r["rank_5y"]
+        parts.append(
+            f'<div class="pin pin-row-{r["_row"]}" style="left:{pct:.2f}%" '
+            f'data-id="{r["id"]}" data-rank="{pct:.0f}">'
+            f'<span class="pin-stem" style="background:{r["color"]}"></span>'
+            f'<span class="pin-dot" style="background:{r["color"]};color:{r["color"]}"></span>'
+            f'<span class="pin-label">{r["ticker"]}'
+            f'<span class="pin-pct">{pct:.0f}</span></span>'
+            f'</div>'
+        )
+    return "\n".join(parts)
+
+
+def render_table(rows):
+    parts = []
+    for i, r in enumerate(rows, 1):
+        pct = r["rank_5y"]
+        heat = "hot" if pct >= 75 else "cold" if pct <= 25 else "mid"
+        index_cls = " is-index" if r["isIndex"] else ""
+        parts.append(f'''
+<li class="row heat-{heat}{index_cls}" data-id="{r["id"]}">
+  <span class="rank-num">{i:02d}</span>
+  <span class="name-col">
+    <span class="swatch" style="background:{r["color"]}"></span>
+    <span class="name">{r["name"]}</span>
+    <span class="ticker">{r["ticker"]}</span>
+  </span>
+  <span class="val mono">{r["latest"]:.2f}</span>
+  <span class="bar-col">
+    <span class="bar">
+      <span class="bar-fill" style="width:{pct:.2f}%"></span>
+      <span class="bar-marker" style="left:{pct:.2f}%"></span>
+    </span>
+  </span>
+  <span class="pct mono">{pct:.0f}</span>
+  <span class="range-col mono">
+    <span>{r["min_5y"]:.1f}</span><span class="sep">→</span><span>{r["max_5y"]:.1f}</span>
+  </span>
+</li>'''.strip())
+    return "\n".join(parts)
 
 
 def build() -> Path:
@@ -36,16 +135,14 @@ def build() -> Path:
         if not entry:
             continue
         points = entry["series"][0]
-        values = [v for _, v in points if v is not None]
-        latest_date, latest_val = points[-1]
-        mean = statistics.fmean(values)
-        median = statistics.median(values)
-        mn = min(values)
-        mx = max(values)
-        pct_from_median = (latest_val - median) / median * 100
+        latest_date_str, latest_val = points[-1]
+        five = compute_5y(points)
+        if not five:
+            continue
         series_payload.append({
             "id": sid,
             "name": name,
+            "ticker": SECTOR_TICKERS[sid],
             "color": SECTOR_COLORS[sid],
             "points": points,
             "isIndex": sid == 20052,
@@ -53,23 +150,34 @@ def build() -> Path:
         summary_rows.append({
             "id": sid,
             "name": name,
+            "ticker": SECTOR_TICKERS[sid],
             "color": SECTOR_COLORS[sid],
-            "latest_date": latest_date,
+            "isIndex": sid == 20052,
+            "latest_date": latest_date_str,
             "latest": latest_val,
-            "mean": mean,
-            "median": median,
-            "min": mn,
-            "max": mx,
-            "pct_from_median": pct_from_median,
+            "rank_5y": five["rank"],
+            "min_5y": five["min"],
+            "median_5y": five["median"],
+            "max_5y": five["max"],
+            "n_5y": five["n"],
         })
 
-    # sort summary: index first, then by pct_from_median desc (most expensive to cheapest)
-    summary_rows.sort(key=lambda r: (0 if r["id"] == 20052 else 1, -r["pct_from_median"]))
+    summary_rows.sort(key=lambda r: -r["rank_5y"])
+    strip_rows = assign_rows(sorted(summary_rows, key=lambda r: r["rank_5y"]))
 
-    latest_date = max(r["latest_date"] for r in summary_rows)
-    embedded = json.dumps({"series": series_payload, "summary": summary_rows})
+    latest_date_str = max(r["latest_date"] for r in summary_rows)
+    dt = datetime.fromisoformat(latest_date_str)
+    latest_label = dt.strftime("%B ") + str(dt.day) + dt.strftime(", %Y")
 
-    html = TEMPLATE.replace("__DATA__", embedded).replace("__LATEST_DATE__", latest_date)
+    payload = json.dumps({"series": series_payload, "summary": summary_rows})
+
+    html = (TEMPLATE
+        .replace("__DATA__", payload)
+        .replace("__LATEST_ISO__", latest_date_str)
+        .replace("__LATEST_LABEL__", latest_label)
+        .replace("__STRIP__", render_strip(strip_rows))
+        .replace("__TABLE__", render_table(summary_rows)))
+
     out = ROOT / "index.html"
     out.write_text(html)
     return out
@@ -79,107 +187,545 @@ TEMPLATE = r"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>S&P 500 Forward P/E — sector viewer</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Forward P/E · AlphaLabX1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,400..800,0..100,0..1;1,9..144,400..800,0..100,0..1&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
   :root {
-    --bg: #fafaf9;
-    --panel: #ffffff;
-    --ink: #0a0a0a;
-    --muted: #6b7280;
-    --line: #e7e5e4;
-    --accent: #111111;
-    --pos: #059669;
-    --neg: #dc2626;
+    --paper:       #f2ecdf;
+    --paper-sub:   #ebe3d0;
+    --paper-deep:  #e3d9c0;
+    --ink:         #1b1813;
+    --ink-soft:    #55493b;
+    --mute:        #8a7e6d;
+    --rule:        #d5c8b1;
+    --rule-soft:   #e6dcc6;
+    --accent:      #b8421c;
+    --cheap:       #2e5d56;
+    --font-display: "Fraunces", "Times New Roman", serif;
+    --font-body:    "IBM Plex Sans", -apple-system, system-ui, sans-serif;
+    --font-mono:    "IBM Plex Mono", ui-monospace, monospace;
   }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink);
-    font: 14px/1.5 -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif; }
-  header { padding: 28px 32px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
-  h1 { margin: 0 0 4px; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
-  header .sub { color: var(--muted); font-size: 13px; }
-  main { max-width: 1280px; margin: 0 auto; padding: 24px 32px 48px; }
-  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
-  .controls button {
-    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
-    padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;
-    font-family: inherit;
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
-  .controls button:hover { background: #f5f5f4; }
-  .controls button.active { background: var(--ink); color: #fff; border-color: var(--ink); }
-  .chart-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+  body {
+    background-image:
+      radial-gradient(circle at 10% 0%, rgba(184,66,28,0.04) 0%, transparent 45%),
+      radial-gradient(circle at 90% 100%, rgba(46,93,86,0.04) 0%, transparent 45%);
+  }
+  .container { max-width: 1240px; margin: 0 auto; padding: 0 40px; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  /* ─────────────────── Masthead ─────────────────── */
+  .masthead { padding: 56px 0 36px; border-bottom: 2px solid var(--ink); position: relative; }
+  .masthead::after {
+    content: ""; display: block; position: absolute; left: 0; right: 0; bottom: -6px;
+    height: 1px; background: var(--ink);
+  }
+  .kicker {
+    font-family: var(--font-body);
+    font-size: 10.5px; font-weight: 500;
+    letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 18px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .kicker::before {
+    content: ""; width: 28px; height: 1px; background: currentColor;
+    flex: 0 0 auto;
+  }
+  .kicker::after {
+    content: ""; height: 1px; background: var(--rule);
+    flex: 1;
+  }
+  .kicker .edition { color: var(--mute); letter-spacing: 0.2em; }
+  .wordmark {
+    font-family: var(--font-display);
+    font-variation-settings: "opsz" 144, "SOFT" 30, "WONK" 0;
+    font-weight: 700;
+    font-size: clamp(64px, 11vw, 148px);
+    line-height: 0.86;
+    letter-spacing: -0.035em;
+    color: var(--ink);
+    margin: 0;
+  }
+  .wordmark em {
+    font-style: italic;
+    font-variation-settings: "opsz" 144, "SOFT" 100, "WONK" 1;
+    font-weight: 400;
+    color: var(--accent);
+    margin-left: 0.08em;
+  }
+  .standfirst {
+    font-family: var(--font-display);
+    font-variation-settings: "opsz" 24;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 19px;
+    color: var(--ink-soft);
+    margin: 24px 0 0;
+    max-width: 760px;
+    line-height: 1.45;
+  }
+  .standfirst time {
+    font-style: normal;
+    font-variation-settings: "opsz" 16;
+    font-weight: 500;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+
+  /* ─────────────────── Section framing ─────────────────── */
+  .section { padding: 64px 0; border-top: 1px solid var(--rule); }
+  .section:first-of-type { border-top: 0; padding-top: 56px; }
+  .section-head {
+    display: grid;
+    grid-template-columns: 64px 1fr auto;
+    gap: 28px;
+    align-items: baseline;
+    margin-bottom: 36px;
+  }
+  .section-num {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.14em;
+    padding-top: 4px;
+  }
+  .section-num::before { content: "/ "; color: var(--rule); }
+  .section-title {
+    font-family: var(--font-display);
+    font-variation-settings: "opsz" 48;
+    font-weight: 600;
+    font-size: clamp(24px, 3vw, 34px);
+    line-height: 1.1;
+    color: var(--ink);
+    margin: 0 0 8px;
+    letter-spacing: -0.015em;
+  }
+  .section-title em {
+    font-style: italic;
+    font-variation-settings: "opsz" 48, "SOFT" 80, "WONK" 1;
+    font-weight: 400;
+    color: var(--accent);
+  }
+  .section-lede {
+    font-family: var(--font-body);
+    font-size: 13.5px;
+    color: var(--ink-soft);
+    margin: 0;
+    max-width: 640px;
+    line-height: 1.55;
+  }
+  .section-lede strong { color: var(--ink); font-weight: 500; }
+  .section-meta {
+    font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--mute); letter-spacing: 0.06em;
+    text-align: right;
+  }
+
+  /* ─────────────────── Strip (pin chart) ─────────────────── */
+  .strip-frame {
+    position: relative;
+    padding: 64px 56px 20px;
+    height: 280px;
+    background: var(--paper-sub);
+    background-image:
+      linear-gradient(to right, transparent 0, transparent calc(50% - 0.5px),
+        rgba(27,24,19,0.04) calc(50% - 0.5px), rgba(27,24,19,0.04) calc(50% + 0.5px),
+        transparent calc(50% + 0.5px));
+    border: 1px solid var(--rule);
+  }
+  .strip-labels-top {
+    position: absolute; top: 20px; left: 56px; right: 56px;
+    display: flex; justify-content: space-between;
+    font-family: var(--font-body); font-size: 10px;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--mute); font-weight: 500;
+  }
+  .strip-labels-top .middle { color: var(--ink); }
+  .strip-axis {
+    position: absolute; top: 58px; left: 56px; right: 56px;
+    height: 2px; background: var(--ink);
+  }
+  .strip-axis::before, .strip-axis::after {
+    content: ""; position: absolute; top: -3px;
+    width: 2px; height: 8px; background: var(--ink);
+  }
+  .strip-axis::before { left: 0; }
+  .strip-axis::after { right: 0; }
+  .strip-ticks { position: absolute; top: 60px; left: 56px; right: 56px; height: 8px; pointer-events: none; }
+  .strip-tick {
+    position: absolute; top: 0;
+    width: 1px; height: 6px; background: var(--ink-soft);
+    transform: translateX(-0.5px);
+  }
+  .strip-tick-label {
+    position: absolute; top: 10px;
+    font-family: var(--font-mono); font-size: 10px; color: var(--mute);
+    transform: translateX(-50%);
+    font-variant-numeric: tabular-nums;
+  }
+  .strip-pins {
+    position: absolute; top: 60px; left: 56px; right: 56px; bottom: 20px;
+  }
+  .pin {
+    position: absolute; top: 0;
+    transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center;
+    cursor: pointer;
+    animation: pinIn 0.6s cubic-bezier(.2,.7,.2,1) both;
+  }
+  .pin-stem { width: 1px; }
+  .pin-row-0 .pin-stem { height: 12px; }
+  .pin-row-1 .pin-stem { height: 60px; }
+  .pin-row-2 .pin-stem { height: 108px; }
+  .pin-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    border: 2px solid var(--paper-sub);
+    box-shadow: 0 0 0 1.5px currentColor;
+    transition: transform .15s ease-out;
+  }
+  .pin-label {
+    margin-top: 7px;
+    font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+    color: var(--ink); letter-spacing: 0.04em;
+    padding: 3px 6px 2px;
+    background: var(--paper-sub);
+    border-radius: 2px;
+    white-space: nowrap;
+    display: flex; gap: 6px; align-items: baseline;
+    transition: all .15s ease-out;
+  }
+  .pin-pct {
+    font-size: 9px; font-weight: 400; color: var(--mute);
+    font-variant-numeric: tabular-nums;
+  }
+  .pin:hover .pin-dot { transform: scale(1.5); }
+  .pin:hover .pin-label { background: var(--ink); color: var(--paper); }
+  .pin:hover .pin-pct { color: var(--paper-sub); }
+  .strip-frame.highlighting .pin:not(.highlighted) { opacity: 0.22; }
+  .strip-frame.highlighting .pin.highlighted .pin-dot { transform: scale(1.7); }
+
+  /* Center band (median zone) */
+  .strip-mid-band {
+    position: absolute; top: 58px; bottom: 20px;
+    left: calc(56px + 45%); width: calc(10% * (100% - 112px) / 100%);
+    pointer-events: none;
+  }
+
+  /* ─────────────────── Rank table ─────────────────── */
+  .rank-table {
+    list-style: none; margin: 0; padding: 0;
+    border-top: 1.5px solid var(--ink);
+    border-bottom: 1.5px solid var(--ink);
+  }
+  .rank-head, .row {
+    display: grid;
+    grid-template-columns: 44px 2.4fr 74px 1.3fr 50px 120px;
+    gap: 20px;
+    align-items: center;
+    padding: 14px 8px;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .rank-head {
+    font-family: var(--font-body); font-size: 10px;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--mute); font-weight: 500;
+    padding: 12px 8px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .rank-head > *:last-child { text-align: right; }
+  .row {
+    font-size: 14px; transition: background .15s;
+    cursor: pointer;
+    animation: rowIn 0.45s ease-out both;
+    position: relative;
+  }
+  .row:hover { background: var(--paper-sub); }
+  .row:last-child { border-bottom: 0; }
+  .row.is-index {
+    background: linear-gradient(to right, rgba(27,24,19,0.05), rgba(27,24,19,0.01) 60%);
+  }
+  .row.is-index::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px; background: var(--ink);
+  }
+  .rank-num {
+    font-family: var(--font-mono); font-size: 12px;
+    color: var(--mute); font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .name-col {
+    display: flex; align-items: center; gap: 12px; min-width: 0;
+  }
+  .swatch {
+    width: 8px; height: 16px; border-radius: 1px; flex: 0 0 8px;
+  }
+  .name {
+    font-family: var(--font-display);
+    font-variation-settings: "opsz" 20;
+    font-weight: 500;
+    font-size: 16.5px;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ticker {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--mute);
+    letter-spacing: 0.1em;
+    padding: 2px 5px 1px;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+  }
+  .val {
+    font-size: 17px; font-weight: 500;
+    color: var(--ink);
+  }
+  .bar-col { position: relative; padding: 0 4px; display: block; }
+  .bar {
+    position: relative;
+    display: block;
+    height: 3px;
+    background: var(--rule);
+    width: 100%;
+  }
+  .bar-fill {
+    position: absolute; left: 0; top: 0;
+    height: 100%;
+    background: var(--ink);
+  }
+  .bar-marker {
+    position: absolute; top: 50%;
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--ink);
+    transform: translate(-50%, -50%);
+    border: 2px solid var(--paper);
+    box-shadow: 0 0 0 1.5px var(--ink);
+  }
+  .row.heat-hot .bar-fill, .row.heat-hot .bar-marker { background: var(--accent); }
+  .row.heat-hot .bar-marker { box-shadow: 0 0 0 1.5px var(--accent); }
+  .row.heat-cold .bar-fill, .row.heat-cold .bar-marker { background: var(--cheap); }
+  .row.heat-cold .bar-marker { box-shadow: 0 0 0 1.5px var(--cheap); }
+  .pct {
+    font-size: 20px; font-weight: 600;
+    color: var(--ink);
+    text-align: right;
+    letter-spacing: -0.01em;
+  }
+  .row.heat-hot .pct { color: var(--accent); }
+  .row.heat-cold .pct { color: var(--cheap); }
+  .range-col {
+    font-size: 11.5px; color: var(--mute);
+    display: flex; gap: 6px; justify-content: flex-end;
+  }
+  .range-col .sep { color: var(--rule); }
+
+  /* ─────────────────── Chart ─────────────────── */
+  .chart-controls {
+    display: flex; gap: 8px; margin-bottom: 18px;
+    align-items: baseline; flex-wrap: wrap;
+  }
+  .chart-controls button {
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--ink-soft);
+    padding: 7px 14px 6px;
+    font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    cursor: pointer;
+    transition: all .12s ease-out;
+  }
+  .chart-controls button:hover { border-color: var(--ink); color: var(--ink); background: var(--paper-sub); }
+  .chart-controls button.active {
+    background: var(--ink); color: var(--paper); border-color: var(--ink);
+  }
+  .chart-controls .spacer { flex: 1; }
+  .chart-controls .meta {
+    font-family: var(--font-mono); font-size: 10px;
+    color: var(--mute); letter-spacing: 0.08em;
+  }
+  .chart-wrap {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    padding: 14px 8px 6px;
+  }
   #chart { width: 100%; height: 560px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin-top: 20px; }
-  .card {
-    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
-    padding: 12px 14px; cursor: pointer; transition: border-color .1s, transform .1s;
+
+  /* ─────────────────── Footer ─────────────────── */
+  footer {
+    margin-top: 48px;
+    padding: 28px 0 60px;
+    border-top: 1.5px solid var(--ink);
   }
-  .card:hover { border-color: #a8a29e; transform: translateY(-1px); }
-  .card.muted { opacity: 0.35; }
-  .card .row { display: flex; justify-content: space-between; align-items: baseline; }
-  .card .name { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; }
-  .card .swatch { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
-  .card .latest { font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
-  .card .delta { font-size: 12px; font-variant-numeric: tabular-nums; }
-  .card .delta.pos { color: var(--neg); } /* higher PE vs median = more expensive = red-ish */
-  .card .delta.neg { color: var(--pos); }
-  .card .range { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 4px; }
-  table.summary { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
-  table.summary th, table.summary td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: right; }
-  table.summary th:first-child, table.summary td:first-child { text-align: left; }
-  table.summary th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
-  table.summary td.num { font-variant-numeric: tabular-nums; }
-  table.summary tr.index td { font-weight: 600; background: #f5f5f4; }
-  footer { color: var(--muted); font-size: 11px; text-align: center; padding: 24px; }
-  footer a { color: var(--muted); }
+  footer .inner {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--mute); letter-spacing: 0.08em;
+    flex-wrap: wrap; gap: 10px;
+  }
+  footer .inner .left { display: flex; gap: 14px; flex-wrap: wrap; }
+  footer .dot { color: var(--rule); }
+  footer strong { color: var(--ink); font-weight: 600; letter-spacing: 0.14em; }
+
+  /* ─────────────────── Animations ─────────────────── */
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes pinIn {
+    from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+  }
+  @keyframes rowIn {
+    from { opacity: 0; transform: translateX(-6px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .kicker       { animation: rise .55s ease-out .00s both; }
+  .wordmark     { animation: rise .80s cubic-bezier(.2,.6,.2,1) .10s both; }
+  .standfirst   { animation: rise .60s ease-out .35s both; }
+
+  @media (max-width: 860px) {
+    .container { padding: 0 20px; }
+    .section { padding: 40px 0; }
+    .section-head { grid-template-columns: 1fr; gap: 4px; }
+    .section-meta { text-align: left; }
+    .rank-head, .row { grid-template-columns: 30px 1.5fr 60px 1fr 44px; gap: 12px; padding: 12px 6px; }
+    .rank-head > *:nth-child(6), .row > *:nth-child(6) { display: none; }
+    .name { font-size: 14px; }
+    .val { font-size: 14px; }
+    .pct { font-size: 16px; }
+    .strip-frame { padding: 56px 30px 16px; height: 240px; }
+    .strip-labels-top, .strip-axis, .strip-ticks, .strip-pins { left: 30px; right: 30px; }
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1>S&amp;P 500 Forward P/E — index &amp; 11 sectors</h1>
-  <div class="sub">Daily 12-month forward price-to-earnings. Data through <span id="asof">__LATEST_DATE__</span>. Source: MacroMicro.</div>
-</header>
-<main>
-  <div class="controls">
-    <button data-range="all">All</button>
-    <button data-range="10y" class="active">10Y</button>
-    <button data-range="5y">5Y</button>
-    <button data-range="3y">3Y</button>
-    <button data-range="1y">1Y</button>
-    <button data-range="ytd">YTD</button>
-    <span style="flex:1"></span>
-    <button id="only-index">Index only</button>
-    <button id="only-sectors">Sectors only</button>
-    <button id="show-all">Show all</button>
+
+<header class="masthead">
+  <div class="container">
+    <p class="kicker">AlphaLabX1 · internal research <span class="edition">Vol. I</span></p>
+    <h1 class="wordmark">Forward <em>P/E</em></h1>
+    <p class="standfirst">The S&amp;P 500 and its eleven sectors, ranked by where each sits against its own trailing five years of daily valuation. Updated <time>__LATEST_LABEL__</time>.</p>
   </div>
-  <div class="chart-wrap"><div id="chart"></div></div>
+</header>
 
-  <div class="grid" id="cards"></div>
+<main>
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-num">01</span>
+        <div>
+          <h2 class="section-title">Where everyone <em>stands today</em></h2>
+          <p class="section-lede">Each marker is a sector's current forward P/E placed as a percentile of its own trailing five years. <strong>Right is expensive.</strong> A reading of 50 means the sector is trading at its own five-year median.</p>
+        </div>
+        <div class="section-meta">5Y window<br>daily observations</div>
+      </div>
+      <div class="strip-frame" id="strip">
+        <div class="strip-labels-top">
+          <span>← cheap vs own 5Y</span>
+          <span class="middle">median</span>
+          <span>expensive vs own 5Y →</span>
+        </div>
+        <div class="strip-axis"></div>
+        <div class="strip-ticks">
+          <span class="strip-tick" style="left:0%"></span><span class="strip-tick-label" style="left:0%">0</span>
+          <span class="strip-tick" style="left:25%"></span><span class="strip-tick-label" style="left:25%">25</span>
+          <span class="strip-tick" style="left:50%"></span><span class="strip-tick-label" style="left:50%">50</span>
+          <span class="strip-tick" style="left:75%"></span><span class="strip-tick-label" style="left:75%">75</span>
+          <span class="strip-tick" style="left:100%"></span><span class="strip-tick-label" style="left:100%">100</span>
+        </div>
+        <div class="strip-pins">__STRIP__</div>
+      </div>
+    </div>
+  </section>
 
-  <table class="summary">
-    <thead>
-      <tr>
-        <th>Series</th>
-        <th>Latest</th>
-        <th>vs median</th>
-        <th>Median</th>
-        <th>Mean</th>
-        <th>Min</th>
-        <th>Max</th>
-      </tr>
-    </thead>
-    <tbody id="summary-body"></tbody>
-  </table>
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-num">02</span>
+        <div>
+          <h2 class="section-title">Five-year <em>rank</em></h2>
+          <p class="section-lede">Sectors ordered from richest to cheapest relative to their own history. <strong>Click any row</strong> to isolate it on the chart below.</p>
+        </div>
+        <div class="section-meta">sorted by 5Y percentile</div>
+      </div>
+      <ul class="rank-table">
+        <li class="rank-head">
+          <span></span>
+          <span>Sector</span>
+          <span>P/E</span>
+          <span>5Y percentile</span>
+          <span style="text-align:right">pctl</span>
+          <span style="text-align:right">5Y range</span>
+        </li>
+        __TABLE__
+      </ul>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-num">03</span>
+        <div>
+          <h2 class="section-title">Historical <em>path</em></h2>
+          <p class="section-lede">Daily twelve-month forward P/E. The Y axis auto-scales to whichever window and sectors are visible — outlier spikes (forward P/E &gt; 80) are filtered from the scale.</p>
+        </div>
+        <div class="section-meta">since 1999</div>
+      </div>
+      <div class="chart-controls">
+        <button data-range="all">All</button>
+        <button data-range="10y">10Y</button>
+        <button data-range="5y" class="active">5Y</button>
+        <button data-range="3y">3Y</button>
+        <button data-range="1y">1Y</button>
+        <button data-range="ytd">YTD</button>
+        <span class="spacer"></span>
+        <button id="only-index">Index</button>
+        <button id="only-sectors">Sectors</button>
+        <button id="show-all">Reset</button>
+      </div>
+      <div class="chart-wrap">
+        <div id="chart"></div>
+      </div>
+    </div>
+  </section>
 </main>
-<footer>Built from MacroMicro series data. Chart powered by Plotly.</footer>
+
+<footer>
+  <div class="container">
+    <div class="inner">
+      <div class="left">
+        <span><strong>AlphaLabX1</strong> internal</span>
+        <span class="dot">·</span>
+        <span>Data · MacroMicro</span>
+        <span class="dot">·</span>
+        <span>Chart · Plotly</span>
+      </div>
+      <span>as of __LATEST_ISO__ · 12 series · 5-year window</span>
+    </div>
+  </div>
+</footer>
 
 <script>
 const DATA = __DATA__;
+const LATEST = "__LATEST_ISO__";
 
-const fmt = n => n == null ? "—" : n.toFixed(2);
-const fmtPct = n => (n >= 0 ? "+" : "") + n.toFixed(1) + "%";
-
-// precompute numeric timestamps for fast window filtering
 DATA.series.forEach(s => { s._t = s.points.map(p => Date.parse(p[0])); });
 
 const traces = DATA.series.map(s => ({
@@ -188,30 +734,50 @@ const traces = DATA.series.map(s => ({
   type: "scattergl",
   mode: "lines",
   name: s.name,
-  line: { color: s.color, width: s.isIndex ? 2.8 : 1.8, shape: "linear" },
+  line: { color: s.color, width: s.isIndex ? 2.6 : 1.4 },
   hovertemplate: "<b>" + s.name + "</b>  %{y:.2f}<extra></extra>",
   visible: true,
   meta: s.id,
 }));
 
 const layout = {
-  margin: { l: 52, r: 16, t: 10, b: 36 },
+  margin: { l: 56, r: 20, t: 10, b: 44 },
   hovermode: "x unified",
-  xaxis: { showgrid: false, linecolor: "#e7e5e4", type: "date" },
-  yaxis: { gridcolor: "#f5f5f4", zeroline: false, title: { text: "Forward P/E", font: { size: 12, color: "#6b7280" } } },
-  legend: { orientation: "h", y: -0.18, font: { size: 11 } },
-  paper_bgcolor: "#ffffff",
-  plot_bgcolor: "#ffffff",
-  font: { family: "-apple-system, SF Pro Text, Segoe UI, system-ui, sans-serif", size: 12, color: "#0a0a0a" },
+  hoverlabel: {
+    font: { family: '"IBM Plex Mono", monospace', size: 11, color: "#f2ecdf" },
+    bgcolor: "#1b1813",
+    bordercolor: "#1b1813",
+  },
+  xaxis: {
+    showgrid: false,
+    linecolor: "#d5c8b1",
+    tickcolor: "#8a7e6d",
+    tickfont: { family: '"IBM Plex Mono", monospace', size: 10, color: "#55493b" },
+    type: "date",
+  },
+  yaxis: {
+    gridcolor: "#e6dcc6",
+    zeroline: false,
+    tickfont: { family: '"IBM Plex Mono", monospace', size: 10, color: "#55493b" },
+    tickcolor: "#8a7e6d",
+    title: { text: "forward P/E", font: { family: '"IBM Plex Sans", sans-serif', size: 11, color: "#8a7e6d" }, standoff: 14 },
+  },
+  legend: {
+    orientation: "h", y: -0.18,
+    font: { family: '"IBM Plex Mono", monospace', size: 10, color: "#1b1813" },
+  },
+  paper_bgcolor: "#f2ecdf",
+  plot_bgcolor: "#f2ecdf",
+  font: { family: '"IBM Plex Sans", sans-serif', size: 11, color: "#1b1813" },
 };
 
-const config = { displaylogo: false, responsive: true,
-  modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"] };
+const config = {
+  displaylogo: false, responsive: true,
+  modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"],
+};
 
-Plotly.newPlot("chart", traces, layout, config).then(() => applyRange("10y"));
+Plotly.newPlot("chart", traces, layout, config).then(() => applyRange("5y"));
 
-// compute a sensible Y range given a time window, across *visible* series,
-// ignoring extreme anomalies (forward P/E outside [0, 80] is noise).
 function yRangeForWindow(startMs, endMs) {
   const gd = document.getElementById("chart");
   const visMap = {};
@@ -234,12 +800,12 @@ function yRangeForWindow(startMs, endMs) {
   return [Math.max(0, lo - pad), hi + pad];
 }
 
+let _skipRelayout = false;
 function applyRange(key) {
-  const nowStr = DATA.summary[0].latest_date;
-  const now = new Date(nowStr);
+  const now = new Date(LATEST);
   let start;
-  if (key === "all") { start = new Date("1999-01-01"); }
-  else if (key === "ytd") { start = new Date(now.getFullYear(), 0, 1); }
+  if (key === "all") start = new Date("1999-01-01");
+  else if (key === "ytd") start = new Date(now.getFullYear(), 0, 1);
   else {
     const years = parseInt(key, 10);
     start = new Date(now); start.setFullYear(start.getFullYear() - years);
@@ -253,6 +819,7 @@ function applyRange(key) {
   _skipRelayout = true;
   Plotly.relayout("chart", upd).then(() => { _skipRelayout = false; });
 }
+
 document.querySelectorAll("[data-range]").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("[data-range]").forEach(b => b.classList.remove("active"));
@@ -261,32 +828,11 @@ document.querySelectorAll("[data-range]").forEach(btn => {
   });
 });
 
-// rescale Y automatically when the user pans/zooms the X axis
-let _skipRelayout = false;
-document.getElementById("chart").on("plotly_relayout", ev => {
+document.getElementById("chart").on("plotly_relayout", () => {
   if (_skipRelayout) return;
-  const gd = document.getElementById("chart");
-  let xr = gd.layout.xaxis.range;
-  if (!xr || xr.length !== 2) return;
-  const startMs = typeof xr[0] === "string" ? Date.parse(xr[0]) : +xr[0];
-  const endMs = typeof xr[1] === "string" ? Date.parse(xr[1]) : +xr[1];
-  const yr = yRangeForWindow(startMs, endMs);
-  if (!yr) return;
-  _skipRelayout = true;
-  Plotly.relayout("chart", { "yaxis.range": yr, "yaxis.autorange": false })
-    .then(() => { _skipRelayout = false; });
+  rescaleY();
 });
 
-// visibility toggles
-function setVisible(fn) {
-  const vis = DATA.series.map(s => fn(s) ? true : "legendonly");
-  Plotly.restyle("chart", { visible: vis }).then(rescaleY);
-  document.querySelectorAll(".card").forEach(c => {
-    const id = parseInt(c.dataset.id, 10);
-    const s = DATA.series.find(x => x.id === id);
-    c.classList.toggle("muted", !fn(s));
-  });
-}
 function rescaleY() {
   const gd = document.getElementById("chart");
   const xr = gd.layout.xaxis.range;
@@ -299,54 +845,52 @@ function rescaleY() {
   Plotly.relayout("chart", { "yaxis.range": yr, "yaxis.autorange": false })
     .then(() => { _skipRelayout = false; });
 }
+
+function setVisible(fn) {
+  const vis = DATA.series.map(s => fn(s) ? true : "legendonly");
+  Plotly.restyle("chart", { visible: vis }).then(rescaleY);
+}
 document.getElementById("only-index").addEventListener("click", () => setVisible(s => s.isIndex));
 document.getElementById("only-sectors").addEventListener("click", () => setVisible(s => !s.isIndex));
 document.getElementById("show-all").addEventListener("click", () => setVisible(() => true));
 
-// cards
-const cardsEl = document.getElementById("cards");
-DATA.summary.forEach(row => {
-  const card = document.createElement("div");
-  card.className = "card";
-  card.dataset.id = row.id;
-  const deltaCls = row.pct_from_median > 0 ? "pos" : "neg";
-  card.innerHTML = `
-    <div class="row">
-      <div class="name"><span class="swatch" style="background:${row.color}"></span>${row.name}</div>
-      <div class="latest">${fmt(row.latest)}</div>
-    </div>
-    <div class="row">
-      <div class="delta ${deltaCls}">${fmtPct(row.pct_from_median)} vs median</div>
-      <div class="range">${fmt(row.min)}–${fmt(row.max)}</div>
-    </div>
-  `;
-  card.addEventListener("click", () => {
-    // solo this series
-    const idx = DATA.series.findIndex(s => s.id === row.id);
-    const vis = DATA.series.map((_, i) => i === idx ? true : "legendonly");
-    Plotly.restyle("chart", { visible: vis }).then(rescaleY);
-    document.querySelectorAll(".card").forEach(c => c.classList.toggle("muted", parseInt(c.dataset.id,10) !== row.id));
-  });
-  cardsEl.appendChild(card);
+// Stagger pin entrance
+document.querySelectorAll(".pin").forEach((pin, i) => {
+  pin.style.animationDelay = (0.3 + i * 0.04) + "s";
+  const id = parseInt(pin.dataset.id, 10);
+  pin.addEventListener("mouseenter", () => soloViaStrip(id));
+  pin.addEventListener("mouseleave", () => unsoloViaStrip());
+  pin.addEventListener("click", () => stickSolo(id));
 });
 
-// summary table
-const body = document.getElementById("summary-body");
-DATA.summary.forEach(row => {
-  const tr = document.createElement("tr");
-  if (row.id === 20052) tr.classList.add("index");
-  const deltaCls = row.pct_from_median > 0 ? "pos" : "neg";
-  tr.innerHTML = `
-    <td><span class="swatch" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${row.color};margin-right:6px"></span>${row.name}</td>
-    <td class="num">${fmt(row.latest)}</td>
-    <td class="num ${deltaCls}">${fmtPct(row.pct_from_median)}</td>
-    <td class="num">${fmt(row.median)}</td>
-    <td class="num">${fmt(row.mean)}</td>
-    <td class="num">${fmt(row.min)}</td>
-    <td class="num">${fmt(row.max)}</td>
-  `;
-  body.appendChild(tr);
+// Stagger row entrance + click
+document.querySelectorAll(".row:not(.rank-head)").forEach((row, i) => {
+  row.style.animationDelay = (0.1 + i * 0.03) + "s";
+  const id = parseInt(row.dataset.id, 10);
+  row.addEventListener("click", () => stickSolo(id));
 });
+
+function soloViaStrip(id) {
+  const stripEl = document.getElementById("strip");
+  stripEl.classList.add("highlighting");
+  document.querySelectorAll(".pin").forEach(p => {
+    p.classList.toggle("highlighted", parseInt(p.dataset.id, 10) === id);
+  });
+  const op = DATA.series.map(s => s.id === id ? 1 : 0.12);
+  Plotly.restyle("chart", { opacity: op });
+}
+function unsoloViaStrip() {
+  document.getElementById("strip").classList.remove("highlighting");
+  document.querySelectorAll(".pin").forEach(p => p.classList.remove("highlighted"));
+  Plotly.restyle("chart", { opacity: DATA.series.map(() => 1) });
+}
+function stickSolo(id) {
+  const idx = DATA.series.findIndex(s => s.id === id);
+  if (idx < 0) return;
+  const vis = DATA.series.map((_, i) => i === idx ? true : "legendonly");
+  Plotly.restyle("chart", { visible: vis, opacity: DATA.series.map(() => 1) }).then(rescaleY);
+  document.getElementById("chart").scrollIntoView({ behavior: "smooth", block: "center" });
+}
 </script>
 </body>
 </html>
