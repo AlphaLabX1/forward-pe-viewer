@@ -27,6 +27,57 @@ SECTOR_COLORS = {
     20527: "#2d7066",  # Health Care - spruce
 }
 
+SECTOR_INFO = {
+    20052: {
+        "def": "Market-cap weighted index of 500 leading U.S. large-caps across all sectors.",
+        "holdings": [("NVDA", "NVIDIA"), ("AAPL", "Apple"), ("MSFT", "Microsoft"), ("GOOGL", "Alphabet"), ("AMZN", "Amazon")],
+    },
+    20517: {
+        "def": "Software, hardware, semiconductors, and IT services.",
+        "holdings": [("AAPL", "Apple"), ("MSFT", "Microsoft"), ("NVDA", "NVIDIA"), ("AVGO", "Broadcom"), ("ORCL", "Oracle")],
+    },
+    20518: {
+        "def": "Interactive media, entertainment, and telecom services.",
+        "holdings": [("GOOGL", "Alphabet"), ("META", "Meta"), ("NFLX", "Netflix"), ("VZ", "Verizon"), ("DIS", "Disney")],
+    },
+    20519: {
+        "def": "Autos, retail, apparel, hotels & leisure — cyclically sensitive.",
+        "holdings": [("AMZN", "Amazon"), ("TSLA", "Tesla"), ("HD", "Home Depot"), ("MCD", "McDonald's"), ("BKNG", "Booking")],
+    },
+    20520: {
+        "def": "Banks, insurance, capital markets, diversified financials.",
+        "holdings": [("BRK.B", "Berkshire Hathaway"), ("JPM", "JPMorgan Chase"), ("V", "Visa"), ("MA", "Mastercard"), ("BAC", "Bank of America")],
+    },
+    20521: {
+        "def": "Aerospace & defense, machinery, transports, professional services.",
+        "holdings": [("GE", "GE Aerospace"), ("RTX", "RTX"), ("CAT", "Caterpillar"), ("HON", "Honeywell"), ("UBER", "Uber")],
+    },
+    20522: {
+        "def": "Electric, gas, water, and multi-utilities. Rate-sensitive defensives.",
+        "holdings": [("NEE", "NextEra Energy"), ("SO", "Southern Co."), ("DUK", "Duke Energy"), ("CEG", "Constellation"), ("AEP", "American Electric")],
+    },
+    20523: {
+        "def": "Oil & gas exploration, production, refining, and equipment.",
+        "holdings": [("XOM", "ExxonMobil"), ("CVX", "Chevron"), ("COP", "ConocoPhillips"), ("EOG", "EOG Resources"), ("SLB", "Schlumberger")],
+    },
+    20524: {
+        "def": "Equity REITs and real-estate management & development.",
+        "holdings": [("PLD", "Prologis"), ("AMT", "American Tower"), ("WELL", "Welltower"), ("EQIX", "Equinix"), ("SPG", "Simon Property")],
+    },
+    20525: {
+        "def": "Chemicals, metals & mining, construction materials, paper & forest.",
+        "holdings": [("LIN", "Linde"), ("SHW", "Sherwin-Williams"), ("ECL", "Ecolab"), ("APD", "Air Products"), ("NEM", "Newmont")],
+    },
+    20526: {
+        "def": "Food, beverage, household & personal-care — defensive staples.",
+        "holdings": [("WMT", "Walmart"), ("COST", "Costco"), ("PG", "Procter & Gamble"), ("KO", "Coca-Cola"), ("PEP", "PepsiCo")],
+    },
+    20527: {
+        "def": "Pharmaceuticals, biotech, medical devices, and health services.",
+        "holdings": [("LLY", "Eli Lilly"), ("UNH", "UnitedHealth"), ("JNJ", "Johnson & Johnson"), ("MRK", "Merck"), ("ABBV", "AbbVie")],
+    },
+}
+
 SECTOR_TICKERS = {
     20052: "SPX",
     20517: "IT",
@@ -81,10 +132,20 @@ def assign_rows(rows_asc, row_count=3, min_gap=7.0):
     return out
 
 
+def _holdings_html(sid):
+    info = SECTOR_INFO.get(sid, {})
+    items = "".join(
+        f'<li><span class="tip-tk">{tk}</span><span class="tip-nm">{nm}</span></li>'
+        for tk, nm in info.get("holdings", [])
+    )
+    return info.get("def", ""), items
+
+
 def render_strip(rows_with_row):
     parts = []
     for r in rows_with_row:
         pct = r["rank_5y"]
+        definition, holdings_html = _holdings_html(r["id"])
         parts.append(
             f'<div class="pin pin-row-{r["_row"]}" style="left:{pct:.2f}%" '
             f'data-id="{r["id"]}" data-rank="{pct:.0f}">'
@@ -92,6 +153,12 @@ def render_strip(rows_with_row):
             f'<span class="pin-dot" style="background:{r["color"]};color:{r["color"]}"></span>'
             f'<span class="pin-label">{r["ticker"]}'
             f'<span class="pin-pct">{pct:.0f}</span></span>'
+            f'<div class="pin-tip">'
+            f'<div class="pin-tip-name">{r["name"]}</div>'
+            f'<div class="pin-tip-def">{definition}</div>'
+            f'<div class="pin-tip-label">Largest constituents</div>'
+            f'<ul class="tip-holdings">{holdings_html}</ul>'
+            f'</div>'
             f'</div>'
         )
     return "\n".join(parts)
@@ -103,6 +170,7 @@ def render_table(rows):
         pct = r["rank_5y"]
         heat = "hot" if pct >= 75 else "cold" if pct <= 25 else "mid"
         index_cls = " is-index" if r["isIndex"] else ""
+        definition, holdings_html = _holdings_html(r["id"])
         parts.append(f'''
 <li class="row heat-{heat}{index_cls}" data-id="{r["id"]}">
   <span class="rank-num">{i:02d}</span>
@@ -122,6 +190,11 @@ def render_table(rows):
   <span class="range-col mono">
     <span>{r["min_5y"]:.1f}</span><span class="sep">→</span><span>{r["max_5y"]:.1f}</span>
   </span>
+  <div class="tip">
+    <div class="tip-def">{definition}</div>
+    <div class="tip-label">Largest constituents</div>
+    <ul class="tip-holdings">{holdings_html}</ul>
+  </div>
 </li>'''.strip())
     return "\n".join(parts)
 
@@ -534,6 +607,128 @@ TEMPLATE = r"""<!doctype html>
     display: flex; gap: 6px; justify-content: flex-end;
   }
   .range-col .sep { color: var(--rule); }
+
+  /* ─────────────────── Row / pin tooltips ─────────────────── */
+  .rank-table { overflow: visible; }
+  .row .tip {
+    position: absolute;
+    top: calc(100% - 2px);
+    right: 0;
+    width: 380px;
+    max-width: calc(100vw - 80px);
+    z-index: 50;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 18px 22px 20px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-4px);
+    transition: opacity .16s ease-out, transform .16s ease-out;
+    box-shadow: 0 14px 36px rgba(27,24,19,0.25), 0 0 0 1px var(--ink);
+    text-align: left;
+  }
+  .row:hover .tip { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  .row:nth-last-child(-n+4) .tip { top: auto; bottom: calc(100% - 2px); transform: translateY(4px); }
+  .row:nth-last-child(-n+4):hover .tip { transform: translateY(0); }
+  .tip-def {
+    font-family: var(--font-display);
+    font-variation-settings: "opsz" 18;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 14.5px;
+    line-height: 1.45;
+    color: var(--paper);
+    margin: 0 0 14px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid rgba(242,236,223,0.18);
+  }
+  .tip-label {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(242,236,223,0.55);
+    margin: 0 0 8px;
+  }
+  .tip-holdings {
+    list-style: none; padding: 0; margin: 0;
+    display: grid; grid-template-columns: 1fr; gap: 5px;
+  }
+  .tip-holdings li {
+    display: grid;
+    grid-template-columns: 68px 1fr;
+    gap: 14px;
+    align-items: baseline;
+  }
+  .tip-tk {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: #e8955a;
+  }
+  .tip-nm {
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--paper);
+  }
+
+  /* Pin tooltip — appears below pin on hover */
+  .pin-tip {
+    position: absolute;
+    top: auto;
+    bottom: calc(100% + 18px);
+    left: 50%;
+    transform: translate(-50%, 6px);
+    width: 260px;
+    max-width: calc(100vw - 60px);
+    background: var(--ink);
+    color: var(--paper);
+    padding: 14px 16px 16px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .16s ease-out, transform .16s ease-out;
+    box-shadow: 0 14px 36px rgba(27,24,19,0.25), 0 0 0 1px var(--ink);
+    z-index: 100;
+    text-align: left;
+  }
+  .pin:hover .pin-tip {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  .pin-row-2 .pin-tip { bottom: auto; top: calc(100% + 10px); transform: translate(-50%, -6px); }
+  .pin-row-2:hover .pin-tip { transform: translate(-50%, 0); }
+  .pin-tip-name {
+    font-family: var(--font-display);
+    font-variation-settings: "opsz" 24;
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: -0.005em;
+    margin: 0 0 6px;
+  }
+  .pin-tip-def {
+    font-family: var(--font-display);
+    font-variation-settings: "opsz" 14;
+    font-style: italic;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: rgba(242,236,223,0.82);
+    margin: 0 0 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(242,236,223,0.18);
+  }
+  .pin-tip-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(242,236,223,0.5);
+    margin: 0 0 6px;
+  }
+  .pin-tip .tip-holdings li { grid-template-columns: 54px 1fr; gap: 10px; }
+  .pin-tip .tip-tk { font-size: 10px; }
+  .pin-tip .tip-nm { font-size: 12px; }
 
   /* ─────────────────── Chart ─────────────────── */
   .chart-controls {

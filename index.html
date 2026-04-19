@@ -350,6 +350,128 @@
   }
   .range-col .sep { color: var(--rule); }
 
+  /* ─────────────────── Row / pin tooltips ─────────────────── */
+  .rank-table { overflow: visible; }
+  .row .tip {
+    position: absolute;
+    top: calc(100% - 2px);
+    right: 0;
+    width: 380px;
+    max-width: calc(100vw - 80px);
+    z-index: 50;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 18px 22px 20px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-4px);
+    transition: opacity .16s ease-out, transform .16s ease-out;
+    box-shadow: 0 14px 36px rgba(27,24,19,0.25), 0 0 0 1px var(--ink);
+    text-align: left;
+  }
+  .row:hover .tip { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  .row:nth-last-child(-n+4) .tip { top: auto; bottom: calc(100% - 2px); transform: translateY(4px); }
+  .row:nth-last-child(-n+4):hover .tip { transform: translateY(0); }
+  .tip-def {
+    font-family: var(--font-display);
+    font-variation-settings: "opsz" 18;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 14.5px;
+    line-height: 1.45;
+    color: var(--paper);
+    margin: 0 0 14px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid rgba(242,236,223,0.18);
+  }
+  .tip-label {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(242,236,223,0.55);
+    margin: 0 0 8px;
+  }
+  .tip-holdings {
+    list-style: none; padding: 0; margin: 0;
+    display: grid; grid-template-columns: 1fr; gap: 5px;
+  }
+  .tip-holdings li {
+    display: grid;
+    grid-template-columns: 68px 1fr;
+    gap: 14px;
+    align-items: baseline;
+  }
+  .tip-tk {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: #e8955a;
+  }
+  .tip-nm {
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--paper);
+  }
+
+  /* Pin tooltip — appears below pin on hover */
+  .pin-tip {
+    position: absolute;
+    top: auto;
+    bottom: calc(100% + 18px);
+    left: 50%;
+    transform: translate(-50%, 6px);
+    width: 260px;
+    max-width: calc(100vw - 60px);
+    background: var(--ink);
+    color: var(--paper);
+    padding: 14px 16px 16px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .16s ease-out, transform .16s ease-out;
+    box-shadow: 0 14px 36px rgba(27,24,19,0.25), 0 0 0 1px var(--ink);
+    z-index: 100;
+    text-align: left;
+  }
+  .pin:hover .pin-tip {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  .pin-row-2 .pin-tip { bottom: auto; top: calc(100% + 10px); transform: translate(-50%, -6px); }
+  .pin-row-2:hover .pin-tip { transform: translate(-50%, 0); }
+  .pin-tip-name {
+    font-family: var(--font-display);
+    font-variation-settings: "opsz" 24;
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: -0.005em;
+    margin: 0 0 6px;
+  }
+  .pin-tip-def {
+    font-family: var(--font-display);
+    font-variation-settings: "opsz" 14;
+    font-style: italic;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: rgba(242,236,223,0.82);
+    margin: 0 0 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(242,236,223,0.18);
+  }
+  .pin-tip-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(242,236,223,0.5);
+    margin: 0 0 6px;
+  }
+  .pin-tip .tip-holdings li { grid-template-columns: 54px 1fr; gap: 10px; }
+  .pin-tip .tip-tk { font-size: 10px; }
+  .pin-tip .tip-nm { font-size: 12px; }
+
   /* ─────────────────── Chart ─────────────────── */
   .chart-controls {
     display: flex; gap: 8px; margin-bottom: 18px;
@@ -464,18 +586,18 @@
           <span class="strip-tick" style="left:75%"></span><span class="strip-tick-label" style="left:75%">75</span>
           <span class="strip-tick" style="left:100%"></span><span class="strip-tick-label" style="left:100%">100</span>
         </div>
-        <div class="strip-pins"><div class="pin pin-row-0" style="left:0.24%" data-id="20527" data-rank="0"><span class="pin-stem" style="background:#2d7066"></span><span class="pin-dot" style="background:#2d7066;color:#2d7066"></span><span class="pin-label">HLTH<span class="pin-pct">0</span></span></div>
-<div class="pin pin-row-1" style="left:3.02%" data-id="20517" data-rank="3"><span class="pin-stem" style="background:#2d6a8a"></span><span class="pin-dot" style="background:#2d6a8a;color:#2d6a8a"></span><span class="pin-label">IT<span class="pin-pct">3</span></span></div>
-<div class="pin pin-row-0" style="left:38.17%" data-id="20525" data-rank="38"><span class="pin-stem" style="background:#718a2c"></span><span class="pin-dot" style="background:#718a2c;color:#718a2c"></span><span class="pin-label">MAT<span class="pin-pct">38</span></span></div>
-<div class="pin pin-row-1" style="left:39.21%" data-id="20052" data-rank="39"><span class="pin-stem" style="background:#1b1813"></span><span class="pin-dot" style="background:#1b1813;color:#1b1813"></span><span class="pin-label">SPX<span class="pin-pct">39</span></span></div>
-<div class="pin pin-row-2" style="left:42.06%" data-id="20519" data-rank="42"><span class="pin-stem" style="background:#a8406a"></span><span class="pin-dot" style="background:#a8406a;color:#a8406a"></span><span class="pin-label">DISC<span class="pin-pct">42</span></span></div>
-<div class="pin pin-row-0" style="left:42.06%" data-id="20522" data-rank="42"><span class="pin-stem" style="background:#3e8a95"></span><span class="pin-dot" style="background:#3e8a95;color:#3e8a95"></span><span class="pin-label">UTIL<span class="pin-pct">42</span></span></div>
-<div class="pin pin-row-0" style="left:49.44%" data-id="20526" data-rank="49"><span class="pin-stem" style="background:#b8421c"></span><span class="pin-dot" style="background:#b8421c;color:#b8421c"></span><span class="pin-label">STPL<span class="pin-pct">49</span></span></div>
-<div class="pin pin-row-0" style="left:58.25%" data-id="20520" data-rank="58"><span class="pin-stem" style="background:#2f7d5e"></span><span class="pin-dot" style="background:#2f7d5e;color:#2f7d5e"></span><span class="pin-label">FIN<span class="pin-pct">58</span></span></div>
-<div class="pin pin-row-1" style="left:62.46%" data-id="20523" data-rank="62"><span class="pin-stem" style="background:#8c4418"></span><span class="pin-dot" style="background:#8c4418;color:#8c4418"></span><span class="pin-label">EGY<span class="pin-pct">62</span></span></div>
-<div class="pin pin-row-0" style="left:67.46%" data-id="20524" data-rank="67"><span class="pin-stem" style="background:#4a4a94"></span><span class="pin-dot" style="background:#4a4a94;color:#4a4a94"></span><span class="pin-label">RE<span class="pin-pct">67</span></span></div>
-<div class="pin pin-row-1" style="left:72.14%" data-id="20518" data-rank="72"><span class="pin-stem" style="background:#7a5ba8"></span><span class="pin-dot" style="background:#7a5ba8;color:#7a5ba8"></span><span class="pin-label">COMM<span class="pin-pct">72</span></span></div>
-<div class="pin pin-row-0" style="left:91.35%" data-id="20521" data-rank="91"><span class="pin-stem" style="background:#c2711d"></span><span class="pin-dot" style="background:#c2711d;color:#c2711d"></span><span class="pin-label">IND<span class="pin-pct">91</span></span></div></div>
+        <div class="strip-pins"><div class="pin pin-row-0" style="left:0.24%" data-id="20527" data-rank="0"><span class="pin-stem" style="background:#2d7066"></span><span class="pin-dot" style="background:#2d7066;color:#2d7066"></span><span class="pin-label">HLTH<span class="pin-pct">0</span></span><div class="pin-tip"><div class="pin-tip-name">Health Care</div><div class="pin-tip-def">Pharmaceuticals, biotech, medical devices, and health services.</div><div class="pin-tip-label">Largest constituents</div><ul class="tip-holdings"><li><span class="tip-tk">LLY</span><span class="tip-nm">Eli Lilly</span></li><li><span class="tip-tk">UNH</span><span class="tip-nm">UnitedHealth</span></li><li><span class="tip-tk">JNJ</span><span class="tip-nm">Johnson & Johnson</span></li><li><span class="tip-tk">MRK</span><span class="tip-nm">Merck</span></li><li><span class="tip-tk">ABBV</span><span class="tip-nm">AbbVie</span></li></ul></div></div>
+<div class="pin pin-row-1" style="left:3.02%" data-id="20517" data-rank="3"><span class="pin-stem" style="background:#2d6a8a"></span><span class="pin-dot" style="background:#2d6a8a;color:#2d6a8a"></span><span class="pin-label">IT<span class="pin-pct">3</span></span><div class="pin-tip"><div class="pin-tip-name">Information Technology</div><div class="pin-tip-def">Software, hardware, semiconductors, and IT services.</div><div class="pin-tip-label">Largest constituents</div><ul class="tip-holdings"><li><span class="tip-tk">AAPL</span><span class="tip-nm">Apple</span></li><li><span class="tip-tk">MSFT</span><span class="tip-nm">Microsoft</span></li><li><span class="tip-tk">NVDA</span><span class="tip-nm">NVIDIA</span></li><li><span class="tip-tk">AVGO</span><span class="tip-nm">Broadcom</span></li><li><span class="tip-tk">ORCL</span><span class="tip-nm">Oracle</span></li></ul></div></div>
+<div class="pin pin-row-0" style="left:38.17%" data-id="20525" data-rank="38"><span class="pin-stem" style="background:#718a2c"></span><span class="pin-dot" style="background:#718a2c;color:#718a2c"></span><span class="pin-label">MAT<span class="pin-pct">38</span></span><div class="pin-tip"><div class="pin-tip-name">Materials</div><div class="pin-tip-def">Chemicals, metals & mining, construction materials, paper & forest.</div><div class="pin-tip-label">Largest constituents</div><ul class="tip-holdings"><li><span class="tip-tk">LIN</span><span class="tip-nm">Linde</span></li><li><span class="tip-tk">SHW</span><span class="tip-nm">Sherwin-Williams</span></li><li><span class="tip-tk">ECL</span><span class="tip-nm">Ecolab</span></li><li><span class="tip-tk">APD</span><span class="tip-nm">Air Products</span></li><li><span class="tip-tk">NEM</span><span class="tip-nm">Newmont</span></li></ul></div></div>
+<div class="pin pin-row-1" style="left:39.21%" data-id="20052" data-rank="39"><span class="pin-stem" style="background:#1b1813"></span><span class="pin-dot" style="background:#1b1813;color:#1b1813"></span><span class="pin-label">SPX<span class="pin-pct">39</span></span><div class="pin-tip"><div class="pin-tip-name">S&P 500</div><div class="pin-tip-def">Market-cap weighted index of 500 leading U.S. large-caps across all sectors.</div><div class="pin-tip-label">Largest constituents</div><ul class="tip-holdings"><li><span class="tip-tk">NVDA</span><span class="tip-nm">NVIDIA</span></li><li><span class="tip-tk">AAPL</span><span class="tip-nm">Apple</span></li><li><span class="tip-tk">MSFT</span><span class="tip-nm">Microsoft</span></li><li><span class="tip-tk">GOOGL</span><span class="tip-nm">Alphabet</span></li><li><span class="tip-tk">AMZN</span><span class="tip-nm">Amazon</span></li></ul></div></div>
+<div class="pin pin-row-2" style="left:42.06%" data-id="20519" data-rank="42"><span class="pin-stem" style="background:#a8406a"></span><span class="pin-dot" style="background:#a8406a;color:#a8406a"></span><span class="pin-label">DISC<span class="pin-pct">42</span></span><div class="pin-tip"><div class="pin-tip-name">Consumer Discretionary</div><div class="pin-tip-def">Autos, retail, apparel, hotels & leisure — cyclically sensitive.</div><div class="pin-tip-label">Largest constituents</div><ul class="tip-holdings"><li><span class="tip-tk">AMZN</span><span class="tip-nm">Amazon</span></li><li><span class="tip-tk">TSLA</span><span class="tip-nm">Tesla</span></li><li><span class="tip-tk">HD</span><span class="tip-nm">Home Depot</span></li><li><span class="tip-tk">MCD</span><span class="tip-nm">McDonald's</span></li><li><span class="tip-tk">BKNG</span><span class="tip-nm">Booking</span></li></ul></div></div>
+<div class="pin pin-row-0" style="left:42.06%" data-id="20522" data-rank="42"><span class="pin-stem" style="background:#3e8a95"></span><span class="pin-dot" style="background:#3e8a95;color:#3e8a95"></span><span class="pin-label">UTIL<span class="pin-pct">42</span></span><div class="pin-tip"><div class="pin-tip-name">Utilities</div><div class="pin-tip-def">Electric, gas, water, and multi-utilities. Rate-sensitive defensives.</div><div class="pin-tip-label">Largest constituents</div><ul class="tip-holdings"><li><span class="tip-tk">NEE</span><span class="tip-nm">NextEra Energy</span></li><li><span class="tip-tk">SO</span><span class="tip-nm">Southern Co.</span></li><li><span class="tip-tk">DUK</span><span class="tip-nm">Duke Energy</span></li><li><span class="tip-tk">CEG</span><span class="tip-nm">Constellation</span></li><li><span class="tip-tk">AEP</span><span class="tip-nm">American Electric</span></li></ul></div></div>
+<div class="pin pin-row-0" style="left:49.44%" data-id="20526" data-rank="49"><span class="pin-stem" style="background:#b8421c"></span><span class="pin-dot" style="background:#b8421c;color:#b8421c"></span><span class="pin-label">STPL<span class="pin-pct">49</span></span><div class="pin-tip"><div class="pin-tip-name">Consumer Staples</div><div class="pin-tip-def">Food, beverage, household & personal-care — defensive staples.</div><div class="pin-tip-label">Largest constituents</div><ul class="tip-holdings"><li><span class="tip-tk">WMT</span><span class="tip-nm">Walmart</span></li><li><span class="tip-tk">COST</span><span class="tip-nm">Costco</span></li><li><span class="tip-tk">PG</span><span class="tip-nm">Procter & Gamble</span></li><li><span class="tip-tk">KO</span><span class="tip-nm">Coca-Cola</span></li><li><span class="tip-tk">PEP</span><span class="tip-nm">PepsiCo</span></li></ul></div></div>
+<div class="pin pin-row-0" style="left:58.25%" data-id="20520" data-rank="58"><span class="pin-stem" style="background:#2f7d5e"></span><span class="pin-dot" style="background:#2f7d5e;color:#2f7d5e"></span><span class="pin-label">FIN<span class="pin-pct">58</span></span><div class="pin-tip"><div class="pin-tip-name">Financials</div><div class="pin-tip-def">Banks, insurance, capital markets, diversified financials.</div><div class="pin-tip-label">Largest constituents</div><ul class="tip-holdings"><li><span class="tip-tk">BRK.B</span><span class="tip-nm">Berkshire Hathaway</span></li><li><span class="tip-tk">JPM</span><span class="tip-nm">JPMorgan Chase</span></li><li><span class="tip-tk">V</span><span class="tip-nm">Visa</span></li><li><span class="tip-tk">MA</span><span class="tip-nm">Mastercard</span></li><li><span class="tip-tk">BAC</span><span class="tip-nm">Bank of America</span></li></ul></div></div>
+<div class="pin pin-row-1" style="left:62.46%" data-id="20523" data-rank="62"><span class="pin-stem" style="background:#8c4418"></span><span class="pin-dot" style="background:#8c4418;color:#8c4418"></span><span class="pin-label">EGY<span class="pin-pct">62</span></span><div class="pin-tip"><div class="pin-tip-name">Energy</div><div class="pin-tip-def">Oil & gas exploration, production, refining, and equipment.</div><div class="pin-tip-label">Largest constituents</div><ul class="tip-holdings"><li><span class="tip-tk">XOM</span><span class="tip-nm">ExxonMobil</span></li><li><span class="tip-tk">CVX</span><span class="tip-nm">Chevron</span></li><li><span class="tip-tk">COP</span><span class="tip-nm">ConocoPhillips</span></li><li><span class="tip-tk">EOG</span><span class="tip-nm">EOG Resources</span></li><li><span class="tip-tk">SLB</span><span class="tip-nm">Schlumberger</span></li></ul></div></div>
+<div class="pin pin-row-0" style="left:67.46%" data-id="20524" data-rank="67"><span class="pin-stem" style="background:#4a4a94"></span><span class="pin-dot" style="background:#4a4a94;color:#4a4a94"></span><span class="pin-label">RE<span class="pin-pct">67</span></span><div class="pin-tip"><div class="pin-tip-name">Real Estate</div><div class="pin-tip-def">Equity REITs and real-estate management & development.</div><div class="pin-tip-label">Largest constituents</div><ul class="tip-holdings"><li><span class="tip-tk">PLD</span><span class="tip-nm">Prologis</span></li><li><span class="tip-tk">AMT</span><span class="tip-nm">American Tower</span></li><li><span class="tip-tk">WELL</span><span class="tip-nm">Welltower</span></li><li><span class="tip-tk">EQIX</span><span class="tip-nm">Equinix</span></li><li><span class="tip-tk">SPG</span><span class="tip-nm">Simon Property</span></li></ul></div></div>
+<div class="pin pin-row-1" style="left:72.14%" data-id="20518" data-rank="72"><span class="pin-stem" style="background:#7a5ba8"></span><span class="pin-dot" style="background:#7a5ba8;color:#7a5ba8"></span><span class="pin-label">COMM<span class="pin-pct">72</span></span><div class="pin-tip"><div class="pin-tip-name">Communication Services</div><div class="pin-tip-def">Interactive media, entertainment, and telecom services.</div><div class="pin-tip-label">Largest constituents</div><ul class="tip-holdings"><li><span class="tip-tk">GOOGL</span><span class="tip-nm">Alphabet</span></li><li><span class="tip-tk">META</span><span class="tip-nm">Meta</span></li><li><span class="tip-tk">NFLX</span><span class="tip-nm">Netflix</span></li><li><span class="tip-tk">VZ</span><span class="tip-nm">Verizon</span></li><li><span class="tip-tk">DIS</span><span class="tip-nm">Disney</span></li></ul></div></div>
+<div class="pin pin-row-0" style="left:91.35%" data-id="20521" data-rank="91"><span class="pin-stem" style="background:#c2711d"></span><span class="pin-dot" style="background:#c2711d;color:#c2711d"></span><span class="pin-label">IND<span class="pin-pct">91</span></span><div class="pin-tip"><div class="pin-tip-name">Industrials</div><div class="pin-tip-def">Aerospace & defense, machinery, transports, professional services.</div><div class="pin-tip-label">Largest constituents</div><ul class="tip-holdings"><li><span class="tip-tk">GE</span><span class="tip-nm">GE Aerospace</span></li><li><span class="tip-tk">RTX</span><span class="tip-nm">RTX</span></li><li><span class="tip-tk">CAT</span><span class="tip-nm">Caterpillar</span></li><li><span class="tip-tk">HON</span><span class="tip-nm">Honeywell</span></li><li><span class="tip-tk">UBER</span><span class="tip-nm">Uber</span></li></ul></div></div></div>
       </div>
     </div>
   </section>
@@ -517,6 +639,11 @@
   <span class="range-col mono">
     <span>15.0</span><span class="sep">→</span><span>27.4</span>
   </span>
+  <div class="tip">
+    <div class="tip-def">Aerospace & defense, machinery, transports, professional services.</div>
+    <div class="tip-label">Largest constituents</div>
+    <ul class="tip-holdings"><li><span class="tip-tk">GE</span><span class="tip-nm">GE Aerospace</span></li><li><span class="tip-tk">RTX</span><span class="tip-nm">RTX</span></li><li><span class="tip-tk">CAT</span><span class="tip-nm">Caterpillar</span></li><li><span class="tip-tk">HON</span><span class="tip-nm">Honeywell</span></li><li><span class="tip-tk">UBER</span><span class="tip-nm">Uber</span></li></ul>
+  </div>
 </li>
 <li class="row heat-mid" data-id="20518">
   <span class="rank-num">02</span>
@@ -536,6 +663,11 @@
   <span class="range-col mono">
     <span>13.0</span><span class="sep">→</span><span>26.9</span>
   </span>
+  <div class="tip">
+    <div class="tip-def">Interactive media, entertainment, and telecom services.</div>
+    <div class="tip-label">Largest constituents</div>
+    <ul class="tip-holdings"><li><span class="tip-tk">GOOGL</span><span class="tip-nm">Alphabet</span></li><li><span class="tip-tk">META</span><span class="tip-nm">Meta</span></li><li><span class="tip-tk">NFLX</span><span class="tip-nm">Netflix</span></li><li><span class="tip-tk">VZ</span><span class="tip-nm">Verizon</span></li><li><span class="tip-tk">DIS</span><span class="tip-nm">Disney</span></li></ul>
+  </div>
 </li>
 <li class="row heat-mid" data-id="20524">
   <span class="rank-num">03</span>
@@ -555,6 +687,11 @@
   <span class="range-col mono">
     <span>29.9</span><span class="sep">→</span><span>46.3</span>
   </span>
+  <div class="tip">
+    <div class="tip-def">Equity REITs and real-estate management & development.</div>
+    <div class="tip-label">Largest constituents</div>
+    <ul class="tip-holdings"><li><span class="tip-tk">PLD</span><span class="tip-nm">Prologis</span></li><li><span class="tip-tk">AMT</span><span class="tip-nm">American Tower</span></li><li><span class="tip-tk">WELL</span><span class="tip-nm">Welltower</span></li><li><span class="tip-tk">EQIX</span><span class="tip-nm">Equinix</span></li><li><span class="tip-tk">SPG</span><span class="tip-nm">Simon Property</span></li></ul>
+  </div>
 </li>
 <li class="row heat-mid" data-id="20523">
   <span class="rank-num">04</span>
@@ -574,6 +711,11 @@
   <span class="range-col mono">
     <span>5.3</span><span class="sep">→</span><span>23.2</span>
   </span>
+  <div class="tip">
+    <div class="tip-def">Oil & gas exploration, production, refining, and equipment.</div>
+    <div class="tip-label">Largest constituents</div>
+    <ul class="tip-holdings"><li><span class="tip-tk">XOM</span><span class="tip-nm">ExxonMobil</span></li><li><span class="tip-tk">CVX</span><span class="tip-nm">Chevron</span></li><li><span class="tip-tk">COP</span><span class="tip-nm">ConocoPhillips</span></li><li><span class="tip-tk">EOG</span><span class="tip-nm">EOG Resources</span></li><li><span class="tip-tk">SLB</span><span class="tip-nm">Schlumberger</span></li></ul>
+  </div>
 </li>
 <li class="row heat-mid" data-id="20520">
   <span class="rank-num">05</span>
@@ -593,6 +735,11 @@
   <span class="range-col mono">
     <span>10.4</span><span class="sep">→</span><span>20.3</span>
   </span>
+  <div class="tip">
+    <div class="tip-def">Banks, insurance, capital markets, diversified financials.</div>
+    <div class="tip-label">Largest constituents</div>
+    <ul class="tip-holdings"><li><span class="tip-tk">BRK.B</span><span class="tip-nm">Berkshire Hathaway</span></li><li><span class="tip-tk">JPM</span><span class="tip-nm">JPMorgan Chase</span></li><li><span class="tip-tk">V</span><span class="tip-nm">Visa</span></li><li><span class="tip-tk">MA</span><span class="tip-nm">Mastercard</span></li><li><span class="tip-tk">BAC</span><span class="tip-nm">Bank of America</span></li></ul>
+  </div>
 </li>
 <li class="row heat-mid" data-id="20526">
   <span class="rank-num">06</span>
@@ -612,6 +759,11 @@
   <span class="range-col mono">
     <span>17.5</span><span class="sep">→</span><span>24.9</span>
   </span>
+  <div class="tip">
+    <div class="tip-def">Food, beverage, household & personal-care — defensive staples.</div>
+    <div class="tip-label">Largest constituents</div>
+    <ul class="tip-holdings"><li><span class="tip-tk">WMT</span><span class="tip-nm">Walmart</span></li><li><span class="tip-tk">COST</span><span class="tip-nm">Costco</span></li><li><span class="tip-tk">PG</span><span class="tip-nm">Procter & Gamble</span></li><li><span class="tip-tk">KO</span><span class="tip-nm">Coca-Cola</span></li><li><span class="tip-tk">PEP</span><span class="tip-nm">PepsiCo</span></li></ul>
+  </div>
 </li>
 <li class="row heat-mid" data-id="20519">
   <span class="rank-num">07</span>
@@ -631,6 +783,11 @@
   <span class="range-col mono">
     <span>19.7</span><span class="sep">→</span><span>46.1</span>
   </span>
+  <div class="tip">
+    <div class="tip-def">Autos, retail, apparel, hotels & leisure — cyclically sensitive.</div>
+    <div class="tip-label">Largest constituents</div>
+    <ul class="tip-holdings"><li><span class="tip-tk">AMZN</span><span class="tip-nm">Amazon</span></li><li><span class="tip-tk">TSLA</span><span class="tip-nm">Tesla</span></li><li><span class="tip-tk">HD</span><span class="tip-nm">Home Depot</span></li><li><span class="tip-tk">MCD</span><span class="tip-nm">McDonald's</span></li><li><span class="tip-tk">BKNG</span><span class="tip-nm">Booking</span></li></ul>
+  </div>
 </li>
 <li class="row heat-mid" data-id="20522">
   <span class="rank-num">08</span>
@@ -650,6 +807,11 @@
   <span class="range-col mono">
     <span>14.0</span><span class="sep">→</span><span>25.0</span>
   </span>
+  <div class="tip">
+    <div class="tip-def">Electric, gas, water, and multi-utilities. Rate-sensitive defensives.</div>
+    <div class="tip-label">Largest constituents</div>
+    <ul class="tip-holdings"><li><span class="tip-tk">NEE</span><span class="tip-nm">NextEra Energy</span></li><li><span class="tip-tk">SO</span><span class="tip-nm">Southern Co.</span></li><li><span class="tip-tk">DUK</span><span class="tip-nm">Duke Energy</span></li><li><span class="tip-tk">CEG</span><span class="tip-nm">Constellation</span></li><li><span class="tip-tk">AEP</span><span class="tip-nm">American Electric</span></li></ul>
+  </div>
 </li>
 <li class="row heat-mid is-index" data-id="20052">
   <span class="rank-num">09</span>
@@ -669,6 +831,11 @@
   <span class="range-col mono">
     <span>17.0</span><span class="sep">→</span><span>24.4</span>
   </span>
+  <div class="tip">
+    <div class="tip-def">Market-cap weighted index of 500 leading U.S. large-caps across all sectors.</div>
+    <div class="tip-label">Largest constituents</div>
+    <ul class="tip-holdings"><li><span class="tip-tk">NVDA</span><span class="tip-nm">NVIDIA</span></li><li><span class="tip-tk">AAPL</span><span class="tip-nm">Apple</span></li><li><span class="tip-tk">MSFT</span><span class="tip-nm">Microsoft</span></li><li><span class="tip-tk">GOOGL</span><span class="tip-nm">Alphabet</span></li><li><span class="tip-tk">AMZN</span><span class="tip-nm">Amazon</span></li></ul>
+  </div>
 </li>
 <li class="row heat-mid" data-id="20525">
   <span class="rank-num">10</span>
@@ -688,6 +855,11 @@
   <span class="range-col mono">
     <span>14.2</span><span class="sep">→</span><span>27.2</span>
   </span>
+  <div class="tip">
+    <div class="tip-def">Chemicals, metals & mining, construction materials, paper & forest.</div>
+    <div class="tip-label">Largest constituents</div>
+    <ul class="tip-holdings"><li><span class="tip-tk">LIN</span><span class="tip-nm">Linde</span></li><li><span class="tip-tk">SHW</span><span class="tip-nm">Sherwin-Williams</span></li><li><span class="tip-tk">ECL</span><span class="tip-nm">Ecolab</span></li><li><span class="tip-tk">APD</span><span class="tip-nm">Air Products</span></li><li><span class="tip-tk">NEM</span><span class="tip-nm">Newmont</span></li></ul>
+  </div>
 </li>
 <li class="row heat-cold" data-id="20517">
   <span class="rank-num">11</span>
@@ -707,6 +879,11 @@
   <span class="range-col mono">
     <span>19.9</span><span class="sep">→</span><span>36.6</span>
   </span>
+  <div class="tip">
+    <div class="tip-def">Software, hardware, semiconductors, and IT services.</div>
+    <div class="tip-label">Largest constituents</div>
+    <ul class="tip-holdings"><li><span class="tip-tk">AAPL</span><span class="tip-nm">Apple</span></li><li><span class="tip-tk">MSFT</span><span class="tip-nm">Microsoft</span></li><li><span class="tip-tk">NVDA</span><span class="tip-nm">NVIDIA</span></li><li><span class="tip-tk">AVGO</span><span class="tip-nm">Broadcom</span></li><li><span class="tip-tk">ORCL</span><span class="tip-nm">Oracle</span></li></ul>
+  </div>
 </li>
 <li class="row heat-cold" data-id="20527">
   <span class="rank-num">12</span>
@@ -726,6 +903,11 @@
   <span class="range-col mono">
     <span>17.1</span><span class="sep">→</span><span>24.9</span>
   </span>
+  <div class="tip">
+    <div class="tip-def">Pharmaceuticals, biotech, medical devices, and health services.</div>
+    <div class="tip-label">Largest constituents</div>
+    <ul class="tip-holdings"><li><span class="tip-tk">LLY</span><span class="tip-nm">Eli Lilly</span></li><li><span class="tip-tk">UNH</span><span class="tip-nm">UnitedHealth</span></li><li><span class="tip-tk">JNJ</span><span class="tip-nm">Johnson & Johnson</span></li><li><span class="tip-tk">MRK</span><span class="tip-nm">Merck</span></li><li><span class="tip-tk">ABBV</span><span class="tip-nm">AbbVie</span></li></ul>
+  </div>
 </li>
       </ul>
     </div>
