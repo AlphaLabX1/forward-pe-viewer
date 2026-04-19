@@ -25,7 +25,7 @@ jobs:
           cache: pip
 
       - name: Install deps
-        run: pip install cloudscraper
+        run: pip install -r requirements.txt
 
       - name: Fetch latest data
         run: python fetch.py
