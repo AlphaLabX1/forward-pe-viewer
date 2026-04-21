@@ -37,6 +37,13 @@ SERIES = {
     20527: "Health Care",
 }
 
+# Additional series fetched in the same batch but written to their own CSVs.
+# 2 = S&P 500 daily price (for F&G overlay), 46974 = MacroMicro Fear & Greed.
+EXTRA_SERIES = {
+    2: ("spx_price", "price"),
+    46974: ("fear_greed", "value"),
+}
+
 BASE = "https://en.macromicro.me"
 SEED_SERIES_ID = 20052
 SEED_URL = f"{BASE}/series/{SEED_SERIES_ID}/sp500-forward-pe-ratio"
@@ -130,7 +137,8 @@ def get_token(scraper) -> str:
 
 
 def fetch_data(scraper, token: str) -> dict:
-    ids = ",".join(str(i) for i in SERIES)
+    all_ids = list(SERIES) + list(EXTRA_SERIES)
+    ids = ",".join(str(i) for i in all_ids)
     url = f"{BASE}/stats/data/{ids}"
     headers = {
         "Authorization": f"Bearer {token}",
@@ -165,6 +173,23 @@ def write_csvs(data: dict, out_dir: Path) -> dict[int, int]:
     return counts
 
 
+def write_extras(data: dict, out_dir: Path) -> dict[int, int]:
+    counts: dict[int, int] = {}
+    for sid, (stem, col) in EXTRA_SERIES.items():
+        entry = data.get(f"s:{sid}")
+        if not entry:
+            print(f"[warn] missing s:{sid} ({stem})", file=sys.stderr)
+            continue
+        points = entry["series"][0]
+        path = out_dir / f"{stem}.csv"
+        with path.open("w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["date", col])
+            w.writerows(points)
+        counts[sid] = len(points)
+    return counts
+
+
 def write_combined(data: dict, out_path: Path) -> None:
     by_date: dict[str, dict[int, float]] = {}
     for sid in SERIES:
@@ -187,14 +212,18 @@ def main() -> None:
     print(f"[1/3] resolving token (backend={_backend_name()}) ...")
     token = get_token(scraper)
     print(f"      token: {token[:12]}... ({len(token)} chars)")
-    print("[2/3] fetching 12 series in one call ...")
+    n_total = len(SERIES) + len(EXTRA_SERIES)
+    print(f"[2/3] fetching {n_total} series in one call ...")
     data = fetch_data(scraper, token)
     print("[3/3] writing CSVs ...")
     counts = write_csvs(data, out_dir)
+    extra_counts = write_extras(data, out_dir)
     write_combined(data, out_dir / "combined.csv")
     (out_dir / "raw.json").write_text(json.dumps(data, indent=2))
     for sid, name in SERIES.items():
         print(f"  {sid} {name:<24} {counts.get(sid, 0):>5} points")
+    for sid, (stem, _) in EXTRA_SERIES.items():
+        print(f"  {sid} {stem:<24} {extra_counts.get(sid, 0):>5} points")
     print(f"output: {out_dir}")
 
 

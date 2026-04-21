@@ -1,7 +1,9 @@
-"""Generate a self-contained index.html with 5Y valuation rank as the headline."""
+"""Generate the self-contained dashboard: forward + trailing P/E (with lens
+toggle), plus a Fear & Greed gauge and an F&G / SPX dual-axis chart."""
 
 from __future__ import annotations
 
+import csv
 import json
 import statistics
 from datetime import date, datetime, timedelta
@@ -11,6 +13,7 @@ from fetch import SERIES
 
 ROOT = Path(__file__).parent
 DATA = ROOT / "data"
+TRAILING_DIR = DATA / "trailing"
 
 SECTOR_COLORS = {
     20052: "#1b1813",  # S&P 500 - ink
@@ -116,7 +119,6 @@ def compute_5y(points):
 
 
 def assign_rows(rows_asc, row_count=3, min_gap=7.0):
-    """Assign each item a row index so labels don't overlap. rows_asc is sorted by rank asc."""
     last = [-999.0] * row_count
     out = []
     for r in rows_asc:
@@ -199,15 +201,32 @@ def render_table(rows):
     return "\n".join(parts)
 
 
-def build() -> Path:
-    raw = json.loads((DATA / "raw.json").read_text())
-    series_payload = []
-    summary_rows = []
+def _load_csv_points(path: Path) -> list[tuple[str, float]]:
+    out: list[tuple[str, float]] = []
+    if not path.exists():
+        return out
+    with path.open() as f:
+        r = csv.reader(f)
+        next(r, None)  # header
+        for row in r:
+            if len(row) < 2 or not row[1]:
+                continue
+            try:
+                out.append((row[0], float(row[1])))
+            except ValueError:
+                continue
+    return out
+
+
+def build_family_payload(points_by_sid: dict[int, list[tuple[str, float]]]):
+    """Given raw points per series ID, produce the series / summary / strip
+    HTML fragments for one P/E family (forward or trailing)."""
+    series_payload: list[dict] = []
+    summary_rows: list[dict] = []
     for sid, name in SERIES.items():
-        entry = raw.get(f"s:{sid}")
-        if not entry:
+        points = points_by_sid.get(sid) or []
+        if not points:
             continue
-        points = entry["series"][0]
         latest_date_str, latest_val = points[-1]
         five = compute_5y(points)
         if not five:
@@ -234,26 +253,153 @@ def build() -> Path:
             "max_5y": five["max"],
             "n_5y": five["n"],
         })
-
     summary_rows.sort(key=lambda r: -r["rank_5y"])
     strip_rows = assign_rows(sorted(summary_rows, key=lambda r: r["rank_5y"]))
+    latest_date_str = max((r["latest_date"] for r in summary_rows), default="")
+    return {
+        "series": series_payload,
+        "summary": summary_rows,
+        "strip_html": render_strip(strip_rows),
+        "table_html": render_table(summary_rows),
+        "latest_date": latest_date_str,
+    }
 
-    latest_date_str = max(r["latest_date"] for r in summary_rows)
+
+def _nearest_on_or_before(points: list[tuple[str, float]], target: date):
+    target_str = target.isoformat()
+    # Points are chronological; find last date <= target.
+    for d_str, v in reversed(points):
+        if d_str <= target_str:
+            return d_str, v
+    return None
+
+
+def gauge_payload(fg_points: list[tuple[str, float]]):
+    if not fg_points:
+        return None
+    latest_d, latest_v = fg_points[-1]
+    latest_date = date.fromisoformat(latest_d)
+    markers = []
+    for label, delta_days in [("1W", 7), ("1M", 30), ("3M", 91), ("1Y", 365)]:
+        hit = _nearest_on_or_before(fg_points, latest_date - timedelta(days=delta_days))
+        if hit:
+            markers.append({"label": label, "date": hit[0], "value": round(hit[1], 1)})
+    return {
+        "current": {"date": latest_d, "value": round(latest_v, 1)},
+        "markers": markers,
+    }
+
+
+def build() -> Path:
+    # Forward P/E: already in data/raw.json (MacroMicro batch).
+    raw = json.loads((DATA / "raw.json").read_text())
+    forward_points: dict[int, list] = {}
+    for sid in SERIES:
+        entry = raw.get(f"s:{sid}")
+        if entry:
+            forward_points[sid] = entry["series"][0]
+    forward = build_family_payload(forward_points)
+
+    # Trailing P/E: from data/trailing/*.csv written by fetch_trailing.py.
+    trailing_points: dict[int, list] = {}
+    if TRAILING_DIR.exists():
+        for sid, name in SERIES.items():
+            slug = name.lower().replace("&", "and").replace(" ", "_")
+            p = TRAILING_DIR / f"{sid}_{slug}.csv"
+            pts = _load_csv_points(p)
+            if pts:
+                trailing_points[sid] = pts
+    trailing = build_family_payload(trailing_points) if trailing_points else None
+
+    # Sentiment: Fear & Greed + SPX price.
+    fg_points = _load_csv_points(DATA / "fear_greed.csv")
+    spx_points = _load_csv_points(DATA / "spx_price.csv")
+    gauge = gauge_payload(fg_points)
+
+    # Overall page date = max across families.
+    latest_candidates = [forward["latest_date"]]
+    if trailing:
+        latest_candidates.append(trailing["latest_date"])
+    if fg_points:
+        latest_candidates.append(fg_points[-1][0])
+    latest_date_str = max(latest_candidates)
     dt = datetime.fromisoformat(latest_date_str)
     latest_label = dt.strftime("%B ") + str(dt.day) + dt.strftime(", %Y")
 
-    payload = json.dumps({"series": series_payload, "summary": summary_rows})
+    payload = json.dumps({
+        "forward": {"series": forward["series"], "summary": forward["summary"]},
+        "trailing": (
+            {"series": trailing["series"], "summary": trailing["summary"]}
+            if trailing else None
+        ),
+        "fg": {
+            "points": fg_points,
+            "gauge": gauge,
+        },
+        "spx": {"points": spx_points},
+    })
 
     html = (TEMPLATE
         .replace("__DATA__", payload)
         .replace("__LATEST_ISO__", latest_date_str)
         .replace("__LATEST_LABEL__", latest_label)
-        .replace("__STRIP__", render_strip(strip_rows))
-        .replace("__TABLE__", render_table(summary_rows)))
+        .replace("__STRIP_FORWARD__", forward["strip_html"])
+        .replace("__STRIP_TRAILING__", (trailing or {}).get("strip_html", "") if trailing else "")
+        .replace("__TABLE_FORWARD__", forward["table_html"])
+        .replace("__TABLE_TRAILING__", (trailing or {}).get("table_html", "") if trailing else "")
+        .replace("__GAUGE__", render_gauge(gauge)))
 
     out = ROOT / "index.html"
     out.write_text(html)
     return out
+
+
+def render_gauge(g):
+    if not g:
+        return "<p style='color:var(--mute)'>Fear &amp; Greed data unavailable.</p>"
+    cur = g["current"]["value"]
+    # Main pointer position (0-100 → percentage along bar)
+    pointer_pos = max(0, min(100, cur))
+    marker_html = "".join(
+        f'<div class="gauge-marker" style="left:{max(0,min(100,m["value"])):.2f}%" '
+        f'data-label="{m["label"]}" data-value="{m["value"]}" data-date="{m["date"]}">'
+        f'<span class="gm-arrow">▽</span>'
+        f'<span class="gm-label">{m["label"]}<span class="gm-val">{m["value"]:.0f}</span></span>'
+        f'</div>'
+        for m in g["markers"]
+    )
+    return f'''
+<div class="gauge-frame">
+  <div class="gauge-track">
+    <div class="gauge-zone gz-xfear"  style="left:0%; width:25%"></div>
+    <div class="gauge-zone gz-fear"   style="left:25%; width:20%"></div>
+    <div class="gauge-zone gz-neut"   style="left:45%; width:11%"></div>
+    <div class="gauge-zone gz-greed"  style="left:56%; width:20%"></div>
+    <div class="gauge-zone gz-xgreed" style="left:76%; width:24%"></div>
+  </div>
+  <div class="gauge-axis">
+    <span class="ga-tick" style="left:0%"></span>
+    <span class="ga-tick" style="left:25%"></span>
+    <span class="ga-tick" style="left:45%"></span>
+    <span class="ga-tick" style="left:56%"></span>
+    <span class="ga-tick" style="left:76%"></span>
+    <span class="ga-tick" style="left:100%"></span>
+  </div>
+  <div class="gauge-labels">
+    <span style="left:12.5%">extreme fear</span>
+    <span style="left:35%">fear</span>
+    <span style="left:50.5%">neutral</span>
+    <span style="left:66%">greed</span>
+    <span style="left:88%">extreme greed</span>
+  </div>
+  <div class="gauge-markers">{marker_html}</div>
+  <div class="gauge-pointer" style="left:{pointer_pos:.2f}%">
+    <span class="gp-arrow">▼</span>
+    <span class="gp-value">{cur:.0f}</span>
+    <span class="gp-caption">today · {g["current"]["date"]}</span>
+  </div>
+</div>
+'''.strip()
 
 
 TEMPLATE = r"""<!doctype html>
@@ -261,7 +407,7 @@ TEMPLATE = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Forward P/E · AlphaLabX1</title>
+<title>Valuation &amp; Mood · AlphaLabX1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,400..800,0..100,0..1;1,9..144,400..800,0..100,0..1&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -315,21 +461,15 @@ TEMPLATE = r"""<!doctype html>
     margin: 0 0 18px;
     display: flex; align-items: center; gap: 12px;
   }
-  .kicker::before {
-    content: ""; width: 28px; height: 1px; background: currentColor;
-    flex: 0 0 auto;
-  }
-  .kicker::after {
-    content: ""; height: 1px; background: var(--rule);
-    flex: 1;
-  }
+  .kicker::before { content: ""; width: 28px; height: 1px; background: currentColor; flex: 0 0 auto; }
+  .kicker::after { content: ""; height: 1px; background: var(--rule); flex: 1; }
   .kicker .edition { color: var(--mute); letter-spacing: 0.2em; }
   .wordmark {
     font-family: var(--font-display);
     font-variation-settings: "opsz" 144, "SOFT" 30, "WONK" 0;
     font-weight: 700;
-    font-size: clamp(64px, 11vw, 148px);
-    line-height: 0.86;
+    font-size: clamp(60px, 10vw, 136px);
+    line-height: 0.88;
     letter-spacing: -0.035em;
     color: var(--ink);
     margin: 0;
@@ -359,6 +499,40 @@ TEMPLATE = r"""<!doctype html>
     color: var(--ink);
     white-space: nowrap;
   }
+
+  /* ─────────────────── Lens toggle ─────────────────── */
+  .lens-row { margin: 28px 0 0; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+  .lens-label {
+    font-family: var(--font-mono); font-size: 10px;
+    color: var(--mute); letter-spacing: 0.18em; text-transform: uppercase;
+  }
+  .lens {
+    display: inline-flex;
+    border: 1px solid var(--ink);
+    background: var(--paper);
+  }
+  .lens button {
+    border: 0; background: transparent; cursor: pointer;
+    padding: 9px 18px 8px;
+    font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-soft);
+    transition: color .12s ease-out, background .12s ease-out;
+    position: relative;
+  }
+  .lens button + button { border-left: 1px solid var(--ink); }
+  .lens button:hover { background: var(--paper-sub); color: var(--ink); }
+  .lens button.active { background: var(--ink); color: var(--paper); }
+  .lens-note {
+    font-family: var(--font-display); font-style: italic;
+    font-variation-settings: "opsz" 14;
+    font-size: 13px; color: var(--ink-soft);
+  }
+
+  /* Show/hide views based on body data-lens */
+  .view-trailing { display: none; }
+  body[data-lens="trailing"] .view-forward { display: none; }
+  body[data-lens="trailing"] .view-trailing { display: block; }
 
   /* ─────────────────── Section framing ─────────────────── */
   .section { padding: 64px 0; border-top: 1px solid var(--rule); }
@@ -408,6 +582,15 @@ TEMPLATE = r"""<!doctype html>
     color: var(--mute); letter-spacing: 0.06em;
     text-align: right;
   }
+  .section-meta .lens-echo {
+    display: inline-block;
+    padding: 3px 8px 2px;
+    border: 1px solid var(--rule);
+    color: var(--ink);
+    letter-spacing: 0.14em;
+  }
+  body[data-lens="forward"]  .section-meta .lens-echo::before { content: "forward · daily"; }
+  body[data-lens="trailing"] .section-meta .lens-echo::before { content: "trailing · monthly"; }
 
   /* ─────────────────── Strip (pin chart) ─────────────────── */
   .strip-frame {
@@ -429,10 +612,7 @@ TEMPLATE = r"""<!doctype html>
     color: var(--mute); font-weight: 500;
   }
   .strip-labels-top .middle { color: var(--ink); }
-  .strip-axis {
-    position: absolute; top: 58px; left: 56px; right: 56px;
-    height: 2px; background: var(--ink);
-  }
+  .strip-axis { position: absolute; top: 58px; left: 56px; right: 56px; height: 2px; background: var(--ink); }
   .strip-axis::before, .strip-axis::after {
     content: ""; position: absolute; top: -3px;
     width: 2px; height: 8px; background: var(--ink);
@@ -440,20 +620,14 @@ TEMPLATE = r"""<!doctype html>
   .strip-axis::before { left: 0; }
   .strip-axis::after { right: 0; }
   .strip-ticks { position: absolute; top: 60px; left: 56px; right: 56px; height: 8px; pointer-events: none; }
-  .strip-tick {
-    position: absolute; top: 0;
-    width: 1px; height: 6px; background: var(--ink-soft);
-    transform: translateX(-0.5px);
-  }
+  .strip-tick { position: absolute; top: 0; width: 1px; height: 6px; background: var(--ink-soft); transform: translateX(-0.5px); }
   .strip-tick-label {
     position: absolute; top: 10px;
     font-family: var(--font-mono); font-size: 10px; color: var(--mute);
     transform: translateX(-50%);
     font-variant-numeric: tabular-nums;
   }
-  .strip-pins {
-    position: absolute; top: 60px; left: 56px; right: 56px; bottom: 20px;
-  }
+  .strip-pins { position: absolute; top: 60px; left: 56px; right: 56px; bottom: 20px; }
   .pin {
     position: absolute; top: 0;
     transform: translateX(-50%);
@@ -482,22 +656,12 @@ TEMPLATE = r"""<!doctype html>
     display: flex; gap: 6px; align-items: baseline;
     transition: all .15s ease-out;
   }
-  .pin-pct {
-    font-size: 9px; font-weight: 400; color: var(--mute);
-    font-variant-numeric: tabular-nums;
-  }
+  .pin-pct { font-size: 9px; font-weight: 400; color: var(--mute); font-variant-numeric: tabular-nums; }
   .pin:hover .pin-dot { transform: scale(1.5); }
   .pin:hover .pin-label { background: var(--ink); color: var(--paper); }
   .pin:hover .pin-pct { color: var(--paper-sub); }
   .strip-frame.highlighting .pin:not(.highlighted) { opacity: 0.22; }
   .strip-frame.highlighting .pin.highlighted .pin-dot { transform: scale(1.7); }
-
-  /* Center band (median zone) */
-  .strip-mid-band {
-    position: absolute; top: 58px; bottom: 20px;
-    left: calc(56px + 45%); width: calc(10% * (100% - 112px) / 100%);
-    pointer-events: none;
-  }
 
   /* ─────────────────── Rank table ─────────────────── */
   .rank-table {
@@ -530,59 +694,29 @@ TEMPLATE = r"""<!doctype html>
   }
   .row:hover { background: var(--paper-sub); z-index: 200; }
   .row:last-child { border-bottom: 0; }
-  .row.is-index {
-    background: linear-gradient(to right, rgba(27,24,19,0.05), rgba(27,24,19,0.01) 60%);
-  }
-  .row.is-index::before {
-    content: ""; position: absolute; left: 0; top: 0; bottom: 0;
-    width: 3px; background: var(--ink);
-  }
-  .rank-num {
-    font-family: var(--font-mono); font-size: 12px;
-    color: var(--mute); font-weight: 500;
-    font-variant-numeric: tabular-nums;
-  }
-  .name-col {
-    display: flex; align-items: center; gap: 12px; min-width: 0;
-  }
-  .swatch {
-    width: 8px; height: 16px; border-radius: 1px; flex: 0 0 8px;
-  }
+  .row.is-index { background: linear-gradient(to right, rgba(27,24,19,0.05), rgba(27,24,19,0.01) 60%); }
+  .row.is-index::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--ink); }
+  .rank-num { font-family: var(--font-mono); font-size: 12px; color: var(--mute); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .name-col { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .swatch { width: 8px; height: 16px; border-radius: 1px; flex: 0 0 8px; }
   .name {
     font-family: var(--font-display);
     font-variation-settings: "opsz" 20;
-    font-weight: 500;
-    font-size: 16.5px;
+    font-weight: 500; font-size: 16.5px;
     color: var(--ink);
     letter-spacing: -0.005em;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .ticker {
-    font-family: var(--font-mono);
-    font-size: 9.5px;
-    color: var(--mute);
-    letter-spacing: 0.1em;
+    font-family: var(--font-mono); font-size: 9.5px;
+    color: var(--mute); letter-spacing: 0.1em;
     padding: 2px 5px 1px;
-    border: 1px solid var(--rule);
-    border-radius: 2px;
+    border: 1px solid var(--rule); border-radius: 2px;
   }
-  .val {
-    font-size: 17px; font-weight: 500;
-    color: var(--ink);
-  }
+  .val { font-size: 17px; font-weight: 500; color: var(--ink); }
   .bar-col { position: relative; padding: 0 4px; display: block; }
-  .bar {
-    position: relative;
-    display: block;
-    height: 3px;
-    background: var(--rule);
-    width: 100%;
-  }
-  .bar-fill {
-    position: absolute; left: 0; top: 0;
-    height: 100%;
-    background: var(--ink);
-  }
+  .bar { position: relative; display: block; height: 3px; background: var(--rule); width: 100%; }
+  .bar-fill { position: absolute; left: 0; top: 0; height: 100%; background: var(--ink); }
   .bar-marker {
     position: absolute; top: 50%;
     width: 11px; height: 11px; border-radius: 50%;
@@ -595,34 +729,22 @@ TEMPLATE = r"""<!doctype html>
   .row.heat-hot .bar-marker { box-shadow: 0 0 0 1.5px var(--accent); }
   .row.heat-cold .bar-fill, .row.heat-cold .bar-marker { background: var(--cheap); }
   .row.heat-cold .bar-marker { box-shadow: 0 0 0 1.5px var(--cheap); }
-  .pct {
-    font-size: 20px; font-weight: 600;
-    color: var(--ink);
-    text-align: right;
-    letter-spacing: -0.01em;
-  }
+  .pct { font-size: 20px; font-weight: 600; color: var(--ink); text-align: right; letter-spacing: -0.01em; }
   .row.heat-hot .pct { color: var(--accent); }
   .row.heat-cold .pct { color: var(--cheap); }
-  .range-col {
-    font-size: 11.5px; color: var(--mute);
-    display: flex; gap: 6px; justify-content: flex-end;
-  }
+  .range-col { font-size: 11.5px; color: var(--mute); display: flex; gap: 6px; justify-content: flex-end; }
   .range-col .sep { color: var(--rule); }
 
   /* ─────────────────── Row / pin tooltips ─────────────────── */
   .rank-table { overflow: visible; }
   .row .tip {
     position: absolute;
-    top: calc(100% - 2px);
-    right: 0;
-    width: 380px;
-    max-width: calc(100vw - 80px);
+    top: calc(100% - 2px); right: 0;
+    width: 380px; max-width: calc(100vw - 80px);
     z-index: 50;
-    background: var(--ink);
-    color: var(--paper);
+    background: var(--ink); color: var(--paper);
     padding: 18px 22px 20px;
-    opacity: 0;
-    pointer-events: none;
+    opacity: 0; pointer-events: none;
     transform: translateY(-4px);
     transition: opacity .16s ease-out, transform .16s ease-out;
     box-shadow: 0 14px 36px rgba(27,24,19,0.25), 0 0 0 1px var(--ink);
@@ -634,96 +756,54 @@ TEMPLATE = r"""<!doctype html>
   .tip-def {
     font-family: var(--font-display);
     font-variation-settings: "opsz" 18;
-    font-style: italic;
-    font-weight: 400;
-    font-size: 14.5px;
-    line-height: 1.45;
+    font-style: italic; font-weight: 400;
+    font-size: 14.5px; line-height: 1.45;
     color: var(--paper);
-    margin: 0 0 14px;
-    padding-bottom: 14px;
+    margin: 0 0 14px; padding-bottom: 14px;
     border-bottom: 1px solid rgba(242,236,223,0.18);
   }
   .tip-label {
-    font-family: var(--font-mono);
-    font-size: 9.5px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
+    font-family: var(--font-mono); font-size: 9.5px;
+    letter-spacing: 0.18em; text-transform: uppercase;
     color: rgba(242,236,223,0.55);
     margin: 0 0 8px;
   }
-  .tip-holdings {
-    list-style: none; padding: 0; margin: 0;
-    display: grid; grid-template-columns: 1fr; gap: 5px;
-  }
-  .tip-holdings li {
-    display: grid;
-    grid-template-columns: 68px 1fr;
-    gap: 14px;
-    align-items: baseline;
-  }
-  .tip-tk {
-    font-family: var(--font-mono);
-    font-weight: 500;
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    color: #e8955a;
-  }
-  .tip-nm {
-    font-family: var(--font-body);
-    font-size: 13px;
-    font-weight: 400;
-    color: var(--paper);
-  }
+  .tip-holdings { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr; gap: 5px; }
+  .tip-holdings li { display: grid; grid-template-columns: 68px 1fr; gap: 14px; align-items: baseline; }
+  .tip-tk { font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: 0.08em; color: #e8955a; }
+  .tip-nm { font-family: var(--font-body); font-size: 13px; font-weight: 400; color: var(--paper); }
 
-  /* Pin tooltip — appears below pin on hover */
   .pin-tip {
-    position: absolute;
-    top: auto;
-    bottom: calc(100% + 18px);
-    left: 50%;
+    position: absolute; top: auto; bottom: calc(100% + 18px); left: 50%;
     transform: translate(-50%, 6px);
-    width: 260px;
-    max-width: calc(100vw - 60px);
-    background: var(--ink);
-    color: var(--paper);
+    width: 260px; max-width: calc(100vw - 60px);
+    background: var(--ink); color: var(--paper);
     padding: 14px 16px 16px;
-    opacity: 0;
-    pointer-events: none;
+    opacity: 0; pointer-events: none;
     transition: opacity .16s ease-out, transform .16s ease-out;
     box-shadow: 0 14px 36px rgba(27,24,19,0.25), 0 0 0 1px var(--ink);
-    z-index: 100;
-    text-align: left;
+    z-index: 100; text-align: left;
   }
-  .pin:hover .pin-tip {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
+  .pin:hover .pin-tip { opacity: 1; transform: translate(-50%, 0); }
   .pin-row-2 .pin-tip { bottom: auto; top: calc(100% + 10px); transform: translate(-50%, -6px); }
   .pin-row-2:hover .pin-tip { transform: translate(-50%, 0); }
   .pin-tip-name {
     font-family: var(--font-display);
     font-variation-settings: "opsz" 24;
-    font-weight: 600;
-    font-size: 15px;
-    letter-spacing: -0.005em;
+    font-weight: 600; font-size: 15px; letter-spacing: -0.005em;
     margin: 0 0 6px;
   }
   .pin-tip-def {
     font-family: var(--font-display);
     font-variation-settings: "opsz" 14;
-    font-style: italic;
-    font-size: 12.5px;
-    line-height: 1.4;
+    font-style: italic; font-size: 12.5px; line-height: 1.4;
     color: rgba(242,236,223,0.82);
-    margin: 0 0 12px;
-    padding-bottom: 10px;
+    margin: 0 0 12px; padding-bottom: 10px;
     border-bottom: 1px solid rgba(242,236,223,0.18);
   }
   .pin-tip-label {
-    font-family: var(--font-mono);
-    font-size: 9px;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
+    font-family: var(--font-mono); font-size: 9px;
+    letter-spacing: 0.16em; text-transform: uppercase;
     color: rgba(242,236,223,0.5);
     margin: 0 0 6px;
   }
@@ -732,10 +812,7 @@ TEMPLATE = r"""<!doctype html>
   .pin-tip .tip-nm { font-size: 12px; }
 
   /* ─────────────────── Chart ─────────────────── */
-  .chart-controls {
-    display: flex; gap: 8px; margin-bottom: 18px;
-    align-items: baseline; flex-wrap: wrap;
-  }
+  .chart-controls { display: flex; gap: 8px; margin-bottom: 18px; align-items: baseline; flex-wrap: wrap; }
   .chart-controls button {
     border: 1px solid var(--rule);
     background: transparent;
@@ -747,27 +824,116 @@ TEMPLATE = r"""<!doctype html>
     transition: all .12s ease-out;
   }
   .chart-controls button:hover { border-color: var(--ink); color: var(--ink); background: var(--paper-sub); }
-  .chart-controls button.active {
-    background: var(--ink); color: var(--paper); border-color: var(--ink);
-  }
+  .chart-controls button.active { background: var(--ink); color: var(--paper); border-color: var(--ink); }
   .chart-controls .spacer { flex: 1; }
-  .chart-controls .meta {
-    font-family: var(--font-mono); font-size: 10px;
-    color: var(--mute); letter-spacing: 0.08em;
-  }
-  .chart-wrap {
-    background: var(--paper);
+  .chart-controls .meta { font-family: var(--font-mono); font-size: 10px; color: var(--mute); letter-spacing: 0.08em; }
+  .chart-wrap { background: var(--paper); border: 1px solid var(--rule); padding: 14px 8px 6px; }
+  #chart, #mood-chart { width: 100%; height: 560px; }
+
+  /* ─────────────────── Gauge (Fear & Greed) ─────────────────── */
+  .gauge-frame {
+    position: relative;
+    padding: 96px 56px 96px;
+    background: var(--paper-sub);
     border: 1px solid var(--rule);
-    padding: 14px 8px 6px;
+    height: 280px;
   }
-  #chart { width: 100%; height: 560px; }
+  .gauge-track {
+    position: absolute;
+    top: 96px; left: 56px; right: 56px;
+    height: 16px;
+    display: block;
+    border: 1px solid var(--ink);
+    overflow: hidden;
+  }
+  .gauge-zone {
+    position: absolute; top: 0; bottom: 0;
+  }
+  .gz-xfear  { background: var(--cheap); }
+  .gz-fear   { background: var(--cheap); opacity: 0.45; }
+  .gz-neut   { background: var(--paper-deep); }
+  .gz-greed  { background: var(--accent); opacity: 0.45; }
+  .gz-xgreed { background: var(--accent); }
+
+  .gauge-axis {
+    position: absolute;
+    top: 113px; left: 56px; right: 56px; height: 8px;
+    pointer-events: none;
+  }
+  .ga-tick {
+    position: absolute; top: 0;
+    width: 1px; height: 6px; background: var(--ink-soft);
+    transform: translateX(-0.5px);
+  }
+  .gauge-labels {
+    position: absolute;
+    top: 130px; left: 56px; right: 56px;
+    font-family: var(--font-mono); font-size: 9.5px;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--mute);
+    pointer-events: none;
+  }
+  .gauge-labels span {
+    position: absolute;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+  .gauge-pointer {
+    position: absolute;
+    top: 40px;
+    transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center;
+    animation: gaugeDrop 0.8s cubic-bezier(.2,.6,.3,1.2) both .2s;
+  }
+  .gp-arrow {
+    font-size: 18px;
+    color: var(--ink);
+    line-height: 1;
+  }
+  .gp-value {
+    font-family: var(--font-display);
+    font-variation-settings: "opsz" 64, "SOFT" 40, "WONK" 0;
+    font-weight: 700;
+    font-size: 48px; line-height: 0.9;
+    color: var(--ink);
+    letter-spacing: -0.02em;
+    margin-top: -42px;
+  }
+  .gp-caption {
+    margin-top: 6px;
+    font-family: var(--font-mono); font-size: 9.5px;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--mute);
+    white-space: nowrap;
+  }
+  .gauge-markers {
+    position: absolute; bottom: 30px; left: 56px; right: 56px; height: 40px;
+    pointer-events: none;
+  }
+  .gauge-marker {
+    position: absolute; bottom: 0;
+    transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center;
+    animation: pinIn 0.6s ease-out both;
+  }
+  .gm-arrow { font-size: 11px; color: var(--ink-soft); line-height: 1; }
+  .gm-label {
+    margin-top: 3px;
+    font-family: var(--font-mono); font-size: 9.5px; font-weight: 500;
+    color: var(--ink-soft);
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+    display: flex; gap: 4px; align-items: baseline;
+  }
+  .gm-val { font-size: 8.5px; color: var(--mute); font-weight: 400; }
+
+  @keyframes gaugeDrop {
+    from { opacity: 0; transform: translateX(-50%) translateY(-14px); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+  }
 
   /* ─────────────────── Footer ─────────────────── */
-  footer {
-    margin-top: 48px;
-    padding: 28px 0 60px;
-    border-top: 1.5px solid var(--ink);
-  }
+  footer { margin-top: 48px; padding: 28px 0 60px; border-top: 1.5px solid var(--ink); }
   footer .inner {
     display: flex; justify-content: space-between; align-items: baseline;
     font-family: var(--font-mono); font-size: 10.5px;
@@ -779,21 +945,13 @@ TEMPLATE = r"""<!doctype html>
   footer strong { color: var(--ink); font-weight: 600; letter-spacing: 0.14em; }
 
   /* ─────────────────── Animations ─────────────────── */
-  @keyframes rise {
-    from { opacity: 0; transform: translateY(14px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes pinIn {
-    from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
-    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
-  }
-  @keyframes rowIn {
-    from { opacity: 0; }
-    to   { opacity: 1; }
-  }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes pinIn { from { opacity: 0; transform: translateX(-50%) translateY(-8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+  @keyframes rowIn { from { opacity: 0; } to { opacity: 1; } }
   .kicker       { animation: rise .55s ease-out .00s both; }
   .wordmark     { animation: rise .80s cubic-bezier(.2,.6,.2,1) .10s both; }
   .standfirst   { animation: rise .60s ease-out .35s both; }
+  .lens-row     { animation: rise .50s ease-out .55s both; }
 
   @media (max-width: 860px) {
     .container { padding: 0 20px; }
@@ -807,49 +965,75 @@ TEMPLATE = r"""<!doctype html>
     .pct { font-size: 16px; }
     .strip-frame { padding: 56px 30px 16px; height: 240px; }
     .strip-labels-top, .strip-axis, .strip-ticks, .strip-pins { left: 30px; right: 30px; }
+    .gauge-frame { padding: 96px 30px 96px; }
+    .gauge-track, .gauge-axis, .gauge-labels, .gauge-markers { left: 30px; right: 30px; }
   }
 </style>
 </head>
-<body>
+<body data-lens="forward">
 
 <header class="masthead">
   <div class="container">
-    <p class="kicker">AlphaLabX1 · internal research <span class="edition">Vol. I</span></p>
-    <h1 class="wordmark">Forward <em>P/E</em></h1>
-    <p class="standfirst">The S&amp;P 500 and its eleven sectors, ranked by where each sits against its own trailing five years of daily valuation. Updated <time>__LATEST_LABEL__</time>.</p>
+    <p class="kicker">AlphaLabX1 · internal research <span class="edition">Vol. II</span></p>
+    <h1 class="wordmark">Valuation <em>&amp; Mood</em></h1>
+    <p class="standfirst">S&amp;P 500 and its eleven sectors, seen through two P/E lenses — and the market's mood, plotted against the price beneath it. Updated <time>__LATEST_LABEL__</time>.</p>
+    <div class="lens-row">
+      <span class="lens-label">valuation lens</span>
+      <div class="lens" id="lens">
+        <button data-lens="forward" class="active">Forward</button>
+        <button data-lens="trailing">Trailing</button>
+      </div>
+      <span class="lens-note">Forward uses 12-month analyst estimates; trailing uses reported TTM earnings.</span>
+    </div>
   </div>
 </header>
 
 <main>
+  <!-- ═══ 01. Pin strip ═══ -->
   <section class="section">
     <div class="container">
       <div class="section-head">
         <span class="section-num">01</span>
         <div>
           <h2 class="section-title">Where everyone <em>stands today</em></h2>
-          <p class="section-lede">Each marker is a sector's current forward P/E placed as a percentile of its own trailing five years. <strong>Right is expensive.</strong> A reading of 50 means the sector is trading at its own five-year median.</p>
+          <p class="section-lede">Each marker is a sector's current P/E placed as a percentile of its own trailing five years. <strong>Right is expensive.</strong> A reading of 50 means the sector is trading at its own five-year median.</p>
         </div>
-        <div class="section-meta">5Y window<br>daily observations</div>
+        <div class="section-meta"><span class="lens-echo"></span></div>
       </div>
-      <div class="strip-frame" id="strip">
-        <div class="strip-labels-top">
-          <span>← cheap vs own 5Y</span>
-          <span class="middle">median</span>
-          <span>expensive vs own 5Y →</span>
+
+      <div class="view-forward">
+        <div class="strip-frame" id="strip-forward" data-family="forward">
+          <div class="strip-labels-top"><span>← cheap vs own 5Y</span><span class="middle">median</span><span>expensive vs own 5Y →</span></div>
+          <div class="strip-axis"></div>
+          <div class="strip-ticks">
+            <span class="strip-tick" style="left:0%"></span><span class="strip-tick-label" style="left:0%">0</span>
+            <span class="strip-tick" style="left:25%"></span><span class="strip-tick-label" style="left:25%">25</span>
+            <span class="strip-tick" style="left:50%"></span><span class="strip-tick-label" style="left:50%">50</span>
+            <span class="strip-tick" style="left:75%"></span><span class="strip-tick-label" style="left:75%">75</span>
+            <span class="strip-tick" style="left:100%"></span><span class="strip-tick-label" style="left:100%">100</span>
+          </div>
+          <div class="strip-pins">__STRIP_FORWARD__</div>
         </div>
-        <div class="strip-axis"></div>
-        <div class="strip-ticks">
-          <span class="strip-tick" style="left:0%"></span><span class="strip-tick-label" style="left:0%">0</span>
-          <span class="strip-tick" style="left:25%"></span><span class="strip-tick-label" style="left:25%">25</span>
-          <span class="strip-tick" style="left:50%"></span><span class="strip-tick-label" style="left:50%">50</span>
-          <span class="strip-tick" style="left:75%"></span><span class="strip-tick-label" style="left:75%">75</span>
-          <span class="strip-tick" style="left:100%"></span><span class="strip-tick-label" style="left:100%">100</span>
+      </div>
+
+      <div class="view-trailing">
+        <div class="strip-frame" id="strip-trailing" data-family="trailing">
+          <div class="strip-labels-top"><span>← cheap vs own 5Y</span><span class="middle">median</span><span>expensive vs own 5Y →</span></div>
+          <div class="strip-axis"></div>
+          <div class="strip-ticks">
+            <span class="strip-tick" style="left:0%"></span><span class="strip-tick-label" style="left:0%">0</span>
+            <span class="strip-tick" style="left:25%"></span><span class="strip-tick-label" style="left:25%">25</span>
+            <span class="strip-tick" style="left:50%"></span><span class="strip-tick-label" style="left:50%">50</span>
+            <span class="strip-tick" style="left:75%"></span><span class="strip-tick-label" style="left:75%">75</span>
+            <span class="strip-tick" style="left:100%"></span><span class="strip-tick-label" style="left:100%">100</span>
+          </div>
+          <div class="strip-pins">__STRIP_TRAILING__</div>
         </div>
-        <div class="strip-pins">__STRIP__</div>
       </div>
     </div>
   </section>
 
+  <!-- ═══ 02. Rank table ═══ -->
   <section class="section">
     <div class="container">
       <div class="section-head">
@@ -858,31 +1042,41 @@ TEMPLATE = r"""<!doctype html>
           <h2 class="section-title">Five-year <em>rank</em></h2>
           <p class="section-lede">Sectors ordered from richest to cheapest relative to their own history. <strong>Click any row</strong> to isolate it on the chart below.</p>
         </div>
-        <div class="section-meta">sorted by 5Y percentile</div>
+        <div class="section-meta"><span class="lens-echo"></span></div>
       </div>
-      <ul class="rank-table">
-        <li class="rank-head">
-          <span></span>
-          <span>Sector</span>
-          <span>P/E</span>
-          <span>5Y percentile</span>
-          <span style="text-align:right">pctl</span>
-          <span style="text-align:right">5Y range</span>
-        </li>
-        __TABLE__
-      </ul>
+
+      <div class="view-forward">
+        <ul class="rank-table" data-family="forward">
+          <li class="rank-head">
+            <span></span><span>Sector</span><span>P/E</span><span>5Y percentile</span>
+            <span style="text-align:right">pctl</span><span style="text-align:right">5Y range</span>
+          </li>
+          __TABLE_FORWARD__
+        </ul>
+      </div>
+
+      <div class="view-trailing">
+        <ul class="rank-table" data-family="trailing">
+          <li class="rank-head">
+            <span></span><span>Sector</span><span>P/E</span><span>5Y percentile</span>
+            <span style="text-align:right">pctl</span><span style="text-align:right">5Y range</span>
+          </li>
+          __TABLE_TRAILING__
+        </ul>
+      </div>
     </div>
   </section>
 
+  <!-- ═══ 03. Historical chart ═══ -->
   <section class="section">
     <div class="container">
       <div class="section-head">
         <span class="section-num">03</span>
         <div>
           <h2 class="section-title">Historical <em>path</em></h2>
-          <p class="section-lede">Daily twelve-month forward P/E. The Y axis auto-scales to whichever window and sectors are visible — outlier spikes (forward P/E &gt; 80) are filtered from the scale.</p>
+          <p class="section-lede">Forward view shows 12-month analyst estimates (daily, since 2008). Trailing view uses reported TTM earnings (monthly, since 1995 for sectors — since 1871 for the index). The Y axis auto-scales to whichever window and series are visible.</p>
         </div>
-        <div class="section-meta">since 1999</div>
+        <div class="section-meta"><span class="lens-echo"></span></div>
       </div>
       <div class="chart-controls">
         <button data-range="all">All</button>
@@ -896,9 +1090,45 @@ TEMPLATE = r"""<!doctype html>
         <button id="only-sectors">Sectors</button>
         <button id="show-all">Reset</button>
       </div>
-      <div class="chart-wrap">
-        <div id="chart"></div>
+      <div class="chart-wrap"><div id="chart"></div></div>
+    </div>
+  </section>
+
+  <!-- ═══ 04. Fear & Greed gauge ═══ -->
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-num">04</span>
+        <div>
+          <h2 class="section-title">Sentiment, <em>at a glance</em></h2>
+          <p class="section-lede">MacroMicro's Fear &amp; Greed composite reduces the market's mood to a single 0–100 reading. Under 25 is panicked fear; over 75 is euphoric greed. The open triangles show how mood has drifted over the past week, month, quarter, and year.</p>
+        </div>
+        <div class="section-meta">composite · 0–100</div>
       </div>
+      __GAUGE__
+    </div>
+  </section>
+
+  <!-- ═══ 05. F&G vs SPX chart ═══ -->
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-num">05</span>
+        <div>
+          <h2 class="section-title">Mood <em>against price</em></h2>
+          <p class="section-lede">Sentiment on the left axis, S&amp;P 500 on the right. Bear phases bottom with fear readings below 25; tops tend to coincide with extreme-greed plateaus — not coincidence, but also not a tradable signal on its own.</p>
+        </div>
+        <div class="section-meta">dual axis · shared X</div>
+      </div>
+      <div class="chart-controls">
+        <button data-mood-range="all">All</button>
+        <button data-mood-range="10y">10Y</button>
+        <button data-mood-range="5y" class="active">5Y</button>
+        <button data-mood-range="3y">3Y</button>
+        <button data-mood-range="1y">1Y</button>
+        <button data-mood-range="ytd">YTD</button>
+      </div>
+      <div class="chart-wrap"><div id="mood-chart"></div></div>
     </div>
   </section>
 </main>
@@ -909,11 +1139,13 @@ TEMPLATE = r"""<!doctype html>
       <div class="left">
         <span><strong>AlphaLabX1</strong> internal</span>
         <span class="dot">·</span>
-        <span>Data · MacroMicro</span>
+        <span>Forward P/E &amp; Sentiment · MacroMicro</span>
+        <span class="dot">·</span>
+        <span>Trailing P/E · worldperatio.com</span>
         <span class="dot">·</span>
         <span>Chart · Plotly</span>
       </div>
-      <span>as of __LATEST_ISO__ · 12 series · 5-year window</span>
+      <span>as of __LATEST_ISO__ · 5-year window</span>
     </div>
   </div>
 </footer>
@@ -922,64 +1154,66 @@ TEMPLATE = r"""<!doctype html>
 const DATA = __DATA__;
 const LATEST = "__LATEST_ISO__";
 
-DATA.series.forEach(s => { s._t = s.points.map(p => Date.parse(p[0])); });
+// ═══ Shared utilities ═══
+function prepareFamily(f) {
+  if (!f || !f.series) return null;
+  f.series.forEach(s => { s._t = s.points.map(p => Date.parse(p[0])); });
+  return f;
+}
+prepareFamily(DATA.forward);
+prepareFamily(DATA.trailing);
 
-const traces = DATA.series.map(s => ({
-  x: s.points.map(p => p[0]),
-  y: s.points.map(p => p[1]),
-  type: "scattergl",
-  mode: "lines",
-  name: s.name,
-  line: { color: s.color, width: s.isIndex ? 2.6 : 1.4 },
-  hovertemplate: "<b>" + s.name + "</b>  %{y:.2f}<extra></extra>",
-  visible: true,
-  meta: s.id,
-}));
+function makeTraces(family, outlierMax) {
+  return family.series.map(s => ({
+    x: s.points.map(p => p[0]),
+    y: s.points.map(p => p[1]),
+    type: "scattergl",
+    mode: "lines",
+    name: s.name,
+    line: { color: s.color, width: s.isIndex ? 2.6 : 1.4 },
+    hovertemplate: "<b>" + s.name + "</b>  %{y:.2f}<extra></extra>",
+    visible: true,
+    meta: s.id,
+  }));
+}
 
-const layout = {
+const baseLayout = {
   margin: { l: 56, r: 20, t: 10, b: 44 },
   hovermode: "x unified",
   hoverlabel: {
     font: { family: '"IBM Plex Mono", monospace', size: 11, color: "#f2ecdf" },
-    bgcolor: "#1b1813",
-    bordercolor: "#1b1813",
+    bgcolor: "#1b1813", bordercolor: "#1b1813",
   },
   xaxis: {
-    showgrid: false,
-    linecolor: "#d5c8b1",
-    tickcolor: "#8a7e6d",
+    showgrid: false, linecolor: "#d5c8b1", tickcolor: "#8a7e6d",
     tickfont: { family: '"IBM Plex Mono", monospace', size: 10, color: "#55493b" },
     type: "date",
   },
   yaxis: {
-    gridcolor: "#e6dcc6",
-    zeroline: false,
+    gridcolor: "#e6dcc6", zeroline: false,
     tickfont: { family: '"IBM Plex Mono", monospace', size: 10, color: "#55493b" },
     tickcolor: "#8a7e6d",
-    title: { text: "forward P/E", font: { family: '"IBM Plex Sans", sans-serif', size: 11, color: "#8a7e6d" }, standoff: 14 },
+    title: { text: "P/E", font: { family: '"IBM Plex Sans", sans-serif', size: 11, color: "#8a7e6d" }, standoff: 14 },
   },
-  legend: {
-    orientation: "h", y: -0.18,
-    font: { family: '"IBM Plex Mono", monospace', size: 10, color: "#1b1813" },
-  },
-  paper_bgcolor: "#f2ecdf",
-  plot_bgcolor: "#f2ecdf",
+  legend: { orientation: "h", y: -0.18, font: { family: '"IBM Plex Mono", monospace', size: 10, color: "#1b1813" } },
+  paper_bgcolor: "#f2ecdf", plot_bgcolor: "#f2ecdf",
   font: { family: '"IBM Plex Sans", sans-serif', size: 11, color: "#1b1813" },
 };
 
-const config = {
-  displaylogo: false, responsive: true,
-  modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"],
-};
+const chartConfig = { displaylogo: false, responsive: true, modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"] };
 
-Plotly.newPlot("chart", traces, layout, config).then(() => applyRange("5y"));
+// ═══ Section 03 chart with lens switching ═══
+let currentLens = "forward";
+let currentRange = "5y";
 
 function yRangeForWindow(startMs, endMs) {
+  const family = DATA[currentLens];
+  if (!family) return null;
   const gd = document.getElementById("chart");
   const visMap = {};
   (gd.data || []).forEach((t, i) => { visMap[i] = t.visible !== "legendonly" && t.visible !== false; });
   let lo = Infinity, hi = -Infinity;
-  DATA.series.forEach((s, i) => {
+  family.series.forEach((s, i) => {
     if (!visMap[i]) return;
     const ts = s._t, pts = s.points;
     for (let j = 0; j < pts.length; j++) {
@@ -998,14 +1232,12 @@ function yRangeForWindow(startMs, endMs) {
 
 let _skipRelayout = false;
 function applyRange(key) {
+  currentRange = key;
   const now = new Date(LATEST);
   let start;
-  if (key === "all") start = new Date("1999-01-01");
+  if (key === "all") start = new Date("1995-01-01");
   else if (key === "ytd") start = new Date(now.getFullYear(), 0, 1);
-  else {
-    const years = parseInt(key, 10);
-    start = new Date(now); start.setFullYear(start.getFullYear() - years);
-  }
+  else { const years = parseInt(key, 10); start = new Date(now); start.setFullYear(start.getFullYear() - years); }
   const yr = yRangeForWindow(start.getTime(), now.getTime());
   const upd = {
     "xaxis.range": [start.toISOString().slice(0,10), now.toISOString().slice(0,10)],
@@ -1016,18 +1248,14 @@ function applyRange(key) {
   Plotly.relayout("chart", upd).then(() => { _skipRelayout = false; });
 }
 
-document.querySelectorAll("[data-range]").forEach(btn => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll("[data-range]").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    applyRange(btn.dataset.range);
-  });
-});
+function renderChart() {
+  const family = DATA[currentLens];
+  if (!family) return;
+  const traces = makeTraces(family);
+  return Plotly.react("chart", traces, baseLayout, chartConfig).then(() => applyRange(currentRange));
+}
 
-document.getElementById("chart").on("plotly_relayout", () => {
-  if (_skipRelayout) return;
-  rescaleY();
-});
+renderChart();
 
 function rescaleY() {
   const gd = document.getElementById("chart");
@@ -1038,55 +1266,176 @@ function rescaleY() {
   const yr = yRangeForWindow(startMs, endMs);
   if (!yr) return;
   _skipRelayout = true;
-  Plotly.relayout("chart", { "yaxis.range": yr, "yaxis.autorange": false })
-    .then(() => { _skipRelayout = false; });
+  Plotly.relayout("chart", { "yaxis.range": yr, "yaxis.autorange": false }).then(() => { _skipRelayout = false; });
 }
 
+document.getElementById("chart").on("plotly_relayout", () => { if (_skipRelayout) return; rescaleY(); });
+
+document.querySelectorAll("[data-range]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-range]").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    applyRange(btn.dataset.range);
+  });
+});
+
 function setVisible(fn) {
-  const vis = DATA.series.map(s => fn(s) ? true : "legendonly");
+  const family = DATA[currentLens];
+  if (!family) return;
+  const vis = family.series.map(s => fn(s) ? true : "legendonly");
   Plotly.restyle("chart", { visible: vis }).then(rescaleY);
 }
 document.getElementById("only-index").addEventListener("click", () => setVisible(s => s.isIndex));
 document.getElementById("only-sectors").addEventListener("click", () => setVisible(s => !s.isIndex));
 document.getElementById("show-all").addEventListener("click", () => setVisible(() => true));
 
-// Stagger pin entrance
-document.querySelectorAll(".pin").forEach((pin, i) => {
-  pin.style.animationDelay = (0.3 + i * 0.04) + "s";
-  const id = parseInt(pin.dataset.id, 10);
-  pin.addEventListener("mouseenter", () => soloViaStrip(id));
-  pin.addEventListener("mouseleave", () => unsoloViaStrip());
-  pin.addEventListener("click", () => stickSolo(id));
+// ═══ Lens toggle ═══
+document.querySelectorAll(".lens button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const newLens = btn.dataset.lens;
+    if (newLens === currentLens) return;
+    if (newLens === "trailing" && !DATA.trailing) return;
+    currentLens = newLens;
+    document.body.setAttribute("data-lens", newLens);
+    document.querySelectorAll(".lens button").forEach(b => b.classList.toggle("active", b === btn));
+    renderChart();
+    wireSectorInteractions();
+  });
 });
 
-// Stagger row entrance + click
-document.querySelectorAll(".row:not(.rank-head)").forEach((row, i) => {
-  row.style.animationDelay = (0.1 + i * 0.03) + "s";
-  const id = parseInt(row.dataset.id, 10);
-  row.addEventListener("click", () => stickSolo(id));
-});
+// ═══ Strip / row interactivity (re-wire after lens switch for visible family only) ═══
+function wireSectorInteractions() {
+  // Pin entrance + hover
+  document.querySelectorAll(".pin").forEach((pin, i) => {
+    pin.style.animationDelay = (0.3 + (i % 12) * 0.04) + "s";
+    const id = parseInt(pin.dataset.id, 10);
+    pin.onmouseenter = () => soloViaStrip(id);
+    pin.onmouseleave = () => unsoloViaStrip();
+    pin.onclick = () => stickSolo(id);
+  });
+  // Row click
+  document.querySelectorAll(".row:not(.rank-head)").forEach((row, i) => {
+    row.style.animationDelay = (0.1 + (i % 12) * 0.03) + "s";
+    const id = parseInt(row.dataset.id, 10);
+    row.onclick = () => stickSolo(id);
+  });
+}
+wireSectorInteractions();
 
 function soloViaStrip(id) {
-  const stripEl = document.getElementById("strip");
-  stripEl.classList.add("highlighting");
+  document.querySelectorAll(".strip-frame").forEach(el => el.classList.add("highlighting"));
   document.querySelectorAll(".pin").forEach(p => {
     p.classList.toggle("highlighted", parseInt(p.dataset.id, 10) === id);
   });
-  const op = DATA.series.map(s => s.id === id ? 1 : 0.12);
-  Plotly.restyle("chart", { opacity: op });
+  const family = DATA[currentLens];
+  if (family) {
+    const op = family.series.map(s => s.id === id ? 1 : 0.12);
+    Plotly.restyle("chart", { opacity: op });
+  }
 }
 function unsoloViaStrip() {
-  document.getElementById("strip").classList.remove("highlighting");
+  document.querySelectorAll(".strip-frame").forEach(el => el.classList.remove("highlighting"));
   document.querySelectorAll(".pin").forEach(p => p.classList.remove("highlighted"));
-  Plotly.restyle("chart", { opacity: DATA.series.map(() => 1) });
+  const family = DATA[currentLens];
+  if (family) Plotly.restyle("chart", { opacity: family.series.map(() => 1) });
 }
 function stickSolo(id) {
-  const idx = DATA.series.findIndex(s => s.id === id);
+  const family = DATA[currentLens];
+  if (!family) return;
+  const idx = family.series.findIndex(s => s.id === id);
   if (idx < 0) return;
-  const vis = DATA.series.map((_, i) => i === idx ? true : "legendonly");
-  Plotly.restyle("chart", { visible: vis, opacity: DATA.series.map(() => 1) }).then(rescaleY);
+  const vis = family.series.map((_, i) => i === idx ? true : "legendonly");
+  Plotly.restyle("chart", { visible: vis, opacity: family.series.map(() => 1) }).then(rescaleY);
   document.getElementById("chart").scrollIntoView({ behavior: "smooth", block: "center" });
 }
+
+// ═══ Section 05: F&G vs SPX dual-axis chart ═══
+(function renderMoodChart() {
+  const fg = DATA.fg.points;
+  const spx = DATA.spx.points;
+  if (!fg.length || !spx.length) return;
+
+  const moodTraces = [
+    {
+      x: spx.map(p => p[0]),
+      y: spx.map(p => p[1]),
+      type: "scattergl", mode: "lines",
+      name: "S&P 500",
+      line: { color: "#1b1813", width: 2.2 },
+      yaxis: "y2",
+      hovertemplate: "<b>S&P 500</b>  %{y:.2f}<extra></extra>",
+    },
+    {
+      x: fg.map(p => p[0]),
+      y: fg.map(p => p[1]),
+      type: "scattergl", mode: "lines",
+      name: "Fear & Greed",
+      line: { color: "#b8421c", width: 1.2 },
+      yaxis: "y",
+      hovertemplate: "<b>F&G</b>  %{y:.1f}<extra></extra>",
+    },
+  ];
+  const moodLayout = Object.assign({}, baseLayout, {
+    yaxis: {
+      gridcolor: "#e6dcc6", zeroline: false,
+      tickfont: { family: '"IBM Plex Mono", monospace', size: 10, color: "#55493b" },
+      tickcolor: "#8a7e6d",
+      title: { text: "fear & greed", font: { family: '"IBM Plex Sans", sans-serif', size: 11, color: "#b8421c" }, standoff: 14 },
+      range: [0, 100],
+      tickvals: [0, 25, 50, 75, 100],
+    },
+    yaxis2: {
+      overlaying: "y", side: "right",
+      gridcolor: "rgba(0,0,0,0)", zeroline: false,
+      tickfont: { family: '"IBM Plex Mono", monospace', size: 10, color: "#55493b" },
+      tickcolor: "#8a7e6d",
+      title: { text: "S&P 500", font: { family: '"IBM Plex Sans", sans-serif', size: 11, color: "#1b1813" }, standoff: 14 },
+    },
+    shapes: [
+      { type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: 25, y1: 25, line: { color: "#2e5d56", width: 1, dash: "dot" } },
+      { type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: 75, y1: 75, line: { color: "#b8421c", width: 1, dash: "dot" } },
+    ],
+  });
+  Plotly.newPlot("mood-chart", moodTraces, moodLayout, chartConfig).then(() => applyMoodRange("5y"));
+
+  function applyMoodRange(key) {
+    const now = new Date(LATEST);
+    let start;
+    if (key === "all") start = new Date(fg[0][0]);
+    else if (key === "ytd") start = new Date(now.getFullYear(), 0, 1);
+    else { const y = parseInt(key, 10); start = new Date(now); start.setFullYear(start.getFullYear() - y); }
+    const startStr = start.toISOString().slice(0,10);
+    const endStr = now.toISOString().slice(0,10);
+    // Compute SPX Y-axis range for window
+    let lo = Infinity, hi = -Infinity;
+    const startMs = start.getTime(), endMs = now.getTime();
+    for (let j = 0; j < spx.length; j++) {
+      const t = Date.parse(spx[j][0]);
+      if (t < startMs || t > endMs) continue;
+      const v = spx[j][1];
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+    const upd = {
+      "xaxis.range": [startStr, endStr],
+      "xaxis.autorange": false,
+    };
+    if (isFinite(lo)) {
+      const pad = (hi - lo) * 0.05;
+      upd["yaxis2.range"] = [lo - pad, hi + pad];
+      upd["yaxis2.autorange"] = false;
+    }
+    Plotly.relayout("mood-chart", upd);
+  }
+
+  document.querySelectorAll("[data-mood-range]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-mood-range]").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      applyMoodRange(btn.dataset.moodRange);
+    });
+  });
+})();
 </script>
 </body>
 </html>

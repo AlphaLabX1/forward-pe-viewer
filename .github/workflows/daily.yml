@@ -36,8 +36,11 @@ jobs:
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
           if ! python fetch.py; then
-            echo "::warning::fetch.py failed — skipping refresh this run."
+            echo "::warning::fetch.py (MacroMicro) failed — skipping refresh this run."
             exit 0
+          fi
+          if ! python fetch_trailing.py; then
+            echo "::warning::fetch_trailing.py (worldperatio) failed — continuing with stale trailing data."
           fi
           python build_html.py
           git add -A data/ index.html
