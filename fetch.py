@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import re
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from http.cookies import SimpleCookie
 from pathlib import Path
+
+_SCRAPINGANT_KEY = os.environ.get("SCRAPINGANT_API_KEY")
 
 try:
     from curl_cffi import requests as _requests
@@ -36,12 +43,81 @@ SEED_URL = f"{BASE}/series/{SEED_SERIES_ID}/sp500-forward-pe-ratio"
 TOKEN_RE = re.compile(r'stk["\s]*[:=]["\s]*["\']([^"\']+)["\']')
 
 
+class _ScrapingAntResponse:
+    def __init__(self, status: int, body: bytes):
+        self.status_code = status
+        self.content = body
+        self.text = body.decode("utf-8", "ignore")
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}: {self.text[:200]}")
+
+    def json(self):
+        return json.loads(self.content)
+
+
+class _ScrapingAntSession:
+    """Route GET requests through the ScrapingAnt v2 API and persist cookies
+    across calls. MacroMicro's `stk` token is bound to the PHPSESSID cookie
+    set by the seed HTML response, so without cookie continuity the follow-up
+    JSON API call returns `error #1165`."""
+
+    ENDPOINT = "https://api.scrapingant.com/v2/general"
+
+    def __init__(self, api_key: str):
+        self._key = api_key
+        self._cookies: dict[str, str] = {}
+
+    def get(self, url: str, headers: dict | None = None, timeout: int = 60):
+        h = dict(headers or {})
+        if self._cookies:
+            jar = "; ".join(f"{k}={v}" for k, v in self._cookies.items())
+            h["Cookie"] = (h.get("Cookie", "") + "; " + jar).lstrip("; ")
+
+        q = {
+            "url": url,
+            "x-api-key": self._key,
+            "proxy_type": "datacenter",
+            "browser": "false",
+        }
+        req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
+        for k, v in h.items():
+            req.add_header(f"Ant-{k}", v)
+
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                status, raw, resp_hdrs = r.status, r.read(), r.headers
+        except urllib.error.HTTPError as e:
+            status, raw, resp_hdrs = e.code, e.read(), e.headers
+
+        set_cookie = resp_hdrs.get("Ant-Original-Header-Set-Cookie", "")
+        if set_cookie:
+            try:
+                jar = SimpleCookie()
+                jar.load(set_cookie)
+                for name, morsel in jar.items():
+                    self._cookies[name] = morsel.value
+            except Exception:
+                pass
+
+        return _ScrapingAntResponse(status, raw)
+
+
 def _make_session():
+    if _SCRAPINGANT_KEY:
+        return _ScrapingAntSession(_SCRAPINGANT_KEY)
     if _USE_CFFI:
         return _requests.Session(impersonate="chrome124")
     return cloudscraper.create_scraper(
         browser={"browser": "chrome", "platform": "windows", "desktop": True}
     )
+
+
+def _backend_name() -> str:
+    if _SCRAPINGANT_KEY:
+        return "scrapingant"
+    return "curl_cffi" if _USE_CFFI else "cloudscraper"
 
 
 def get_token(scraper) -> str:
@@ -108,7 +184,7 @@ def write_combined(data: dict, out_path: Path) -> None:
 def main() -> None:
     out_dir = Path(__file__).parent / "data"
     scraper = _make_session()
-    print(f"[1/3] resolving token (backend={'curl_cffi' if _USE_CFFI else 'cloudscraper'}) ...")
+    print(f"[1/3] resolving token (backend={_backend_name()}) ...")
     token = get_token(scraper)
     print(f"      token: {token[:12]}... ({len(token)} chars)")
     print("[2/3] fetching 12 series in one call ...")

@@ -50,21 +50,18 @@ forward-pe-viewer/
 └── .github/workflows/daily.yml
 ```
 
-## Daily update caveat
+## Daily update in CI
 
-GitHub Actions runners are issued datacenter IPs that MacroMicro's Cloudflare
-hard-403s on sight — neither `cloudscraper` nor TLS-impersonating `curl_cffi`
-gets through the IP block. The scheduled workflow therefore **exits 0 with a
-warning** when the fetch fails, so the Page keeps serving the last-known-good
-snapshot instead of breaking.
+GitHub Actions runners ship with datacenter IPs that MacroMicro's Cloudflare
+blocks on sight. The workflow gets around this by routing the two requests
+through [ScrapingAnt](https://scrapingant.com/)'s proxy API when the
+`SCRAPINGANT_API_KEY` repo secret is set. Each run costs 2 credits out of the
+10,000/month free tier — ~0.6% monthly usage — and cookies are preserved
+across the seed + API calls so MacroMicro's PHPSESSID-bound `stk` token
+validates on the second hop.
 
-For actual daily refresh, run the fetch from a residential IP:
-
-- **Home cron** on a machine you keep on — simplest, free
-- **PythonAnywhere** free tier (1 scheduled task/day), then `git push`
-- **Self-hosted GitHub Actions runner** on a home machine
-- **A residential-proxy service** (ScraperAPI, ScrapingBee, BrightData) in
-  front of the existing workflow
+Running locally without the secret set falls back to `curl_cffi` /
+`cloudscraper`, which works fine from a residential IP.
 
 ## Sector taxonomy
 
