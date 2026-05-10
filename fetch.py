@@ -1,8 +1,21 @@
-"""Fetch S&P 500 forward P/E data (overall + 11 sectors) from MacroMicro."""
+"""Fetch S&P 500 forward P/E data (overall + 11 sectors) from MacroMicro.
+
+Uses MacroMicro's per-chart endpoint /charts/data/<chart_id> which returns all
+series for a chart in one response, instead of /stats/data/<series_ids> which
+the site started rejecting from non-residential / replay sessions in April 2026.
+
+Two HTTP calls per refresh:
+  1. GET the chart page (sets PHPSESSID, embeds the stk token in HTML)
+  2. GET /charts/data/<chart_id> with `Authorization: Bearer <stk>`
+
+Backends:
+  - curl_cffi (Chrome impersonation) when run from a residential IP
+  - ScrapingAnt residential proxy when run on GitHub Actions (datacenter IPs
+    are blocked by Cloudflare)
+"""
 
 from __future__ import annotations
 
-import base64
 import csv
 import json
 import os
@@ -12,7 +25,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from http.cookies import SimpleCookie
 from pathlib import Path
 
 _SCRAPINGANT_KEY = os.environ.get("SCRAPINGANT_API_KEY")
@@ -24,6 +36,7 @@ except ImportError:
     import cloudscraper
     _USE_CFFI = False
 
+# Output series — the 12 forward-PE series come from one MacroMicro chart.
 SERIES = {
     20052: "S&P 500",
     20517: "Information Technology",
@@ -39,38 +52,40 @@ SERIES = {
     20527: "Health Care",
 }
 
-# Additional series fetched in the same batch but written to their own CSVs.
-# 2 = S&P 500 daily price (for F&G overlay), 46974 = MacroMicro Fear & Greed.
+# Auxiliary series written to their own CSVs (consumed by the F&G dashboard).
+# 2 = S&P 500 daily price, 46974 = MacroMicro Fear & Greed.
 EXTRA_SERIES = {
     2: ("spx_price", "price"),
     46974: ("fear_greed", "value"),
 }
 
 BASE = "https://en.macromicro.me"
-SEED_SERIES_ID = 20052
-SEED_URL = f"{BASE}/series/{SEED_SERIES_ID}/sp500-forward-pe-ratio"
 TOKEN_RE = re.compile(r'stk["\s]*[:=]["\s]*["\']([^"\']+)["\']')
 
-# Known/guessed slugs for each series page on MacroMicro.
-# Pattern for the 11 sectors: sp500-{kebab-sector-name}-forward-pe-ratio.
-# id=2 (SPX price) and id=46974 (F&G) live on different URL patterns and
-# stay None for now — their CSVs continue from the prior refresh.
-SERIES_SLUGS: dict[int, str | None] = {
-    20052: "sp500-forward-pe-ratio",
-    20517: "sp500-information-technology-forward-pe-ratio",
-    20518: "sp500-communication-services-forward-pe-ratio",
-    20519: "sp500-consumer-discretionary-forward-pe-ratio",
-    20520: "sp500-financials-forward-pe-ratio",
-    20521: "sp500-industrials-forward-pe-ratio",
-    20522: "sp500-utilities-forward-pe-ratio",
-    20523: "sp500-energy-forward-pe-ratio",
-    20524: "sp500-real-estate-forward-pe-ratio",
-    20525: "sp500-materials-forward-pe-ratio",
-    20526: "sp500-consumer-staples-forward-pe-ratio",
-    20527: "sp500-health-care-forward-pe-ratio",
-    2: None,
-    46974: None,
-}
+# Each entry: (chart_id, slug, [(series_index_in_chart, our_series_id), ...])
+# Chart 48243 ("US - S&P 500 Forward PE Ratio by Sector") embeds 12 series in
+# one response. The order of `series[i]` matches the order in `chart_config.
+# seriesConfigs[i].name_en` — confirmed by inspection on 2026-05-10.
+CHART_SOURCES: list[tuple[int, str, list[tuple[int, int]]]] = [
+    (
+        48243,
+        "s5cond-forward-pe-ratio",
+        [
+            (0, 20052),   # S&P 500
+            (1, 20517),   # Info Tech
+            (2, 20518),   # Comm Svcs
+            (3, 20521),   # Industrials
+            (4, 20520),   # Financials
+            (5, 20525),   # Materials
+            (6, 20523),   # Energy
+            (7, 20524),   # Real Estate
+            (8, 20519),   # Cons Disc
+            (9, 20526),   # Cons Staples
+            (10, 20527),  # Health Care
+            (11, 20522),  # Utilities
+        ],
+    ),
+]
 
 
 class _ScrapingAntResponse:
@@ -78,49 +93,40 @@ class _ScrapingAntResponse:
         self.status_code = status
         self.content = body
         self.text = body.decode("utf-8", "ignore")
+        self.cookies: dict = {}  # populated by session
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
             raise RuntimeError(f"HTTP {self.status_code}: {self.text[:200]}")
 
     def json(self):
-        # browser=true wraps non-HTML responses as `<html>...<pre>{json}</pre>...</html>`.
-        body = self.text.strip()
-        if body.startswith("<"):
-            m = re.search(r"<pre[^>]*>(.*?)</pre>", body, re.DOTALL)
-            if m:
-                return json.loads(m.group(1))
         return json.loads(self.content)
 
 
 class _ScrapingAntSession:
-    """Route GET requests through the ScrapingAnt v2 API and persist cookies
-    across calls. MacroMicro's `stk` token is bound to the PHPSESSID cookie
-    set by the seed HTML response, so without cookie continuity the follow-up
-    JSON API call returns `error #1165`."""
+    """Route GET through ScrapingAnt's v2 API with residential proxy and
+    browser=false (raw HTML, no JS — cheaper and avoids the page's natural
+    fetch consuming our token).
+
+    Cost: ~50 credits per request × 2 per refresh = 100 credits/day,
+    well inside the 10,000/month free tier even at daily cadence."""
 
     ENDPOINT = "https://api.scrapingant.com/v2/general"
+    MAX_ATTEMPTS = 4
+    RETRY_BACKOFF_SEC = 5
 
     def __init__(self, api_key: str):
         self._key = api_key
         self._cookies: dict[str, str] = {}
-
-    # ScrapingAnt rotates residential IPs per request; some are pre-flagged
-    # by Cloudflare. Their docs explicitly recommend retry on 423 detection.
-    # Failed requests are not billed, so retries are free.
-    MAX_ATTEMPTS = 4
-    RETRY_BACKOFF_SEC = 3
 
     def get(self, url: str, headers: dict | None = None, timeout: int = 60):
         h = dict(headers or {})
         q = {
             "url": url,
             "x-api-key": self._key,
-            "proxy_type": "datacenter",
-            "browser": "true",
+            "proxy_type": "residential",
+            "browser": "false",
         }
-        # `cookies` URL param injects into the headless Chrome session before
-        # navigation. Ant-Cookie header alone does not survive a fresh browser.
         if self._cookies:
             q["cookies"] = ";".join(f"{k}={v}" for k, v in self._cookies.items())
         req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
@@ -137,693 +143,28 @@ class _ScrapingAntSession:
             if last_status < 400:
                 break
             if attempt < self.MAX_ATTEMPTS:
-                print(
-                    f"[retry] ScrapingAnt {last_status} on attempt {attempt}, "
-                    f"backing off {self.RETRY_BACKOFF_SEC}s",
-                    file=sys.stderr,
-                )
-                time.sleep(self.RETRY_BACKOFF_SEC)
-
-        set_cookie = (last_hdrs.get("Ant-Original-Header-Set-Cookie", "") if last_hdrs else "")
-        if set_cookie:
-            try:
-                jar = SimpleCookie()
-                jar.load(set_cookie)
-                for name, morsel in jar.items():
-                    self._cookies[name] = morsel.value
-            except Exception:
-                pass
-
-        return _ScrapingAntResponse(last_status, last_body)
-
-    def discover_series_links(self, seed_url: str, timeout: int = 120) -> dict[int, str]:
-        """Load the seed page and harvest every <a href="/series/{id}/{slug}">
-        URL it links to. Returns {series_id: full_url}.
-        """
-        js = r"""
-const __out = {links: []};
-try {
-  const __anchors = Array.from(document.querySelectorAll('a[href*="/series/"]'));
-  const __seen = new Set();
-  for (const __a of __anchors) {
-    const __h = __a.getAttribute("href") || "";
-    const __m = __h.match(/\/series\/(\d+)\/([^/?#]+)/);
-    if (__m) {
-      const __key = __m[1];
-      if (!__seen.has(__key)) {
-        __seen.add(__key);
-        __out.links.push({id: parseInt(__m[1], 10), slug: __m[2], href: __h});
-      }
-    }
-  }
-} catch (__e) {
-  __out.error = String(__e);
-}
-const __tag = document.createElement("pre");
-__tag.id = "ant-result";
-__tag.textContent = btoa(unescape(encodeURIComponent(JSON.stringify(__out))));
-document.body.appendChild(__tag);
-"""
-        js_b64 = base64.b64encode(js.encode("utf-8")).decode("ascii")
-        q = {
-            "url": seed_url,
-            "x-api-key": self._key,
-            "proxy_type": "datacenter",
-            "browser": "true",
-            "js_snippet": js_b64,
-            "wait_for_selector": "#ant-result",
-        }
-        req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
-        last_status, last_body = 0, b""
-        for attempt in range(1, self.MAX_ATTEMPTS + 1):
-            try:
-                with urllib.request.urlopen(req, timeout=timeout) as r:
-                    last_status, last_body = r.status, r.read()
-            except urllib.error.HTTPError as e:
-                last_status, last_body = e.code, e.read()
-            if last_status < 400:
-                break
-            if attempt < self.MAX_ATTEMPTS:
-                # 409 = concurrency limit hit; sleep longer before retrying.
+                # 409 = concurrency limit on free tier; sleep longer.
                 backoff = 15 if last_status == 409 else self.RETRY_BACKOFF_SEC
                 print(
-                    f"[retry] discover_series_links {last_status} on attempt {attempt}, "
-                    f"backing off {backoff}s",
+                    f"[retry] ScrapingAnt {last_status} on attempt {attempt} for "
+                    f"{url}, backing off {backoff}s",
                     file=sys.stderr,
                 )
                 time.sleep(backoff)
-        if last_status >= 400:
-            raise RuntimeError(
-                f"HTTP {last_status} discovering series links: "
-                f"{last_body[:200].decode('utf-8', 'ignore')}"
-            )
-        text = last_body.decode("utf-8", "ignore")
-        m = re.search(r'<pre id="ant-result">([^<]*)</pre>', text)
-        if not m:
-            raise RuntimeError("ant-result missing in discover_series_links")
-        decoded = base64.b64decode(m.group(1)).decode("utf-8")
-        out = json.loads(decoded)
-        if "error" in out:
-            raise RuntimeError(f"discover_series_links error: {out['error']}")
-        result = {}
-        for link in out["links"]:
-            sid = link["id"]
-            slug = link["slug"]
-            if sid not in result:
-                result[sid] = f"{BASE}/series/{sid}/{slug}"
-        return result
-
-    def fetch_via_page_internals(
-        self, seed_url: str, all_ids: list[int], timeout: int = 180
-    ) -> dict[int, list[list]]:
-        """1 ScrapingAnt request: load seed page, then call the page's own
-        `ChartApp.getStatData(ids)` from inside the browser. That function
-        knows the right Authorization prefix + Docref header that MacroMicro's
-        API accepts. Results land in App.data["s:<id>"]. Poll for them then
-        return.
-        """
-        ids_json = json.dumps(all_ids)
-        js = r"""
-const __out = {};
-try {
-  if (typeof window.$ !== "function" || typeof window.$.ajax !== "function") {
-    throw new Error("jQuery $.ajax not available");
-  }
-  const __token = (window.App && window.App.stk) || null;
-  if (!__token) throw new Error("App.stk not available");
-  __out.tokenLen = __token.length;
-  __out.tokenPrefix = __token.slice(0, 12);
-  const __ids = __IDS_JSON__;
-  // Try /charts/data/ instead of /stats/data/ (different endpoint, possibly
-  // different rate limit). ChartApp.getChartData uses fetch with this URL.
-  const __r = await fetch("/charts/data/" + __ids.join(","), {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": "***" + __token,
-      "Docref": document.referrer
-    },
-    credentials: "include"
-  });
-  __out.status = __r.status;
-  const __text = await __r.text();
-  let __payload;
-  try { __payload = JSON.parse(__text); }
-  catch { __out.parseError = "non-JSON: " + __text.slice(0, 200); }
-  __out.success = __payload && __payload.success;
-  if (__payload && __payload.success === 1 && __payload.data) {
-    __out.series = {};
-    for (const __id of __ids) {
-      const __entry = __payload.data["s:" + __id];
-      if (__entry && __entry.series && Array.isArray(__entry.series[0])) {
-        __out.series[__id] = __entry.series[0];
-      }
-    }
-    __out.seriesCount = Object.keys(__out.series).length;
-  } else {
-    __out.payloadPreview = JSON.stringify(__payload).slice(0, 300);
-  }
-} catch (__e) {
-  __out.fatal = String(__e);
-  __out.stack = (__e && __e.stack) || null;
-}
-const __tag = document.createElement("pre");
-__tag.id = "ant-result";
-__tag.textContent = btoa(unescape(encodeURIComponent(JSON.stringify(__out))));
-document.body.appendChild(__tag);
-""".replace("__IDS_JSON__", ids_json)
-        js_b64 = base64.b64encode(js.encode("utf-8")).decode("ascii")
-        q = {
-            "url": seed_url,
-            "x-api-key": self._key,
-            "proxy_type": "datacenter",
-            "browser": "true",
-            "js_snippet": js_b64,
-            "wait_for_selector": "#ant-result",
-        }
-        req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
-        last_status, last_body = 0, b""
-        for attempt in range(1, self.MAX_ATTEMPTS + 1):
-            try:
-                with urllib.request.urlopen(req, timeout=timeout) as r:
-                    last_status, last_body = r.status, r.read()
-            except urllib.error.HTTPError as e:
-                last_status, last_body = e.code, e.read()
-            if last_status < 400:
-                break
-            if attempt < self.MAX_ATTEMPTS:
-                backoff = 15 if last_status == 409 else self.RETRY_BACKOFF_SEC
-                time.sleep(backoff)
-        if last_status >= 400:
-            raise RuntimeError(f"HTTP {last_status}: {last_body[:200].decode('utf-8', 'ignore')}")
-        text = last_body.decode("utf-8", "ignore")
-        m = re.search(r'<pre id="ant-result">([^<]*)</pre>', text)
-        if not m:
-            raise RuntimeError("ant-result missing in fetch_via_page_internals")
-        decoded = base64.b64decode(m.group(1)).decode("utf-8")
-        out = json.loads(decoded)
-        if "fatal" in out:
-            raise RuntimeError(f"in-page invocation fatal: {out['fatal']}")
-        print(
-            f"[diag] page-internals tokenLen={out.get('tokenLen')} "
-            f"tokenPrefix={out.get('tokenPrefix')} "
-            f"status={out.get('status')} "
-            f"success={out.get('success')} "
-            f"seriesCount={out.get('seriesCount')} "
-            f"parseError={out.get('parseError')} "
-            f"payloadPreview={out.get('payloadPreview')}",
-            file=sys.stderr,
-        )
-        return {int(k): v for k, v in (out.get("series") or {}).items()}
-
-    def probe_ssr_data(self, seed_url: str, timeout: int = 180) -> dict:
-        """One-shot probe: dump page's internal data-fetching method source code
-        and try invoking them. Single ScrapingAnt request (~125 credits)."""
-        js = r"""
-const __out = {};
-try {
-  // Dump source code of the candidate methods
-  __out.fnSrc = {};
-  const __toProbe = [
-    ["App.getChartData", () => window.App && window.App.getChartData],
-    ["App.getStatData", () => window.App && window.App.getStatData],
-    ["ChartApp.getStatData", () => window.ChartApp && window.ChartApp.getStatData],
-    ["ChartApp.getChartData", () => window.ChartApp && window.ChartApp.getChartData],
-    ["ChartApp.preloadStats", () => window.ChartApp && window.ChartApp.preloadStats],
-    ["ChartApp.preloadCharts", () => window.ChartApp && window.ChartApp.preloadCharts],
-    ["ChartApp.drawStat", () => window.ChartApp && window.ChartApp.drawStat],
-  ];
-  for (const [__name, __getter] of __toProbe) {
-    try {
-      const __fn = __getter();
-      if (typeof __fn === "function") {
-        __out.fnSrc[__name] = __fn.toString().slice(0, 1500);
-      } else {
-        __out.fnSrc[__name] = "not-a-function (type=" + typeof __fn + ")";
-      }
-    } catch (__e) {
-      __out.fnSrc[__name] = "error: " + String(__e);
-    }
-  }
-  // Try invoking ChartApp.getStatData(20052) — this is what the page's own
-  // chart code presumably calls to get the same data we want.
-  __out.invocations = {};
-  if (window.ChartApp && typeof window.ChartApp.getStatData === "function") {
-    try {
-      const __r = window.ChartApp.getStatData(20052);
-      __out.invocations["ChartApp.getStatData(20052)"] = {
-        type: typeof __r,
-        isPromise: __r && typeof __r.then === "function",
-        ctor: __r && __r.constructor && __r.constructor.name,
-      };
-      if (__r && typeof __r.then === "function") {
-        try {
-          const __resolved = await Promise.race([
-            __r,
-            new Promise((_, __rej) => setTimeout(() => __rej(new Error("timeout-15s")), 15000)),
-          ]);
-          __out.invocations["ChartApp.getStatData(20052)"].resolved = {
-            type: typeof __resolved,
-            isArray: Array.isArray(__resolved),
-            keys: __resolved && typeof __resolved === "object" ? Object.keys(__resolved).slice(0, 10) : null,
-            preview: JSON.stringify(__resolved).slice(0, 500),
-          };
-        } catch (__e) {
-          __out.invocations["ChartApp.getStatData(20052)"].rejection = String(__e);
-        }
-      }
-    } catch (__e) {
-      __out.invocations["ChartApp.getStatData(20052)"] = "throw: " + String(__e);
-    }
-  }
-  // Try ChartApp.preloadStats with all 14 IDs
-  if (window.ChartApp && typeof window.ChartApp.preloadStats === "function") {
-    try {
-      const __r2 = window.ChartApp.preloadStats([20052, 20517, 20518, 20519, 20520, 20521, 20522, 20523, 20524, 20525, 20526, 20527, 2, 46974]);
-      __out.invocations["ChartApp.preloadStats(14ids)"] = {
-        type: typeof __r2,
-        isPromise: __r2 && typeof __r2.then === "function",
-      };
-      if (__r2 && typeof __r2.then === "function") {
-        try {
-          const __resolved2 = await Promise.race([
-            __r2,
-            new Promise((_, __rej) => setTimeout(() => __rej(new Error("timeout-20s")), 20000)),
-          ]);
-          __out.invocations["ChartApp.preloadStats(14ids)"].resolved = {
-            type: typeof __resolved2,
-            isArray: Array.isArray(__resolved2),
-            keys: __resolved2 && typeof __resolved2 === "object" ? Object.keys(__resolved2).slice(0, 20) : null,
-            preview: JSON.stringify(__resolved2).slice(0, 500),
-          };
-        } catch (__e) {
-          __out.invocations["ChartApp.preloadStats(14ids)"].rejection = String(__e);
-        }
-      }
-    } catch (__e) {
-      __out.invocations["ChartApp.preloadStats(14ids)"] = "throw: " + String(__e);
-    }
-  }
-} catch (__e) {
-  __out.fatal = String(__e);
-  __out.stack = (__e && __e.stack) || null;
-}
-const __tag = document.createElement("pre");
-__tag.id = "ant-result";
-__tag.textContent = btoa(unescape(encodeURIComponent(JSON.stringify(__out))));
-document.body.appendChild(__tag);
-"""
-        js_b64 = base64.b64encode(js.encode("utf-8")).decode("ascii")
-        q = {
-            "url": seed_url,
-            "x-api-key": self._key,
-            "proxy_type": "datacenter",
-            "browser": "true",
-            "js_snippet": js_b64,
-            "wait_for_selector": "#ant-result",
-        }
-        req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
-        last_status, last_body = 0, b""
-        for attempt in range(1, self.MAX_ATTEMPTS + 1):
-            try:
-                with urllib.request.urlopen(req, timeout=timeout) as r:
-                    last_status, last_body = r.status, r.read()
-            except urllib.error.HTTPError as e:
-                last_status, last_body = e.code, e.read()
-            if last_status < 400:
-                break
-            if attempt < self.MAX_ATTEMPTS:
-                backoff = 15 if last_status == 409 else self.RETRY_BACKOFF_SEC
-                time.sleep(backoff)
-        if last_status >= 400:
-            raise RuntimeError(f"HTTP {last_status}: {last_body[:200].decode('utf-8', 'ignore')}")
-        text = last_body.decode("utf-8", "ignore")
-        m = re.search(r'<pre id="ant-result">([^<]*)</pre>', text)
-        if not m:
-            raise RuntimeError("ant-result missing in probe_ssr_data")
-        decoded = base64.b64decode(m.group(1)).decode("utf-8")
-        return json.loads(decoded)
-
-    def fetch_all_series_in_one_page(
-        self, seed_url: str, all_ids: list[int], timeout: int = 180
-    ) -> dict[int, list[list]]:
-        """[disabled — see probe_ssr_data]"""
-        ids_json = json.dumps(all_ids)
-        js = r"""
-const __out = {};
-const __series = {};
-const __errors = {};
-try {
-  const __html = document.documentElement.outerHTML;
-  const __m = __html.match(/stk["\s]*[:=]["\s]*["']([^"']+)["']/);
-  if (!__m) throw new Error("token 'stk' not found in DOM");
-  const __token = __m[1];
-  __out.tokenPrefix = __token.slice(0, 12);
-  const __ids = __IDS_JSON__;
-  const __fetchOne = async (__id) => {
-    try {
-      const __r = await fetch("/stats/data/" + __id, {
-        method: "GET",
-        headers: {
-          "Authorization": "Bearer " + __token,
-          "Accept": "application/json, text/plain, */*",
-          "X-Requested-With": "XMLHttpRequest"
-        },
-        credentials: "include"
-      });
-      const __text = await __r.text();
-      let __payload;
-      try { __payload = JSON.parse(__text); }
-      catch { __errors[__id] = "non-JSON " + __r.status + ": " + __text.slice(0, 80); return; }
-      if (__payload && __payload.success === 1) {
-        const __entry = __payload.data && __payload.data["s:" + __id];
-        const __pts = __entry && __entry.series && __entry.series[0];
-        if (Array.isArray(__pts)) __series[__id] = __pts;
-        else __errors[__id] = "no series[0] in payload";
-      } else {
-        __errors[__id] = "non-success: " + JSON.stringify(__payload).slice(0, 150);
-      }
-    } catch (__e) {
-      __errors[__id] = "exception: " + String(__e);
-    }
-  };
-  await Promise.all(__ids.map(__fetchOne));
-  __out.series = __series;
-  __out.errors = __errors;
-  __out.successCount = Object.keys(__series).length;
-  __out.errorCount = Object.keys(__errors).length;
-} catch (__e) {
-  __out.fatal = String(__e);
-  __out.stack = (__e && __e.stack) || null;
-}
-const __tag = document.createElement("pre");
-__tag.id = "ant-result";
-__tag.textContent = btoa(unescape(encodeURIComponent(JSON.stringify(__out))));
-document.body.appendChild(__tag);
-""".replace("__IDS_JSON__", ids_json)
-        js_b64 = base64.b64encode(js.encode("utf-8")).decode("ascii")
-
-        q = {
-            "url": seed_url,
-            "x-api-key": self._key,
-            "proxy_type": "datacenter",
-            "browser": "true",
-            "js_snippet": js_b64,
-            "wait_for_selector": "#ant-result",
-        }
-        req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
-
-        last_status, last_body = 0, b""
-        for attempt in range(1, self.MAX_ATTEMPTS + 1):
-            try:
-                with urllib.request.urlopen(req, timeout=timeout) as r:
-                    last_status, last_body = r.status, r.read()
-            except urllib.error.HTTPError as e:
-                last_status, last_body = e.code, e.read()
-            if last_status < 400:
-                break
-            if attempt < self.MAX_ATTEMPTS:
-                backoff = 15 if last_status == 409 else self.RETRY_BACKOFF_SEC
-                print(
-                    f"[retry] in-one-page ScrapingAnt {last_status} attempt {attempt}, "
-                    f"backing off {backoff}s",
-                    file=sys.stderr,
-                )
-                time.sleep(backoff)
-        if last_status >= 400:
-            raise RuntimeError(
-                f"HTTP {last_status}: {last_body[:200].decode('utf-8', 'ignore')}"
-            )
-        text = last_body.decode("utf-8", "ignore")
-        m = re.search(r'<pre id="ant-result">([^<]*)</pre>', text)
-        if not m:
-            raise RuntimeError("ant-result tag missing for in-one-page fetch")
-        decoded = base64.b64decode(m.group(1)).decode("utf-8")
-        out = json.loads(decoded)
-        if "fatal" in out:
-            raise RuntimeError(f"in-page extraction fatal: {out['fatal']}")
-        print(
-            f"[diag] in-one-page tokenPrefix={out.get('tokenPrefix')} "
-            f"successCount={out.get('successCount')} "
-            f"errorCount={out.get('errorCount')}",
-            file=sys.stderr,
-        )
-        for sid, err in (out.get("errors") or {}).items():
-            print(f"[diag]   s:{sid} -> {err}", file=sys.stderr)
-        return {int(k): v for k, v in (out.get("series") or {}).items()}
-
-    def fetch_series_from_page(self, series_url: str, timeout: int = 120) -> list[list]:
-        """Load a MacroMicro series page in headless Chrome, then read the
-        chart data straight out of Highcharts' state — bypassing the
-        /stats/data/* API entirely. Returns a list of [epoch_ms, value] pairs.
-
-        Why: MacroMicro's API rejects our scraped fetches with 403 (level: 0)
-        even though the page itself loads fine and the chart renders. By the
-        time js_snippet runs, the page's own code has already populated
-        `Highcharts.charts[0].series[0].options.data` with the full series.
-        """
-        js = r"""
-const __out = {};
-try {
-  if (!window.Highcharts || !Array.isArray(window.Highcharts.charts) || !window.Highcharts.charts[0]) {
-    throw new Error("Highcharts.charts[0] not present");
-  }
-  const __c = window.Highcharts.charts[0];
-  const __s = __c.series && __c.series[0];
-  if (!__s) throw new Error("chart has no series[0]");
-  const __od = __s.options && __s.options.data;
-  if (!Array.isArray(__od)) throw new Error("series[0].options.data is not an array");
-  __out.name = __s.name;
-  __out.data = __od;
-  __out.location = location.href;
-} catch (__e) {
-  __out.error = String(__e);
-  __out.stack = (__e && __e.stack) || null;
-}
-const __tag = document.createElement("pre");
-__tag.id = "ant-result";
-__tag.textContent = btoa(unescape(encodeURIComponent(JSON.stringify(__out))));
-document.body.appendChild(__tag);
-"""
-        js_b64 = base64.b64encode(js.encode("utf-8")).decode("ascii")
-
-        q = {
-            "url": series_url,
-            "x-api-key": self._key,
-            "proxy_type": "datacenter",
-            "browser": "true",
-            "js_snippet": js_b64,
-            "wait_for_selector": "#ant-result",
-        }
-        req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
-
-        last_status, last_body = 0, b""
-        for attempt in range(1, self.MAX_ATTEMPTS + 1):
-            try:
-                with urllib.request.urlopen(req, timeout=timeout) as r:
-                    last_status, last_body = r.status, r.read()
-            except urllib.error.HTTPError as e:
-                last_status, last_body = e.code, e.read()
-            if last_status < 400:
-                break
-            if attempt < self.MAX_ATTEMPTS:
-                backoff = 15 if last_status == 409 else self.RETRY_BACKOFF_SEC
-                print(
-                    f"[retry] {series_url} ScrapingAnt {last_status} on attempt {attempt}, "
-                    f"backing off {backoff}s",
-                    file=sys.stderr,
-                )
-                time.sleep(backoff)
-
-        if last_status >= 400:
-            raise RuntimeError(
-                f"HTTP {last_status} for {series_url}: "
-                f"{last_body[:200].decode('utf-8', 'ignore')}"
-            )
-
-        text = last_body.decode("utf-8", "ignore")
-        m = re.search(r'<pre id="ant-result">([^<]*)</pre>', text)
-        if not m:
-            raise RuntimeError(f"ant-result tag missing for {series_url}")
-        decoded = base64.b64decode(m.group(1)).decode("utf-8")
-        out = json.loads(decoded)
-        if "error" in out:
-            raise RuntimeError(f"in-page extraction failed for {series_url}: {out['error']}")
-        return out["data"]
-
-    def fetch_macromicro_dataset(
-        self, seed_url: str, all_ids: list[int], timeout: int = 120
-    ) -> dict:
-        """Legacy entry point — kept for reference but not used by main().
-        See fetch_series_from_page() for the working flow.
-        """
-        ids = ",".join(str(i) for i in all_ids)
-        # ScrapingAnt wraps the snippet in `async function() { ... }` and awaits
-        # the result. Use top-level await directly — wrapping in our own async
-        # IIFE returns a Promise the wrapper doesn't await, so the snapshot
-        # would be taken before the fetch resolves.
-        js = r"""
-const __diag = {};
-try {
-  // Probe: enumerate top-level window keys (filter out browser builtins)
-  // and any variables that might hold chart series data.
-  const __builtins = new Set([
-    "self", "window", "document", "name", "location", "customElements", "history",
-    "locationbar", "menubar", "personalbar", "scrollbars", "statusbar", "toolbar",
-    "status", "closed", "frames", "length", "top", "opener", "parent", "frameElement",
-    "navigator", "origin", "external", "screen", "innerWidth", "innerHeight",
-    "scrollX", "pageXOffset", "scrollY", "pageYOffset", "visualViewport",
-    "screenX", "screenY", "outerWidth", "outerHeight", "devicePixelRatio",
-    "clientInformation", "screenLeft", "screenTop", "styleMedia", "onsearch",
-    "isSecureContext", "performance", "onappinstalled", "onbeforeinstallprompt",
-    "crypto", "indexedDB", "sessionStorage", "localStorage", "onbeforexrselect",
-    "onabort", "onbeforeinput", "onbeforematch", "onbeforetoggle", "onblur",
-    "oncancel", "oncanplay", "oncanplaythrough", "onchange", "onclick", "onclose",
-    "oncontentvisibilityautostatechange", "oncontextlost", "oncontextmenu",
-    "oncontextrestored", "oncuechange", "ondblclick", "ondrag", "ondragend",
-    "ondragenter", "ondragleave", "ondragover", "ondragstart", "ondrop",
-    "ondurationchange", "onemptied", "onended", "onerror", "onfocus", "onformdata",
-    "oninput", "oninvalid", "onkeydown", "onkeypress", "onkeyup", "onload",
-    "onloadeddata", "onloadedmetadata", "onloadstart", "onmousedown", "onmouseenter",
-    "onmouseleave", "onmousemove", "onmouseout", "onmouseover", "onmouseup",
-    "onmousewheel", "onpause", "onplay", "onplaying", "onprogress", "onratechange",
-    "onreset", "onresize", "onscroll", "onsecuritypolicyviolation", "onseeked",
-    "onseeking", "onselect", "onslotchange", "onstalled", "onsubmit", "onsuspend",
-    "ontimeupdate", "ontoggle", "onvolumechange", "onwaiting", "onwebkitanimationend",
-    "onwebkitanimationiteration", "onwebkitanimationstart", "onwebkittransitionend",
-    "onwheel", "onauxclick", "ongotpointercapture", "onlostpointercapture",
-    "onpointerdown", "onpointermove", "onpointerrawupdate", "onpointerup",
-    "onpointercancel", "onpointerover", "onpointerout", "onpointerenter",
-    "onpointerleave", "onselectstart", "onselectionchange", "onanimationend",
-    "onanimationiteration", "onanimationstart", "ontransitionrun", "ontransitionstart",
-    "ontransitionend", "ontransitioncancel", "onafterprint", "onbeforeprint",
-    "onbeforeunload", "onhashchange", "onlanguagechange", "onmessage", "onmessageerror",
-    "onoffline", "ononline", "onpagehide", "onpageshow", "onpopstate", "onrejectionhandled",
-    "onstorage", "onunhandledrejection", "onunload", "crossOriginIsolated",
-    "scheduler", "alert", "atob", "blur", "btoa", "cancelAnimationFrame",
-    "cancelIdleCallback", "captureEvents", "clearInterval", "clearTimeout", "close",
-    "confirm", "createImageBitmap", "fetch", "find", "focus", "getComputedStyle",
-    "getSelection", "matchMedia", "moveBy", "moveTo", "open", "postMessage", "print",
-    "prompt", "queueMicrotask", "releaseEvents", "reportError", "requestAnimationFrame",
-    "requestIdleCallback", "resizeBy", "resizeTo", "scroll", "scrollBy", "scrollTo",
-    "setInterval", "setTimeout", "stop", "structuredClone", "webkitCancelAnimationFrame",
-    "webkitRequestAnimationFrame", "chrome", "AbortController", "TextEncoder",
-    "TextDecoder", "fetchLater", "trustedTypes", "speechSynthesis", "onpageswap",
-    "onpagereveal", "onscrollend", "onscrollsnapchange", "onscrollsnapchanging",
-    "documentPictureInPicture", "onbeforematch", "credentialless", "$", "jQuery"
-  ]);
-  const __pageKeys = Object.keys(window).filter(k => !__builtins.has(k));
-  __diag.location = location.href;
-  __diag.tokenLen = (document.documentElement.outerHTML.match(/stk["\s]*[:=]["\s]*["']([^"']+)["']/) || [])[1]?.length;
-  __diag.pageKeys = __pageKeys.slice(0, 80);
-  // Look for likely chart/data globals: any object with a "data" key holding arrays,
-  // or any value that's an array of [date, number] tuples, or Highcharts/Chart instances.
-  const __candidates = {};
-  for (const k of __pageKeys) {
-    try {
-      const v = window[k];
-      const t = typeof v;
-      if (t === "object" && v !== null) {
-        __candidates[k] = {
-          ctor: v.constructor && v.constructor.name,
-          keys: Object.keys(v).slice(0, 12),
-        };
-      } else if (t !== "function") {
-        __candidates[k] = {type: t, preview: String(v).slice(0, 60)};
-      }
-    } catch (__e) { /* ignore */ }
-  }
-  __diag.candidates = __candidates;
-  // Probe Highcharts series 0 in detail
-  if (window.Highcharts && Array.isArray(window.Highcharts.charts) && window.Highcharts.charts[0]) {
-    const __c = window.Highcharts.charts[0];
-    const __s = __c.series && __c.series[0];
-    if (__s) {
-      __diag.firstSeriesName = __s.name;
-      __diag.firstSeriesXDataLen = (__s.xData || []).length;
-      __diag.firstSeriesYDataLen = (__s.yData || []).length;
-      __diag.firstSeriesXDataSample = (__s.xData || []).slice(0, 3);
-      __diag.firstSeriesYDataSample = (__s.yData || []).slice(0, 3);
-      __diag.firstSeriesXDataLast = (__s.xData || []).slice(-3);
-      __diag.firstSeriesYDataLast = (__s.yData || []).slice(-3);
-      // Original options.data: this is what MacroMicro originally pushed in
-      const __od = __s.options && __s.options.data;
-      __diag.firstSeriesOptionsDataLen = Array.isArray(__od) ? __od.length : "not-array";
-      __diag.firstSeriesOptionsDataSample = Array.isArray(__od) ? __od.slice(0, 3) : null;
-      __diag.firstSeriesOptionsDataLast = Array.isArray(__od) ? __od.slice(-3) : null;
-    }
-  }
-} catch (__e) {
-  __diag.error = String(__e);
-  __diag.stack = (__e && __e.stack) || null;
-}
-const __tag = document.createElement("pre");
-__tag.id = "ant-result";
-__tag.textContent = btoa(unescape(encodeURIComponent(JSON.stringify(__diag))));
-document.body.appendChild(__tag);
-""".replace("__IDS__", ids)
-        js_b64 = base64.b64encode(js.encode("utf-8")).decode("ascii")
-
-        q = {
-            "url": seed_url,
-            "x-api-key": self._key,
-            "proxy_type": "datacenter",
-            "browser": "true",
-            "js_snippet": js_b64,
-            "wait_for_selector": "#ant-result",
-        }
-        req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
-
-        last_status, last_body, last_hdrs = 0, b"", None
-        for attempt in range(1, self.MAX_ATTEMPTS + 1):
-            try:
-                with urllib.request.urlopen(req, timeout=timeout) as r:
-                    last_status, last_body, last_hdrs = r.status, r.read(), r.headers
-            except urllib.error.HTTPError as e:
-                last_status, last_body, last_hdrs = e.code, e.read(), e.headers
-            if last_status < 400:
-                break
-            if attempt < self.MAX_ATTEMPTS:
-                print(
-                    f"[retry] ScrapingAnt {last_status} on attempt {attempt}, "
-                    f"backing off {self.RETRY_BACKOFF_SEC}s",
-                    file=sys.stderr,
-                )
-                time.sleep(self.RETRY_BACKOFF_SEC)
 
         if last_hdrs is not None:
-            seed_set_cookie = last_hdrs.get("Ant-Original-Header-Set-Cookie", "")
-            print(f"[diag] seed-page Set-Cookie: {seed_set_cookie!r}", file=sys.stderr)
+            from http.cookies import SimpleCookie
+            set_cookie = last_hdrs.get("Ant-Original-Header-Set-Cookie", "")
+            if set_cookie:
+                try:
+                    jar = SimpleCookie()
+                    jar.load(set_cookie)
+                    for name, morsel in jar.items():
+                        self._cookies[name] = morsel.value
+                except Exception:
+                    pass
 
-        if last_status >= 400:
-            raise RuntimeError(
-                f"HTTP {last_status}: {last_body[:200].decode('utf-8', 'ignore')}"
-            )
-
-        text = last_body.decode("utf-8", "ignore")
-        m = re.search(r'<pre id="ant-result">([^<]*)</pre>', text)
-        if not m:
-            anywhere = "ant-result" in text
-            print(
-                f"[debug] response len={len(text)} ant-result-substring-present={anywhere}",
-                file=sys.stderr,
-            )
-            print(f"[debug] last 800 chars:\n{text[-800:]!r}", file=sys.stderr)
-            raise RuntimeError(
-                f"ant-result tag not found (substring present={anywhere}); "
-                f"first 200: {text[:200]!r}"
-            )
-        try:
-            decoded = base64.b64decode(m.group(1)).decode("utf-8")
-        except Exception as e:
-            raise RuntimeError(
-                f"failed to b64-decode ant-result: {e}; raw: {m.group(1)[:200]!r}"
-            )
-        diag = json.loads(decoded)
-        print(f"[diag] {json.dumps(diag, indent=2)}", file=sys.stderr)
-        # PROBE MODE: not extracting real data yet. Force-fail so the workflow
-        # logs the dump and we can read what page state looks like.
-        raise RuntimeError("probe-only run — see [diag] above")
+        return _ScrapingAntResponse(last_status, last_body)
 
 
 def _make_session():
@@ -842,76 +183,97 @@ def _backend_name() -> str:
     return "curl_cffi" if _USE_CFFI else "cloudscraper"
 
 
-def get_token(scraper) -> str:
-    r = scraper.get(SEED_URL, timeout=30)
-    r.raise_for_status()
-    m = TOKEN_RE.search(r.text)
+def fetch_chart(scraper, chart_id: int, slug: str) -> dict:
+    """Two-step pull for one MacroMicro chart:
+       1. GET the chart page (sets PHPSESSID, embeds the stk token in HTML)
+       2. GET /charts/data/<id> with Authorization: Bearer <stk>
+    Returns the parsed JSON payload (`{"data": {"c:<id>": {...}}, ...}`).
+    """
+    page_url = f"{BASE}/charts/{chart_id}/{slug}"
+    r1 = scraper.get(page_url, timeout=60)
+    r1.raise_for_status()
+    m = TOKEN_RE.search(r1.text)
     if not m:
-        raise RuntimeError("token 'stk' not found in seed page HTML")
-    return m.group(1)
+        raise RuntimeError(f"stk token not found on /charts/{chart_id}/{slug}")
+    token = m.group(1)
 
-
-def fetch_data(scraper, token: str) -> dict:
-    all_ids = list(SERIES) + list(EXTRA_SERIES)
-    ids = ",".join(str(i) for i in all_ids)
-    url = f"{BASE}/stats/data/{ids}"
     headers = {
         "Authorization": f"Bearer {token}",
-        "Referer": SEED_URL,
+        "Referer": page_url,
         "Accept": "application/json, text/plain, */*",
         "X-Requested-With": "XMLHttpRequest",
     }
-    r = scraper.get(url, headers=headers, timeout=60)
-    r.raise_for_status()
-    payload = r.json()
+    r2 = scraper.get(f"{BASE}/charts/data/{chart_id}", headers=headers, timeout=60)
+    r2.raise_for_status()
+    payload = r2.json()
     if payload.get("success") != 1:
-        raise RuntimeError(f"API returned non-success: {payload!r}")
-    return payload["data"]
+        raise RuntimeError(f"chart {chart_id} returned non-success: {payload!r}")
+    return payload
 
 
-def write_csvs(data: dict, out_dir: Path) -> dict[int, int]:
+def collect_series(scraper) -> dict[int, list[list]]:
+    """Walk CHART_SOURCES, fetch each chart once, distribute the series array
+    into our flat `{series_id: [[date_str, value], ...]}` map."""
+    out: dict[int, list[list]] = {}
+    for chart_id, slug, mapping in CHART_SOURCES:
+        print(f"[1/2] fetching chart {chart_id} ({slug}) — {len(mapping)} series ...")
+        payload = fetch_chart(scraper, chart_id, slug)
+        chart_entry = payload["data"][f"c:{chart_id}"]
+        chart_series = chart_entry["series"]
+        for series_idx, our_id in mapping:
+            if series_idx >= len(chart_series):
+                print(f"    [warn] chart {chart_id} series[{series_idx}] missing", file=sys.stderr)
+                continue
+            pts = chart_series[series_idx]
+            if not isinstance(pts, list):
+                print(f"    [warn] chart {chart_id} series[{series_idx}] not a list", file=sys.stderr)
+                continue
+            out[our_id] = pts
+            print(f"      s:{our_id:<6} {len(pts):>5} points")
+    return out
+
+
+def write_csvs(series_map: dict[int, list[list]], out_dir: Path) -> dict[int, int]:
     out_dir.mkdir(parents=True, exist_ok=True)
     counts: dict[int, int] = {}
     for sid, name in SERIES.items():
-        entry = data.get(f"s:{sid}")
-        if not entry:
+        pts = series_map.get(sid)
+        if not pts:
             print(f"[warn] missing s:{sid} ({name})", file=sys.stderr)
             continue
-        points = entry["series"][0]
         slug = name.lower().replace("&", "and").replace(" ", "_")
         path = out_dir / f"{sid}_{slug}.csv"
         with path.open("w", newline="") as f:
             w = csv.writer(f)
             w.writerow(["date", "forward_pe"])
-            w.writerows(points)
-        counts[sid] = len(points)
+            w.writerows(pts)
+        counts[sid] = len(pts)
     return counts
 
 
-def write_extras(data: dict, out_dir: Path) -> dict[int, int]:
+def write_extras(series_map: dict[int, list[list]], out_dir: Path) -> dict[int, int]:
     counts: dict[int, int] = {}
     for sid, (stem, col) in EXTRA_SERIES.items():
-        entry = data.get(f"s:{sid}")
-        if not entry:
-            print(f"[warn] missing s:{sid} ({stem})", file=sys.stderr)
+        pts = series_map.get(sid)
+        if not pts:
+            print(f"[warn] missing s:{sid} ({stem}) — keeping prior CSV", file=sys.stderr)
             continue
-        points = entry["series"][0]
         path = out_dir / f"{stem}.csv"
         with path.open("w", newline="") as f:
             w = csv.writer(f)
             w.writerow(["date", col])
-            w.writerows(points)
-        counts[sid] = len(points)
+            w.writerows(pts)
+        counts[sid] = len(pts)
     return counts
 
 
-def write_combined(data: dict, out_path: Path) -> None:
+def write_combined(series_map: dict[int, list[list]], out_path: Path) -> None:
     by_date: dict[str, dict[int, float]] = {}
     for sid in SERIES:
-        entry = data.get(f"s:{sid}")
-        if not entry:
+        pts = series_map.get(sid)
+        if not pts:
             continue
-        for date, value in entry["series"][0]:
+        for date, value in pts:
             by_date.setdefault(date, {})[sid] = value
     with out_path.open("w", newline="") as f:
         w = csv.writer(f)
@@ -921,50 +283,20 @@ def write_combined(data: dict, out_path: Path) -> None:
             w.writerow([date] + [row.get(i, "") for i in SERIES])
 
 
-def _epoch_ms_to_date(ms: int) -> str:
-    import datetime
-    return datetime.datetime.fromtimestamp(ms / 1000, tz=datetime.timezone.utc).strftime("%Y-%m-%d")
-
-
-def _series_data_to_macromicro_format(epoch_data: list[list]) -> dict:
-    """Convert [[epoch_ms, value], ...] to {"series": [[[date_str, value], ...]]}."""
-    points = [[_epoch_ms_to_date(int(ts)), v] for ts, v in epoch_data]
-    return {"series": [points]}
-
-
 def main() -> None:
     out_dir = Path(__file__).parent / "data"
     scraper = _make_session()
-    backend = _backend_name()
-    n_total = len(SERIES) + len(EXTRA_SERIES)
-    if isinstance(scraper, _ScrapingAntSession):
-        all_ids = list(SERIES) + list(EXTRA_SERIES)
-        targets = [(sid, SERIES_SLUGS.get(sid)) for sid in all_ids]
-        skipped = [sid for sid, slug in targets if slug is None]
-        fetchable = [(sid, slug) for sid, slug in targets if slug is not None]
+    print(f"backend: {_backend_name()}")
+    series_map = collect_series(scraper)
 
-        print(f"[1/2] fetching {len(fetchable)} series via per-page extraction "
-              f"(skipping {len(skipped)} unknown URLs: {skipped}) ...")
-        data: dict = {}
-        for sid, slug in fetchable:
-            url = f"{BASE}/series/{sid}/{slug}"
-            try:
-                epoch_data = scraper.fetch_series_from_page(url)
-                data[f"s:{sid}"] = _series_data_to_macromicro_format(epoch_data)
-                print(f"      s:{sid:<6} {len(epoch_data):>5} points")
-            except Exception as e:
-                print(f"      s:{sid:<6} FAILED: {e}", file=sys.stderr)
-    else:
-        print(f"[1/3] resolving token (backend={backend}) ...")
-        token = get_token(scraper)
-        print(f"      token: {token[:12]}... ({len(token)} chars)")
-        print(f"[2/3] fetching {n_total} series in one call ...")
-        data = fetch_data(scraper, token)
-    print("[3/3] writing CSVs ...")
-    counts = write_csvs(data, out_dir)
-    extra_counts = write_extras(data, out_dir)
-    write_combined(data, out_dir / "combined.csv")
-    (out_dir / "raw.json").write_text(json.dumps(data, indent=2))
+    print("[2/2] writing CSVs ...")
+    counts = write_csvs(series_map, out_dir)
+    extra_counts = write_extras(series_map, out_dir)
+    write_combined(series_map, out_dir / "combined.csv")
+
+    raw_path = out_dir / "raw.json"
+    raw_path.write_text(json.dumps({str(k): v for k, v in series_map.items()}, indent=2))
+
     for sid, name in SERIES.items():
         print(f"  {sid} {name:<24} {counts.get(sid, 0):>5} points")
     for sid, (stem, _) in EXTRA_SERIES.items():

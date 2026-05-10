@@ -3,3 +3,5 @@ __pycache__/
 .playwright-mcp/
 *.png
 data/raw.json
+.env
+.env.*
