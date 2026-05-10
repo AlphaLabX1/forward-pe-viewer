@@ -225,34 +225,41 @@ document.body.appendChild(__tag);
         js = r"""
 const __out = {};
 try {
-  if (!window.ChartApp || typeof window.ChartApp.getStatData !== "function") {
-    throw new Error("ChartApp.getStatData not available");
-  }
-  if (!window.App) window.App = {};
-  if (!window.App.data) window.App.data = {};
+  const __token = (window.App && window.App.stk) || null;
+  if (!__token) throw new Error("App.stk not available");
+  __out.tokenLen = __token.length;
+  __out.tokenPrefix = __token.slice(0, 12);
   const __ids = __IDS_JSON__;
-  const __wantedKeys = __ids.map(__id => "s:" + __id);
-  // Trigger the page's own fetch
-  window.ChartApp.getStatData(__ids);
-  // Poll App.data for up to 12s for all keys to appear
-  const __deadline = Date.now() + 12000;
-  while (Date.now() < __deadline) {
-    const __have = __wantedKeys.filter(__k => __k in window.App.data);
-    if (__have.length === __wantedKeys.length) break;
-    await new Promise(r => setTimeout(r, 250));
-  }
-  __out.have = __wantedKeys.filter(__k => __k in window.App.data);
-  __out.missing = __wantedKeys.filter(__k => !(__k in window.App.data));
-  __out.series = {};
-  for (const __id of __ids) {
-    const __key = "s:" + __id;
-    const __entry = window.App.data[__key];
-    if (__entry && __entry.series && Array.isArray(__entry.series[0])) {
-      __out.series[__id] = __entry.series[0];
+  const __r = await fetch("/stats/data/" + __ids.join(","), {
+    method: "GET",
+    headers: {
+      "Authorization": "***" + __token,
+      "Docref": document.referrer,
+      "Accept": "application/json, text/plain, */*",
+      "X-Requested-With": "XMLHttpRequest"
+    },
+    credentials: "include"
+  });
+  __out.status = __r.status;
+  const __text = await __r.text();
+  let __payload;
+  try { __payload = JSON.parse(__text); }
+  catch { __out.parseError = "non-JSON: " + __text.slice(0, 200); }
+  if (__payload) {
+    __out.success = __payload.success;
+    if (__payload.success === 1 && __payload.data) {
+      __out.series = {};
+      for (const __id of __ids) {
+        const __entry = __payload.data["s:" + __id];
+        if (__entry && __entry.series && Array.isArray(__entry.series[0])) {
+          __out.series[__id] = __entry.series[0];
+        }
+      }
+      __out.seriesCount = Object.keys(__out.series).length;
+    } else {
+      __out.payloadPreview = JSON.stringify(__payload).slice(0, 300);
     }
   }
-  __out.appStkLen = (window.App.stk || "").length;
-  __out.appStkPrefix = (window.App.stk || "").slice(0, 12);
 } catch (__e) {
   __out.fatal = String(__e);
   __out.stack = (__e && __e.stack) || null;
@@ -295,8 +302,13 @@ document.body.appendChild(__tag);
         if "fatal" in out:
             raise RuntimeError(f"in-page invocation fatal: {out['fatal']}")
         print(
-            f"[diag] page-internals appStkLen={out.get('appStkLen')} "
-            f"have={len(out.get('have', []))} missing={out.get('missing', [])}",
+            f"[diag] page-internals tokenLen={out.get('tokenLen')} "
+            f"tokenPrefix={out.get('tokenPrefix')} "
+            f"status={out.get('status')} "
+            f"success={out.get('success')} "
+            f"seriesCount={out.get('seriesCount')} "
+            f"parseError={out.get('parseError')} "
+            f"payloadPreview={out.get('payloadPreview')}",
             file=sys.stderr,
         )
         return {int(k): v for k, v in (out.get("series") or {}).items()}
