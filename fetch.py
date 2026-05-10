@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -82,6 +83,12 @@ class _ScrapingAntSession:
         self._key = api_key
         self._cookies: dict[str, str] = {}
 
+    # ScrapingAnt rotates residential IPs per request; some are pre-flagged
+    # by Cloudflare. Their docs explicitly recommend retry on 423 detection.
+    # Failed requests are not billed, so retries are free.
+    MAX_ATTEMPTS = 4
+    RETRY_BACKOFF_SEC = 3
+
     def get(self, url: str, headers: dict | None = None, timeout: int = 60):
         h = dict(headers or {})
         q = {
@@ -98,13 +105,24 @@ class _ScrapingAntSession:
         for k, v in h.items():
             req.add_header(f"Ant-{k}", v)
 
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                status, raw, resp_hdrs = r.status, r.read(), r.headers
-        except urllib.error.HTTPError as e:
-            status, raw, resp_hdrs = e.code, e.read(), e.headers
+        last_status, last_body, last_hdrs = 0, b"", None
+        for attempt in range(1, self.MAX_ATTEMPTS + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as r:
+                    last_status, last_body, last_hdrs = r.status, r.read(), r.headers
+            except urllib.error.HTTPError as e:
+                last_status, last_body, last_hdrs = e.code, e.read(), e.headers
+            if last_status < 400:
+                break
+            if attempt < self.MAX_ATTEMPTS:
+                print(
+                    f"[retry] ScrapingAnt {last_status} on attempt {attempt}, "
+                    f"backing off {self.RETRY_BACKOFF_SEC}s",
+                    file=sys.stderr,
+                )
+                time.sleep(self.RETRY_BACKOFF_SEC)
 
-        set_cookie = resp_hdrs.get("Ant-Original-Header-Set-Cookie", "")
+        set_cookie = (last_hdrs.get("Ant-Original-Header-Set-Cookie", "") if last_hdrs else "")
         if set_cookie:
             try:
                 jar = SimpleCookie()
@@ -114,7 +132,7 @@ class _ScrapingAntSession:
             except Exception:
                 pass
 
-        return _ScrapingAntResponse(status, raw)
+        return _ScrapingAntResponse(last_status, last_body)
 
 
 def _make_session():
