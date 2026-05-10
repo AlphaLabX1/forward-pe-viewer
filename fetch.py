@@ -148,33 +148,13 @@ class _ScrapingAntSession:
         cookies, real Referer chain, and real navigator fingerprint.
         """
         ids = ",".join(str(i) for i in all_ids)
+        # MINIMAL SYNC TEST: prove js_snippet executes at all before adding async logic.
         js = r"""
-(async () => {
-  let body;
-  try {
-    const html = document.documentElement.outerHTML;
-    const m = html.match(/stk["\s]*[:=]["\s]*["']([^"']+)["']/);
-    if (!m) throw new Error("token 'stk' not found");
-    const token = m[1];
-    const r = await fetch("/stats/data/__IDS__", {
-      method: "GET",
-      headers: {
-        "Authorization": "Bearer " + token,
-        "Accept": "application/json, text/plain, */*",
-        "X-Requested-With": "XMLHttpRequest"
-      },
-      credentials: "include"
-    });
-    body = await r.text();
-  } catch (e) {
-    body = JSON.stringify({error: String(e)});
-  }
-  const tag = document.createElement("pre");
-  tag.id = "ant-result";
-  tag.textContent = btoa(unescape(encodeURIComponent(body)));
-  document.body.appendChild(tag);
-})();
-""".replace("__IDS__", ids)
+var __ant = document.createElement("pre");
+__ant.id = "ant-result";
+__ant.textContent = "c3luY190ZXN0X29r";
+document.body.appendChild(__ant);
+"""
         js_b64 = base64.b64encode(js.encode("utf-8")).decode("ascii")
 
         q = {
