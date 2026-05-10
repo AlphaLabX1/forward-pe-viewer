@@ -51,6 +51,27 @@ SEED_SERIES_ID = 20052
 SEED_URL = f"{BASE}/series/{SEED_SERIES_ID}/sp500-forward-pe-ratio"
 TOKEN_RE = re.compile(r'stk["\s]*[:=]["\s]*["\']([^"\']+)["\']')
 
+# Known/guessed slugs for each series page on MacroMicro.
+# Pattern for the 11 sectors: sp500-{kebab-sector-name}-forward-pe-ratio.
+# id=2 (SPX price) and id=46974 (F&G) live on different URL patterns and
+# stay None for now — their CSVs continue from the prior refresh.
+SERIES_SLUGS: dict[int, str | None] = {
+    20052: "sp500-forward-pe-ratio",
+    20517: "sp500-information-technology-forward-pe-ratio",
+    20518: "sp500-communication-services-forward-pe-ratio",
+    20519: "sp500-consumer-discretionary-forward-pe-ratio",
+    20520: "sp500-financials-forward-pe-ratio",
+    20521: "sp500-industrials-forward-pe-ratio",
+    20522: "sp500-utilities-forward-pe-ratio",
+    20523: "sp500-energy-forward-pe-ratio",
+    20524: "sp500-real-estate-forward-pe-ratio",
+    20525: "sp500-materials-forward-pe-ratio",
+    20526: "sp500-consumer-staples-forward-pe-ratio",
+    20527: "sp500-health-care-forward-pe-ratio",
+    2: None,
+    46974: None,
+}
+
 
 class _ScrapingAntResponse:
     def __init__(self, status: int, body: bytes):
@@ -918,22 +939,15 @@ def main() -> None:
     n_total = len(SERIES) + len(EXTRA_SERIES)
     if isinstance(scraper, _ScrapingAntSession):
         all_ids = list(SERIES) + list(EXTRA_SERIES)
-        print(f"[1/3] discovering series URLs from seed page ...")
-        try:
-            url_map = scraper.discover_series_links(SEED_URL)
-            print(f"      discovered {len(url_map)} URLs")
-        except Exception as e:
-            print(f"      discover failed: {e} — falling back to seed only", file=sys.stderr)
-            url_map = {}
-        url_map[SEED_SERIES_ID] = SEED_URL
+        targets = [(sid, SERIES_SLUGS.get(sid)) for sid in all_ids]
+        skipped = [sid for sid, slug in targets if slug is None]
+        fetchable = [(sid, slug) for sid, slug in targets if slug is not None]
 
-        print(f"[2/3] fetching {len(all_ids)} series, one page each ...")
+        print(f"[1/2] fetching {len(fetchable)} series via per-page extraction "
+              f"(skipping {len(skipped)} unknown URLs: {skipped}) ...")
         data: dict = {}
-        for sid in all_ids:
-            url = url_map.get(sid)
-            if not url:
-                print(f"      s:{sid:<6} SKIPPED (no URL)", file=sys.stderr)
-                continue
+        for sid, slug in fetchable:
+            url = f"{BASE}/series/{sid}/{slug}"
             try:
                 epoch_data = scraper.fetch_series_from_page(url)
                 data[f"s:{sid}"] = _series_data_to_macromicro_format(epoch_data)
