@@ -224,14 +224,24 @@ try {
     } catch (__e) { /* ignore */ }
   }
   __diag.candidates = __candidates;
-  // Highcharts often exposes window.Highcharts.charts[] with all chart instances
-  if (window.Highcharts && Array.isArray(window.Highcharts.charts)) {
-    __diag.hcChartCount = window.Highcharts.charts.length;
-    __diag.hcChartSeries = window.Highcharts.charts.map(c => ({
-      title: c && c.title && c.title.textStr,
-      seriesNames: (c && c.series || []).map(s => s.name),
-      pointsLen: (c && c.series || []).map(s => (s.processedXData || s.xData || []).length),
-    }));
+  // Probe Highcharts series 0 in detail
+  if (window.Highcharts && Array.isArray(window.Highcharts.charts) && window.Highcharts.charts[0]) {
+    const __c = window.Highcharts.charts[0];
+    const __s = __c.series && __c.series[0];
+    if (__s) {
+      __diag.firstSeriesName = __s.name;
+      __diag.firstSeriesXDataLen = (__s.xData || []).length;
+      __diag.firstSeriesYDataLen = (__s.yData || []).length;
+      __diag.firstSeriesXDataSample = (__s.xData || []).slice(0, 3);
+      __diag.firstSeriesYDataSample = (__s.yData || []).slice(0, 3);
+      __diag.firstSeriesXDataLast = (__s.xData || []).slice(-3);
+      __diag.firstSeriesYDataLast = (__s.yData || []).slice(-3);
+      // Original options.data: this is what MacroMicro originally pushed in
+      const __od = __s.options && __s.options.data;
+      __diag.firstSeriesOptionsDataLen = Array.isArray(__od) ? __od.length : "not-array";
+      __diag.firstSeriesOptionsDataSample = Array.isArray(__od) ? __od.slice(0, 3) : null;
+      __diag.firstSeriesOptionsDataLast = Array.isArray(__od) ? __od.slice(-3) : null;
+    }
   }
 } catch (__e) {
   __diag.error = String(__e);
