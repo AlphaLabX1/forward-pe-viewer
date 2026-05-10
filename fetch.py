@@ -155,6 +155,8 @@ class _ScrapingAntSession:
         js = r"""
 const __diag = {};
 try {
+  // Give the page a moment for any deferred JS that issues the session cookie.
+  await new Promise(r => setTimeout(r, 2500));
   const __html = document.documentElement.outerHTML;
   const __m = __html.match(/stk["\s]*[:=]["\s]*["']([^"']+)["']/);
   if (!__m) throw new Error("token 'stk' not found in DOM");
@@ -163,12 +165,15 @@ try {
   __diag.tokenLen = __token.length;
   __diag.cookies = document.cookie;
   __diag.location = location.href;
+  __diag.userAgent = navigator.userAgent;
+  __diag.referrer = document.referrer;
   const __r = await fetch("/stats/data/__IDS__", {
     method: "GET",
     headers: {
       "Authorization": "Bearer " + __token,
       "Accept": "application/json, text/plain, */*",
-      "X-Requested-With": "XMLHttpRequest"
+      "X-Requested-With": "XMLHttpRequest",
+      "Referer": location.href
     },
     credentials: "include"
   });
@@ -197,13 +202,13 @@ document.body.appendChild(__tag);
         }
         req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
 
-        last_status, last_body = 0, b""
+        last_status, last_body, last_hdrs = 0, b"", None
         for attempt in range(1, self.MAX_ATTEMPTS + 1):
             try:
                 with urllib.request.urlopen(req, timeout=timeout) as r:
-                    last_status, last_body = r.status, r.read()
+                    last_status, last_body, last_hdrs = r.status, r.read(), r.headers
             except urllib.error.HTTPError as e:
-                last_status, last_body = e.code, e.read()
+                last_status, last_body, last_hdrs = e.code, e.read(), e.headers
             if last_status < 400:
                 break
             if attempt < self.MAX_ATTEMPTS:
@@ -213,6 +218,10 @@ document.body.appendChild(__tag);
                     file=sys.stderr,
                 )
                 time.sleep(self.RETRY_BACKOFF_SEC)
+
+        if last_hdrs is not None:
+            seed_set_cookie = last_hdrs.get("Ant-Original-Header-Set-Cookie", "")
+            print(f"[diag] seed-page Set-Cookie: {seed_set_cookie!r}", file=sys.stderr)
 
         if last_status >= 400:
             raise RuntimeError(
