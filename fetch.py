@@ -61,11 +61,13 @@ class _ScrapingAntResponse:
             raise RuntimeError(f"HTTP {self.status_code}: {self.text[:200]}")
 
     def json(self):
-        try:
-            return json.loads(self.content)
-        except json.JSONDecodeError:
-            print(f"[debug] non-JSON response (first 500 chars): {self.text[:500]!r}", file=sys.stderr)
-            raise
+        # browser=true wraps non-HTML responses as `<html>...<pre>{json}</pre>...</html>`.
+        body = self.text.strip()
+        if body.startswith("<"):
+            m = re.search(r"<pre[^>]*>(.*?)</pre>", body, re.DOTALL)
+            if m:
+                return json.loads(m.group(1))
+        return json.loads(self.content)
 
 
 class _ScrapingAntSession:
@@ -82,16 +84,16 @@ class _ScrapingAntSession:
 
     def get(self, url: str, headers: dict | None = None, timeout: int = 60):
         h = dict(headers or {})
-        if self._cookies:
-            jar = "; ".join(f"{k}={v}" for k, v in self._cookies.items())
-            h["Cookie"] = (h.get("Cookie", "") + "; " + jar).lstrip("; ")
-
         q = {
             "url": url,
             "x-api-key": self._key,
             "proxy_type": "residential",
             "browser": "true",
         }
+        # `cookies` URL param injects into the headless Chrome session before
+        # navigation. Ant-Cookie header alone does not survive a fresh browser.
+        if self._cookies:
+            q["cookies"] = ";".join(f"{k}={v}" for k, v in self._cookies.items())
         req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
         for k, v in h.items():
             req.add_header(f"Ant-{k}", v)
