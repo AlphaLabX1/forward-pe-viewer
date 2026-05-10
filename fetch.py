@@ -135,6 +135,61 @@ class _ScrapingAntSession:
 
         return _ScrapingAntResponse(last_status, last_body)
 
+    def discover_series_links(self, seed_url: str, timeout: int = 120) -> dict[int, str]:
+        """Load the seed page and harvest every <a href="/series/{id}/{slug}">
+        URL it links to. Returns {series_id: full_url}.
+        """
+        js = r"""
+const __out = {links: []};
+try {
+  const __anchors = Array.from(document.querySelectorAll('a[href*="/series/"]'));
+  const __seen = new Set();
+  for (const __a of __anchors) {
+    const __h = __a.getAttribute("href") || "";
+    const __m = __h.match(/\/series\/(\d+)\/([^/?#]+)/);
+    if (__m) {
+      const __key = __m[1];
+      if (!__seen.has(__key)) {
+        __seen.add(__key);
+        __out.links.push({id: parseInt(__m[1], 10), slug: __m[2], href: __h});
+      }
+    }
+  }
+} catch (__e) {
+  __out.error = String(__e);
+}
+const __tag = document.createElement("pre");
+__tag.id = "ant-result";
+__tag.textContent = btoa(unescape(encodeURIComponent(JSON.stringify(__out))));
+document.body.appendChild(__tag);
+"""
+        js_b64 = base64.b64encode(js.encode("utf-8")).decode("ascii")
+        q = {
+            "url": seed_url,
+            "x-api-key": self._key,
+            "proxy_type": "residential",
+            "browser": "true",
+            "js_snippet": js_b64,
+            "wait_for_selector": "#ant-result",
+        }
+        req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            text = r.read().decode("utf-8", "ignore")
+        m = re.search(r'<pre id="ant-result">([^<]*)</pre>', text)
+        if not m:
+            raise RuntimeError("ant-result missing in discover_series_links")
+        decoded = base64.b64decode(m.group(1)).decode("utf-8")
+        out = json.loads(decoded)
+        if "error" in out:
+            raise RuntimeError(f"discover_series_links error: {out['error']}")
+        result = {}
+        for link in out["links"]:
+            sid = link["id"]
+            slug = link["slug"]
+            if sid not in result:
+                result[sid] = f"{BASE}/series/{sid}/{slug}"
+        return result
+
     def fetch_series_from_page(self, series_url: str, timeout: int = 120) -> list[list]:
         """Load a MacroMicro series page in headless Chrome, then read the
         chart data straight out of Highcharts' state — bypassing the
@@ -499,16 +554,23 @@ def main() -> None:
     backend = _backend_name()
     n_total = len(SERIES) + len(EXTRA_SERIES)
     if isinstance(scraper, _ScrapingAntSession):
-        # ScrapingAnt path: load each series page individually, read Highcharts state.
-        # We only know the URL pattern for SEED_SERIES_ID for sure; for the rest we
-        # try `/series/{id}/x` and rely on MacroMicro's permissive slug routing.
-        # Failures on individual series are logged and skipped (write_csvs handles
-        # missing entries gracefully).
         all_ids = list(SERIES) + list(EXTRA_SERIES)
-        print(f"[1/3] fetching {len(all_ids)} series via {backend} ...")
+        print(f"[1/3] discovering series URLs from seed page ...")
+        try:
+            url_map = scraper.discover_series_links(SEED_URL)
+            print(f"      discovered {len(url_map)} series URLs")
+        except Exception as e:
+            print(f"      discover_series_links FAILED: {e}", file=sys.stderr)
+            url_map = {}
+        url_map[SEED_SERIES_ID] = SEED_URL  # always use the canonical seed URL
+
+        print(f"[2/3] fetching {len(all_ids)} series via {backend} ...")
         data: dict = {}
         for sid in all_ids:
-            url = SEED_URL if sid == SEED_SERIES_ID else f"{BASE}/series/{sid}/x"
+            url = url_map.get(sid)
+            if not url:
+                print(f"      s:{sid:<6} SKIPPED (no URL discovered)", file=sys.stderr)
+                continue
             try:
                 epoch_data = scraper.fetch_series_from_page(url)
                 data[f"s:{sid}"] = _series_data_to_macromicro_format(epoch_data)
