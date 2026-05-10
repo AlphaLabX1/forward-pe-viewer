@@ -95,6 +95,16 @@ CHART_SOURCES: list[tuple[int, str, list[tuple[int, int]]]] = [
             (1, 2),       # SPX daily price (27 years of history vs 5y on chart 50108)
         ],
     ),
+    (
+        50108,
+        "cnn-fear-and-greed",
+        [
+            (0, 46974),   # CNN F&G index — replaces the deprecated MacroMicro
+                          # Investor F&G (also id 46974). Different methodology
+                          # and only 5 years of history, but it's the only
+                          # publicly fetchable F&G chart on the site now.
+        ],
+    ),
 ]
 
 
@@ -288,15 +298,16 @@ def write_extras(series_map: dict[int, list[list]], out_dir: Path) -> dict[int, 
         if not pts:
             print(f"[warn] missing s:{sid} ({stem}) — keeping prior CSV", file=sys.stderr)
             continue
-        # Merge with existing to preserve any history beyond what the chart
-        # endpoint serves (e.g. SPX pre-1999 prices from the deprecated
-        # /stats/data/ endpoint).
-        merged = _merge_with_existing_csv(path, pts, col)
+        # SPX price (id 2): same methodology between old and new sources, so
+        # merge to preserve pre-1999 deep history. F&G (id 46974): source
+        # switched from MacroMicro-proprietary to CNN — different methodology,
+        # do NOT mix the two; replace outright.
+        rows = _merge_with_existing_csv(path, pts, col) if sid == 2 else pts
         with path.open("w", newline="") as f:
             w = csv.writer(f)
             w.writerow(["date", col])
-            w.writerows(merged)
-        counts[sid] = len(merged)
+            w.writerows(rows)
+        counts[sid] = len(rows)
     return counts
 
 
