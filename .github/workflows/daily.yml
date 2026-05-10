@@ -2,8 +2,9 @@ name: Daily data update
 
 on:
   schedule:
-    # 22:00 UTC ≈ 06:00 Asia/Shanghai — after US close, data available on MacroMicro
-    - cron: "0 22 * * *"
+    # 22:00 UTC Mon–Fri ≈ 06:00 Asia/Shanghai Tue–Sat — runs after each US
+    # trading day's close. Sat/Sun are skipped: no new market data anyway.
+    - cron: "0 22 * * 1-5"
   workflow_dispatch: {}
 
 permissions:
