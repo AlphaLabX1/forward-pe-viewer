@@ -829,7 +829,7 @@ TEMPLATE = r"""<!doctype html>
   .chart-controls .spacer { flex: 1; }
   .chart-controls .meta { font-family: var(--font-mono); font-size: 10px; color: var(--mute); letter-spacing: 0.08em; }
   .chart-wrap { background: var(--paper); border: 1px solid var(--rule); padding: 14px 8px 6px; }
-  #chart, #mood-chart { width: 100%; height: 560px; }
+  #chart, #mood-chart, #pe-chart { width: 100%; height: 560px; }
 
   /* ─────────────────── Gauge (Fear & Greed) ─────────────────── */
   .gauge-frame {
@@ -1130,6 +1130,29 @@ TEMPLATE = r"""<!doctype html>
         <button data-mood-range="ytd">YTD</button>
       </div>
       <div class="chart-wrap"><div id="mood-chart"></div></div>
+    </div>
+  </section>
+
+  <!-- ═══ 06. SPX price vs forward P/E ═══ -->
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-num">06</span>
+        <div>
+          <h2 class="section-title">Price <em>and multiple</em></h2>
+          <p class="section-lede">The S&amp;P 500 against its own forward P/E. When both lines climb together, the rally is re-rating — investors paying more for the same dollar of expected earnings. Price up while the multiple stays flat means earnings are doing the work.</p>
+        </div>
+        <div class="section-meta">dual axis · shared X</div>
+      </div>
+      <div class="chart-controls">
+        <button data-pe-range="all">All</button>
+        <button data-pe-range="10y">10Y</button>
+        <button data-pe-range="5y" class="active">5Y</button>
+        <button data-pe-range="3y">3Y</button>
+        <button data-pe-range="1y">1Y</button>
+        <button data-pe-range="ytd">YTD</button>
+      </div>
+      <div class="chart-wrap"><div id="pe-chart"></div></div>
     </div>
   </section>
 </main>
@@ -1434,6 +1457,106 @@ function stickSolo(id) {
       document.querySelectorAll("[data-mood-range]").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
       applyMoodRange(btn.dataset.moodRange);
+    });
+  });
+})();
+
+// ═══ Section 06: SPX price vs forward P/E ═══
+(function renderPeChart() {
+  const spx = DATA.spx.points;
+  const spxFwd = (DATA.forward.series.find(s => s.id === 20052) || {}).points || [];
+  if (!spx.length || !spxFwd.length) return;
+
+  const peTraces = [
+    {
+      x: spx.map(p => p[0]),
+      y: spx.map(p => p[1]),
+      type: "scattergl", mode: "lines",
+      name: "S&P 500",
+      line: { color: "#1b1813", width: 2.2 },
+      yaxis: "y2",
+      hovertemplate: "<b>S&P 500</b>  %{y:.2f}<extra></extra>",
+    },
+    {
+      x: spxFwd.map(p => p[0]),
+      y: spxFwd.map(p => p[1]),
+      type: "scattergl", mode: "lines",
+      name: "Forward P/E",
+      line: { color: "#2d6a8a", width: 1.4 },
+      yaxis: "y",
+      hovertemplate: "<b>Fwd P/E</b>  %{y:.2f}<extra></extra>",
+    },
+  ];
+  const peLayout = Object.assign({}, baseLayout, {
+    yaxis: {
+      gridcolor: "#e6dcc6", zeroline: false,
+      tickfont: { family: '"IBM Plex Mono", monospace', size: 10, color: "#55493b" },
+      tickcolor: "#8a7e6d",
+      title: { text: "forward P/E", font: { family: '"IBM Plex Sans", sans-serif', size: 11, color: "#2d6a8a" }, standoff: 14 },
+    },
+    yaxis2: {
+      overlaying: "y", side: "right", type: "log",
+      gridcolor: "rgba(0,0,0,0)", zeroline: false,
+      tickfont: { family: '"IBM Plex Mono", monospace', size: 10, color: "#55493b" },
+      tickcolor: "#8a7e6d",
+      title: { text: "S&P 500 (log)", font: { family: '"IBM Plex Sans", sans-serif', size: 11, color: "#1b1813" }, standoff: 14 },
+    },
+  });
+  Plotly.newPlot("pe-chart", peTraces, peLayout, chartConfig).then(() => applyPeRange("5y"));
+
+  function applyPeRange(key) {
+    const now = new Date(LATEST);
+    let start;
+    if (key === "all") start = new Date(spxFwd[0][0]);
+    else if (key === "ytd") start = new Date(now.getFullYear(), 0, 1);
+    else { const y = parseInt(key, 10); start = new Date(now); start.setFullYear(start.getFullYear() - y); }
+    const startStr = start.toISOString().slice(0,10);
+    const endStr = now.toISOString().slice(0,10);
+    const startMs = start.getTime(), endMs = now.getTime();
+
+    // Right (SPX) range from spx series — log axis, so use log10 bounds
+    let sLo = Infinity, sHi = -Infinity;
+    for (let j = 0; j < spx.length; j++) {
+      const t = Date.parse(spx[j][0]);
+      if (t < startMs || t > endMs) continue;
+      const v = spx[j][1];
+      if (v <= 0) continue;
+      if (v < sLo) sLo = v;
+      if (v > sHi) sHi = v;
+    }
+    // Left (Forward P/E) range
+    let pLo = Infinity, pHi = -Infinity;
+    for (let j = 0; j < spxFwd.length; j++) {
+      const t = Date.parse(spxFwd[j][0]);
+      if (t < startMs || t > endMs) continue;
+      const v = spxFwd[j][1];
+      if (v == null) continue;
+      if (v < pLo) pLo = v;
+      if (v > pHi) pHi = v;
+    }
+    const upd = {
+      "xaxis.range": [startStr, endStr],
+      "xaxis.autorange": false,
+    };
+    if (isFinite(sLo)) {
+      const lo = Math.log10(sLo), hi = Math.log10(sHi);
+      const pad = (hi - lo) * 0.05 || 0.02;
+      upd["yaxis2.range"] = [lo - pad, hi + pad];
+      upd["yaxis2.autorange"] = false;
+    }
+    if (isFinite(pLo)) {
+      const pad = (pHi - pLo) * 0.08 || 0.5;
+      upd["yaxis.range"] = [pLo - pad, pHi + pad];
+      upd["yaxis.autorange"] = false;
+    }
+    Plotly.relayout("pe-chart", upd);
+  }
+
+  document.querySelectorAll("[data-pe-range]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-pe-range]").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      applyPeRange(btn.dataset.peRange);
     });
   });
 })();
