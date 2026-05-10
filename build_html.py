@@ -274,6 +274,72 @@ def _nearest_on_or_before(points: list[tuple[str, float]], target: date):
     return None
 
 
+def valuation_payload(spx_fwd_pe: list, us10y: list):
+    """Build payload for the SPX valuation chart (section 06):
+      - forward P/E with 5Y rolling 20th/50th/80th percentile bands
+      - forward earnings yield (1/PE × 100) and 10Y treasury yield
+      - their spread (EY - 10Y), an equity-vs-bonds risk-premium proxy.
+
+    Monthly forward PE drives the cadence: each spread / EY point is dated
+    to the forward PE's month; the 10Y yield is the value on (or nearest
+    prior to) that month-end date.
+    """
+    if not spx_fwd_pe or not us10y:
+        return None
+
+    # Forward EY = 1 / PE * 100 (in percent)
+    pe_pts = [(d, float(v)) for d, v in spx_fwd_pe if v]
+    ey_pts = [[d, 100.0 / v] for d, v in pe_pts]
+
+    # 5Y rolling percentile bands. With monthly data: window = 60 months.
+    # Start emitting bands once at least 12 months of history is available.
+    band_p20, band_p50, band_p80 = [], [], []
+    for i, (d, _) in enumerate(pe_pts):
+        # Window = the prior 60 months (inclusive of current)
+        start = max(0, i - 59)
+        window = [v for _, v in pe_pts[start:i + 1]]
+        if len(window) < 12:
+            continue
+        window_sorted = sorted(window)
+        def pct(p):
+            idx = (len(window_sorted) - 1) * p
+            lo = int(idx); hi = min(lo + 1, len(window_sorted) - 1)
+            frac = idx - lo
+            return window_sorted[lo] * (1 - frac) + window_sorted[hi] * frac
+        band_p20.append([d, pct(0.20)])
+        band_p50.append([d, pct(0.50)])
+        band_p80.append([d, pct(0.80)])
+
+    # Build a date -> 10Y yield lookup, then for each EY point find the nearest
+    # prior (or same-day) yield observation. 10Y is daily; PE is monthly.
+    yield_by_date = {d: float(v) for d, v in us10y if v}
+    yield_dates_sorted = sorted(yield_by_date.keys())
+
+    def yield_on_or_before(target_d: str):
+        # Binary search the last date <= target_d.
+        from bisect import bisect_right
+        idx = bisect_right(yield_dates_sorted, target_d) - 1
+        if idx < 0:
+            return None
+        return yield_by_date[yield_dates_sorted[idx]]
+
+    spread_pts = []
+    for d, ey in ey_pts:
+        y10 = yield_on_or_before(d)
+        if y10 is not None:
+            spread_pts.append([d, ey - y10])
+
+    return {
+        "pe": [[d, v] for d, v in pe_pts],
+        "ey": ey_pts,
+        "us10y": [[d, v] for d, v in us10y],
+        "spread": spread_pts,
+        "band_p20": band_p20,
+        "band_p50": band_p50,
+        "band_p80": band_p80,
+    }
+
+
 def gauge_payload(fg_points: list[tuple[str, float]]):
     if not fg_points:
         return None
@@ -315,7 +381,11 @@ def build() -> Path:
     # Sentiment: Fear & Greed + SPX price.
     fg_points = _load_csv_points(DATA / "fear_greed.csv")
     spx_points = _load_csv_points(DATA / "spx_price.csv")
+    us10y_points = _load_csv_points(DATA / "us10y.csv")
     gauge = gauge_payload(fg_points)
+
+    # Valuation panel (section 06): forward EY, 10Y yield, spread, percentile bands.
+    valuation = valuation_payload(forward_points.get(20052) or [], us10y_points)
 
     # Overall page date = max across families.
     latest_candidates = [forward["latest_date"]]
@@ -338,6 +408,7 @@ def build() -> Path:
             "gauge": gauge,
         },
         "spx": {"points": spx_points},
+        "valuation": valuation,
     })
 
     html = (TEMPLATE
@@ -829,7 +900,8 @@ TEMPLATE = r"""<!doctype html>
   .chart-controls .spacer { flex: 1; }
   .chart-controls .meta { font-family: var(--font-mono); font-size: 10px; color: var(--mute); letter-spacing: 0.08em; }
   .chart-wrap { background: var(--paper); border: 1px solid var(--rule); padding: 14px 8px 6px; }
-  #chart, #mood-chart, #pe-chart { width: 100%; height: 560px; }
+  #chart, #mood-chart { width: 100%; height: 560px; }
+  #val-chart { width: 100%; height: 760px; }
 
   /* ─────────────────── Gauge (Fear & Greed) ─────────────────── */
   .gauge-frame {
@@ -1133,26 +1205,26 @@ TEMPLATE = r"""<!doctype html>
     </div>
   </section>
 
-  <!-- ═══ 06. SPX price vs forward P/E ═══ -->
+  <!-- ═══ 06. Valuation: price, multiple, and yield gap ═══ -->
   <section class="section">
     <div class="container">
       <div class="section-head">
         <span class="section-num">06</span>
         <div>
-          <h2 class="section-title">Price <em>and multiple</em></h2>
-          <p class="section-lede">The S&amp;P 500 against its own forward P/E. When both lines climb together, the rally is re-rating — investors paying more for the same dollar of expected earnings. Price up while the multiple stays flat means earnings are doing the work.</p>
+          <h2 class="section-title">Are we <em>expensive</em>?</h2>
+          <p class="section-lede">Three stacked panels on one time axis. Top: S&amp;P 500. Middle: its forward P/E against the 20th–80th percentile band of the trailing five years — when the blue line pokes above the band you're paying more than usual for a dollar of next-year earnings. Bottom: that same forward earnings yield (1 ÷ forward P/E) next to the 10-year Treasury yield, with bars showing the spread. Bars near zero mean stocks no longer offer much premium over bonds.</p>
         </div>
-        <div class="section-meta">dual axis · shared X</div>
+        <div class="section-meta">3 panels · shared X</div>
       </div>
       <div class="chart-controls">
-        <button data-pe-range="all">All</button>
-        <button data-pe-range="10y">10Y</button>
-        <button data-pe-range="5y" class="active">5Y</button>
-        <button data-pe-range="3y">3Y</button>
-        <button data-pe-range="1y">1Y</button>
-        <button data-pe-range="ytd">YTD</button>
+        <button data-val-range="all">All</button>
+        <button data-val-range="10y">10Y</button>
+        <button data-val-range="5y" class="active">5Y</button>
+        <button data-val-range="3y">3Y</button>
+        <button data-val-range="1y">1Y</button>
+        <button data-val-range="ytd">YTD</button>
       </div>
-      <div class="chart-wrap"><div id="pe-chart"></div></div>
+      <div class="chart-wrap"><div id="val-chart"></div></div>
     </div>
   </section>
 </main>
@@ -1461,102 +1533,188 @@ function stickSolo(id) {
   });
 })();
 
-// ═══ Section 06: SPX price vs forward P/E ═══
-(function renderPeChart() {
+// ═══ Section 06: Are we expensive — 3-panel valuation chart ═══
+(function renderValuationChart() {
+  const v = DATA.valuation;
   const spx = DATA.spx.points;
-  const spxFwd = (DATA.forward.series.find(s => s.id === 20052) || {}).points || [];
-  if (!spx.length || !spxFwd.length) return;
+  if (!v || !spx.length) return;
 
-  const peTraces = [
+  const TICK_FONT = { family: '"IBM Plex Mono", monospace', size: 10, color: "#55493b" };
+  const TITLE_FONT = { family: '"IBM Plex Sans", sans-serif', size: 11 };
+
+  const xs = (pts) => pts.map(p => p[0]);
+  const ys = (pts) => pts.map(p => p[1]);
+
+  const traces = [
+    // ───── Panel 1: S&P 500 (log) ─────
     {
-      x: spx.map(p => p[0]),
-      y: spx.map(p => p[1]),
+      x: xs(spx), y: ys(spx),
       type: "scattergl", mode: "lines",
       name: "S&P 500",
-      line: { color: "#1b1813", width: 2.2 },
-      yaxis: "y2",
-      hovertemplate: "<b>S&P 500</b>  %{y:.2f}<extra></extra>",
+      line: { color: "#1b1813", width: 1.6 },
+      yaxis: "y", xaxis: "x",
+      hovertemplate: "<b>S&P 500</b> %{y:.2f}<extra></extra>",
+    },
+    // ───── Panel 2: forward P/E with 5Y rolling band ─────
+    {
+      x: xs(v.band_p80), y: ys(v.band_p80),
+      type: "scattergl", mode: "lines",
+      name: "5Y P80", line: { color: "rgba(180,66,28,0)", width: 0 },
+      yaxis: "y2", xaxis: "x", showlegend: false,
+      hovertemplate: "P80 %{y:.2f}<extra></extra>",
     },
     {
-      x: spxFwd.map(p => p[0]),
-      y: spxFwd.map(p => p[1]),
+      x: xs(v.band_p20), y: ys(v.band_p20),
+      type: "scattergl", mode: "lines",
+      name: "5Y P20–P80 band",
+      line: { color: "rgba(180,140,90,0)", width: 0 },
+      fill: "tonexty", fillcolor: "rgba(180,140,90,0.18)",
+      yaxis: "y2", xaxis: "x",
+      hovertemplate: "P20 %{y:.2f}<extra></extra>",
+    },
+    {
+      x: xs(v.band_p50), y: ys(v.band_p50),
+      type: "scattergl", mode: "lines",
+      name: "5Y median",
+      line: { color: "#8a7e6d", width: 1, dash: "dash" },
+      yaxis: "y2", xaxis: "x",
+      hovertemplate: "Median %{y:.2f}<extra></extra>",
+    },
+    {
+      x: xs(v.pe), y: ys(v.pe),
       type: "scattergl", mode: "lines",
       name: "Forward P/E",
-      line: { color: "#2d6a8a", width: 1.4 },
-      yaxis: "y",
-      hovertemplate: "<b>Fwd P/E</b>  %{y:.2f}<extra></extra>",
+      line: { color: "#2d6a8a", width: 2 },
+      yaxis: "y2", xaxis: "x",
+      hovertemplate: "<b>Fwd P/E</b> %{y:.2f}<extra></extra>",
+    },
+    // ───── Panel 3: Forward EY, 10Y yield, spread ─────
+    {
+      x: xs(v.us10y), y: ys(v.us10y),
+      type: "scattergl", mode: "lines",
+      name: "10Y Treasury",
+      line: { color: "#1b1813", width: 1.4 },
+      yaxis: "y3", xaxis: "x",
+      hovertemplate: "<b>10Y</b> %{y:.2f}%<extra></extra>",
+    },
+    {
+      x: xs(v.ey), y: ys(v.ey),
+      type: "scattergl", mode: "lines",
+      name: "Forward EY (1÷PE)",
+      line: { color: "#2d6a8a", width: 1.6 },
+      yaxis: "y3", xaxis: "x",
+      hovertemplate: "<b>Fwd EY</b> %{y:.2f}%<extra></extra>",
+    },
+    {
+      x: xs(v.spread), y: ys(v.spread),
+      type: "bar",
+      name: "EY − 10Y",
+      marker: { color: ys(v.spread).map(s => s >= 0 ? "rgba(46,93,86,0.55)" : "rgba(184,66,28,0.55)") },
+      yaxis: "y4", xaxis: "x",
+      hovertemplate: "<b>Spread</b> %{y:+.2f} pp<extra></extra>",
     },
   ];
-  const peLayout = Object.assign({}, baseLayout, {
+
+  const layout = {
+    margin: { l: 56, r: 60, t: 16, b: 36 },
+    hovermode: "x unified",
+    hoverlabel: {
+      font: { family: '"IBM Plex Mono", monospace', size: 11, color: "#f2ecdf" },
+      bgcolor: "#1b1813", bordercolor: "#1b1813",
+    },
+    paper_bgcolor: "#f2ecdf", plot_bgcolor: "#f2ecdf",
+    font: { family: '"IBM Plex Sans", sans-serif', size: 11, color: "#1b1813" },
+    legend: { orientation: "h", y: -0.08, x: 0, font: { family: '"IBM Plex Mono", monospace', size: 10, color: "#1b1813" } },
+    xaxis: {
+      anchor: "y3", domain: [0, 1],
+      showgrid: false, linecolor: "#d5c8b1", tickcolor: "#8a7e6d",
+      tickfont: TICK_FONT, type: "date",
+    },
     yaxis: {
+      domain: [0.70, 1.0], type: "log",
       gridcolor: "#e6dcc6", zeroline: false,
-      tickfont: { family: '"IBM Plex Mono", monospace', size: 10, color: "#55493b" },
-      tickcolor: "#8a7e6d",
-      title: { text: "forward P/E", font: { family: '"IBM Plex Sans", sans-serif', size: 11, color: "#2d6a8a" }, standoff: 14 },
+      tickfont: TICK_FONT, tickcolor: "#8a7e6d",
+      title: { text: "S&P 500 (log)", font: Object.assign({}, TITLE_FONT, { color: "#1b1813" }), standoff: 12 },
     },
     yaxis2: {
-      overlaying: "y", side: "right", type: "log",
-      gridcolor: "rgba(0,0,0,0)", zeroline: false,
-      tickfont: { family: '"IBM Plex Mono", monospace', size: 10, color: "#55493b" },
-      tickcolor: "#8a7e6d",
-      title: { text: "S&P 500 (log)", font: { family: '"IBM Plex Sans", sans-serif', size: 11, color: "#1b1813" }, standoff: 14 },
+      domain: [0.37, 0.66],
+      gridcolor: "#e6dcc6", zeroline: false,
+      tickfont: TICK_FONT, tickcolor: "#8a7e6d",
+      title: { text: "Forward P/E", font: Object.assign({}, TITLE_FONT, { color: "#2d6a8a" }), standoff: 12 },
     },
-  });
-  Plotly.newPlot("pe-chart", peTraces, peLayout, chartConfig).then(() => applyPeRange("5y"));
+    yaxis3: {
+      domain: [0.0, 0.33],
+      gridcolor: "#e6dcc6", zeroline: false,
+      tickfont: TICK_FONT, tickcolor: "#8a7e6d",
+      title: { text: "Yield (%)", font: Object.assign({}, TITLE_FONT, { color: "#1b1813" }), standoff: 12 },
+    },
+    yaxis4: {
+      domain: [0.0, 0.33], overlaying: "y3", side: "right",
+      showgrid: false, zeroline: true, zerolinecolor: "#8a7e6d", zerolinewidth: 1,
+      tickfont: TICK_FONT, tickcolor: "#8a7e6d",
+      title: { text: "Spread (pp)", font: Object.assign({}, TITLE_FONT, { color: "#2e5d56" }), standoff: 12 },
+    },
+  };
 
-  function applyPeRange(key) {
+  Plotly.newPlot("val-chart", traces, layout, chartConfig).then(() => applyValRange("5y"));
+
+  function applyValRange(key) {
     const now = new Date(LATEST);
     let start;
-    if (key === "all") start = new Date(spxFwd[0][0]);
+    if (key === "all") start = new Date(v.pe[0][0]);
     else if (key === "ytd") start = new Date(now.getFullYear(), 0, 1);
     else { const y = parseInt(key, 10); start = new Date(now); start.setFullYear(start.getFullYear() - y); }
     const startStr = start.toISOString().slice(0,10);
     const endStr = now.toISOString().slice(0,10);
     const startMs = start.getTime(), endMs = now.getTime();
 
-    // Right (SPX) range from spx series — log axis, so use log10 bounds
-    let sLo = Infinity, sHi = -Infinity;
-    for (let j = 0; j < spx.length; j++) {
-      const t = Date.parse(spx[j][0]);
-      if (t < startMs || t > endMs) continue;
-      const v = spx[j][1];
-      if (v <= 0) continue;
-      if (v < sLo) sLo = v;
-      if (v > sHi) sHi = v;
+    function rangeOf(pts, log) {
+      let lo = Infinity, hi = -Infinity;
+      for (let i = 0; i < pts.length; i++) {
+        const t = Date.parse(pts[i][0]);
+        if (t < startMs || t > endMs) continue;
+        let val = pts[i][1];
+        if (val == null) continue;
+        if (log) { if (val <= 0) continue; val = Math.log10(val); }
+        if (val < lo) lo = val;
+        if (val > hi) hi = val;
+      }
+      if (!isFinite(lo)) return null;
+      const pad = Math.max((hi - lo) * 0.08, 0.02);
+      return [lo - pad, hi + pad];
     }
-    // Left (Forward P/E) range
-    let pLo = Infinity, pHi = -Infinity;
-    for (let j = 0; j < spxFwd.length; j++) {
-      const t = Date.parse(spxFwd[j][0]);
-      if (t < startMs || t > endMs) continue;
-      const v = spxFwd[j][1];
-      if (v == null) continue;
-      if (v < pLo) pLo = v;
-      if (v > pHi) pHi = v;
-    }
+
     const upd = {
       "xaxis.range": [startStr, endStr],
       "xaxis.autorange": false,
     };
-    if (isFinite(sLo)) {
-      const lo = Math.log10(sLo), hi = Math.log10(sHi);
-      const pad = (hi - lo) * 0.05 || 0.02;
-      upd["yaxis2.range"] = [lo - pad, hi + pad];
-      upd["yaxis2.autorange"] = false;
+    // SPX (log)
+    const r1 = rangeOf(spx, true);
+    if (r1) { upd["yaxis.range"] = r1; upd["yaxis.autorange"] = false; }
+    // Forward P/E (use combined range of PE + bands)
+    const peAll = v.pe.concat(v.band_p20, v.band_p80);
+    const r2 = rangeOf(peAll, false);
+    if (r2) { upd["yaxis2.range"] = r2; upd["yaxis2.autorange"] = false; }
+    // Yields (EY + 10Y)
+    const yieldAll = v.ey.concat(v.us10y);
+    const r3 = rangeOf(yieldAll, false);
+    if (r3) { upd["yaxis3.range"] = r3; upd["yaxis3.autorange"] = false; }
+    // Spread bars
+    const r4 = rangeOf(v.spread, false);
+    if (r4) {
+      // Anchor spread axis around 0 so the bar direction reads naturally
+      const mag = Math.max(Math.abs(r4[0]), Math.abs(r4[1])) * 1.1;
+      upd["yaxis4.range"] = [-mag, mag];
+      upd["yaxis4.autorange"] = false;
     }
-    if (isFinite(pLo)) {
-      const pad = (pHi - pLo) * 0.08 || 0.5;
-      upd["yaxis.range"] = [pLo - pad, pHi + pad];
-      upd["yaxis.autorange"] = false;
-    }
-    Plotly.relayout("pe-chart", upd);
+    Plotly.relayout("val-chart", upd);
   }
 
-  document.querySelectorAll("[data-pe-range]").forEach(btn => {
+  document.querySelectorAll("[data-val-range]").forEach(btn => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll("[data-pe-range]").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll("[data-val-range]").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
-      applyPeRange(btn.dataset.peRange);
+      applyValRange(btn.dataset.valRange);
     });
   });
 })();

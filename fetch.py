@@ -52,11 +52,14 @@ SERIES = {
     20527: "Health Care",
 }
 
-# Auxiliary series written to their own CSVs (consumed by the F&G dashboard).
-# 2 = S&P 500 daily price, 46974 = MacroMicro Fear & Greed.
+# Auxiliary series written to their own CSVs.
+#   2     = S&P 500 daily price (F&G overlay + valuation chart)
+#   46974 = CNN Fear & Greed (sentiment gauge)
+#   354   = US 10-year Treasury bond yield (valuation chart — equity risk premium)
 EXTRA_SERIES = {
     2: ("spx_price", "price"),
     46974: ("fear_greed", "value"),
+    354: ("us10y", "yield"),
 }
 
 BASE = "https://en.macromicro.me"
@@ -89,10 +92,11 @@ CHART_SOURCES: list[tuple[int, str, list[tuple[int, int]]]] = [
         ],
     ),
     (
-        142681,
-        "us-mm-bull-and-bear-indicator",
+        3919,
+        "sp500-10y-yield",
         [
-            (1, 2),       # SPX daily price (27 years of history vs 5y on chart 50108)
+            (0, 354),     # US 10-year Treasury bond yield (daily, since 1962)
+            (1, 2),       # SPX daily price (daily, since 1962 — longer than chart 142681)
         ],
     ),
     (
@@ -298,11 +302,11 @@ def write_extras(series_map: dict[int, list[list]], out_dir: Path) -> dict[int, 
         if not pts:
             print(f"[warn] missing s:{sid} ({stem}) — keeping prior CSV", file=sys.stderr)
             continue
-        # SPX price (id 2): same methodology between old and new sources, so
-        # merge to preserve pre-1999 deep history. F&G (id 46974): source
-        # switched from MacroMicro-proprietary to CNN — different methodology,
-        # do NOT mix the two; replace outright.
-        rows = _merge_with_existing_csv(path, pts, col) if sid == 2 else pts
+        # F&G (id 46974): source switched from MacroMicro-proprietary to CNN
+        # — different methodology, do NOT mix the two; replace outright.
+        # Everything else (SPX price, 10Y yield, ...): same series across runs,
+        # merge to preserve any prior history beyond what the chart serves.
+        rows = pts if sid == 46974 else _merge_with_existing_csv(path, pts, col)
         with path.open("w", newline="") as f:
             w = csv.writer(f)
             w.writerow(["date", col])
