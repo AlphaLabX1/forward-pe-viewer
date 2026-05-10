@@ -135,17 +135,88 @@ class _ScrapingAntSession:
 
         return _ScrapingAntResponse(last_status, last_body)
 
+    def fetch_series_from_page(self, series_url: str, timeout: int = 120) -> list[list]:
+        """Load a MacroMicro series page in headless Chrome, then read the
+        chart data straight out of Highcharts' state — bypassing the
+        /stats/data/* API entirely. Returns a list of [epoch_ms, value] pairs.
+
+        Why: MacroMicro's API rejects our scraped fetches with 403 (level: 0)
+        even though the page itself loads fine and the chart renders. By the
+        time js_snippet runs, the page's own code has already populated
+        `Highcharts.charts[0].series[0].options.data` with the full series.
+        """
+        js = r"""
+const __out = {};
+try {
+  if (!window.Highcharts || !Array.isArray(window.Highcharts.charts) || !window.Highcharts.charts[0]) {
+    throw new Error("Highcharts.charts[0] not present");
+  }
+  const __c = window.Highcharts.charts[0];
+  const __s = __c.series && __c.series[0];
+  if (!__s) throw new Error("chart has no series[0]");
+  const __od = __s.options && __s.options.data;
+  if (!Array.isArray(__od)) throw new Error("series[0].options.data is not an array");
+  __out.name = __s.name;
+  __out.data = __od;
+  __out.location = location.href;
+} catch (__e) {
+  __out.error = String(__e);
+  __out.stack = (__e && __e.stack) || null;
+}
+const __tag = document.createElement("pre");
+__tag.id = "ant-result";
+__tag.textContent = btoa(unescape(encodeURIComponent(JSON.stringify(__out))));
+document.body.appendChild(__tag);
+"""
+        js_b64 = base64.b64encode(js.encode("utf-8")).decode("ascii")
+
+        q = {
+            "url": series_url,
+            "x-api-key": self._key,
+            "proxy_type": "residential",
+            "browser": "true",
+            "js_snippet": js_b64,
+            "wait_for_selector": "#ant-result",
+        }
+        req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
+
+        last_status, last_body = 0, b""
+        for attempt in range(1, self.MAX_ATTEMPTS + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as r:
+                    last_status, last_body = r.status, r.read()
+            except urllib.error.HTTPError as e:
+                last_status, last_body = e.code, e.read()
+            if last_status < 400:
+                break
+            if attempt < self.MAX_ATTEMPTS:
+                print(
+                    f"[retry] {series_url} ScrapingAnt {last_status} on attempt {attempt}",
+                    file=sys.stderr,
+                )
+                time.sleep(self.RETRY_BACKOFF_SEC)
+
+        if last_status >= 400:
+            raise RuntimeError(
+                f"HTTP {last_status} for {series_url}: "
+                f"{last_body[:200].decode('utf-8', 'ignore')}"
+            )
+
+        text = last_body.decode("utf-8", "ignore")
+        m = re.search(r'<pre id="ant-result">([^<]*)</pre>', text)
+        if not m:
+            raise RuntimeError(f"ant-result tag missing for {series_url}")
+        decoded = base64.b64decode(m.group(1)).decode("utf-8")
+        out = json.loads(decoded)
+        if "error" in out:
+            raise RuntimeError(f"in-page extraction failed for {series_url}: {out['error']}")
+        return out["data"]
+
     def fetch_macromicro_dataset(
         self, seed_url: str, all_ids: list[int], timeout: int = 120
     ) -> dict:
-        """Single-request flow: load the seed page in headless Chrome, then run
-        an in-page JS snippet that reads the `stk` token from the DOM, fires a
-        same-origin fetch() to /stats/data/<ids>, and parks the response inside
-        a <pre id="ant-result"> tag (base64-encoded to dodge HTML escaping).
-
-        This sidesteps the Cloudflare detection that fired on standalone API
-        calls: the fetch goes out from a real browser context with real session
-        cookies, real Referer chain, and real navigator fingerprint.
+        """Legacy entry point — kept for reference but not used by main().
+        See fetch_series_from_page() for the working flow.
         """
         ids = ",".join(str(i) for i in all_ids)
         # ScrapingAnt wraps the snippet in `async function() { ... }` and awaits
@@ -411,15 +482,39 @@ def write_combined(data: dict, out_path: Path) -> None:
             w.writerow([date] + [row.get(i, "") for i in SERIES])
 
 
+def _epoch_ms_to_date(ms: int) -> str:
+    import datetime
+    return datetime.datetime.fromtimestamp(ms / 1000, tz=datetime.timezone.utc).strftime("%Y-%m-%d")
+
+
+def _series_data_to_macromicro_format(epoch_data: list[list]) -> dict:
+    """Convert [[epoch_ms, value], ...] to {"series": [[[date_str, value], ...]]}."""
+    points = [[_epoch_ms_to_date(int(ts)), v] for ts, v in epoch_data]
+    return {"series": [points]}
+
+
 def main() -> None:
     out_dir = Path(__file__).parent / "data"
     scraper = _make_session()
     backend = _backend_name()
     n_total = len(SERIES) + len(EXTRA_SERIES)
     if isinstance(scraper, _ScrapingAntSession):
-        print(f"[1/2] one-shot via {backend}: load seed + in-browser fetch ({n_total} series) ...")
+        # ScrapingAnt path: load each series page individually, read Highcharts state.
+        # We only know the URL pattern for SEED_SERIES_ID for sure; for the rest we
+        # try `/series/{id}/x` and rely on MacroMicro's permissive slug routing.
+        # Failures on individual series are logged and skipped (write_csvs handles
+        # missing entries gracefully).
         all_ids = list(SERIES) + list(EXTRA_SERIES)
-        data = scraper.fetch_macromicro_dataset(SEED_URL, all_ids)
+        print(f"[1/3] fetching {len(all_ids)} series via {backend} ...")
+        data: dict = {}
+        for sid in all_ids:
+            url = SEED_URL if sid == SEED_SERIES_ID else f"{BASE}/series/{sid}/x"
+            try:
+                epoch_data = scraper.fetch_series_from_page(url)
+                data[f"s:{sid}"] = _series_data_to_macromicro_format(epoch_data)
+                print(f"      s:{sid:<6} {len(epoch_data):>5} points  ({url})")
+            except Exception as e:
+                print(f"      s:{sid:<6} FAILED: {e}", file=sys.stderr)
     else:
         print(f"[1/3] resolving token (backend={backend}) ...")
         token = get_token(scraper)
