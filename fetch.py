@@ -153,12 +153,16 @@ class _ScrapingAntSession:
         # IIFE returns a Promise the wrapper doesn't await, so the snapshot
         # would be taken before the fetch resolves.
         js = r"""
-let __body;
+const __diag = {};
 try {
   const __html = document.documentElement.outerHTML;
   const __m = __html.match(/stk["\s]*[:=]["\s]*["']([^"']+)["']/);
   if (!__m) throw new Error("token 'stk' not found in DOM");
   const __token = __m[1];
+  __diag.tokenPrefix = __token.slice(0, 12);
+  __diag.tokenLen = __token.length;
+  __diag.cookies = document.cookie;
+  __diag.location = location.href;
   const __r = await fetch("/stats/data/__IDS__", {
     method: "GET",
     headers: {
@@ -168,13 +172,17 @@ try {
     },
     credentials: "include"
   });
-  __body = await __r.text();
+  __diag.status = __r.status;
+  __diag.respHeaders = {};
+  __r.headers.forEach((v, k) => { __diag.respHeaders[k] = v; });
+  __diag.body = await __r.text();
 } catch (__e) {
-  __body = JSON.stringify({error: String(__e), stack: (__e && __e.stack) || null});
+  __diag.error = String(__e);
+  __diag.stack = (__e && __e.stack) || null;
 }
 const __tag = document.createElement("pre");
 __tag.id = "ant-result";
-__tag.textContent = btoa(unescape(encodeURIComponent(__body)));
+__tag.textContent = btoa(unescape(encodeURIComponent(JSON.stringify(__diag))));
 document.body.appendChild(__tag);
 """.replace("__IDS__", ids)
         js_b64 = base64.b64encode(js.encode("utf-8")).decode("ascii")
@@ -230,9 +238,26 @@ document.body.appendChild(__tag);
             raise RuntimeError(
                 f"failed to b64-decode ant-result: {e}; raw: {m.group(1)[:200]!r}"
             )
-        payload = json.loads(decoded)
-        if "error" in payload and "success" not in payload:
-            raise RuntimeError(f"in-browser fetch failed: {payload['error']}")
+        diag = json.loads(decoded)
+        # Diagnostic dump for debugging the 403 — print everything but the body.
+        print(
+            f"[diag] tokenPrefix={diag.get('tokenPrefix')} "
+            f"tokenLen={diag.get('tokenLen')} "
+            f"cookies={diag.get('cookies')!r} "
+            f"location={diag.get('location')!r} "
+            f"status={diag.get('status')} "
+            f"respHeaders={diag.get('respHeaders')!r}",
+            file=sys.stderr,
+        )
+        if "error" in diag and "body" not in diag:
+            raise RuntimeError(f"in-browser fetch failed: {diag['error']}")
+        body = diag.get("body", "")
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            raise RuntimeError(
+                f"non-JSON body from API (status={diag.get('status')}): {body[:300]!r}"
+            )
         if payload.get("success") != 1:
             raise RuntimeError(f"API returned non-success: {payload!r}")
         return payload["data"]
