@@ -212,21 +212,131 @@ document.body.appendChild(__tag);
                 result[sid] = f"{BASE}/series/{sid}/{slug}"
         return result
 
+    def probe_ssr_data(self, seed_url: str, timeout: int = 180) -> dict:
+        """One-shot probe: load seed page, dump HTML hints + window globals
+        to figure out where the series data actually lives. Single ScrapingAnt
+        request (~125 credits)."""
+        js = r"""
+const __out = {};
+try {
+  const __html = document.documentElement.outerHTML;
+  __out.htmlLen = __html.length;
+  // Look for common SSR globals
+  const __ssrKeys = [
+    "__INITIAL_STATE__", "__NEXT_DATA__", "__NUXT__", "__APP_STATE__",
+    "__PRELOADED_STATE__", "__DATA__", "INITIAL_STATE"
+  ];
+  __out.ssrGlobals = {};
+  for (const __k of __ssrKeys) {
+    if (window[__k]) {
+      __out.ssrGlobals[__k] = "present (type=" + typeof window[__k] + ")";
+    }
+  }
+  // Search HTML for known data values from the chart
+  // (last 3 S&P 500 forward PE values we saw earlier: 20.1357, 20.871, 20.8632)
+  __out.knownValueHits = {};
+  for (const __v of ["20.8632", "20.871", "20.1357", "29.2297"]) {
+    const __idx = __html.indexOf(__v);
+    __out.knownValueHits[__v] = __idx;
+  }
+  // Find all <script> tags and look at their content
+  const __scripts = Array.from(document.querySelectorAll("script"));
+  __out.scriptCount = __scripts.length;
+  __out.inlineScripts = [];
+  let __i = 0;
+  for (const __s of __scripts) {
+    const __c = __s.textContent || "";
+    if (__c.length > 200 && (__c.includes("series") || __c.includes("data") || __c.includes("20052"))) {
+      __out.inlineScripts.push({
+        idx: __i, len: __c.length,
+        head: __c.slice(0, 300), tail: __c.slice(-300),
+      });
+    }
+    __i++;
+  }
+  __out.inlineScriptHitCount = __out.inlineScripts.length;
+  // ChartApp inspection
+  if (window.ChartApp) {
+    __out.chartAppKeys = Object.keys(window.ChartApp).slice(0, 30);
+    if (typeof window.ChartApp === "object") {
+      __out.chartAppPreview = {};
+      for (const __k of Object.keys(window.ChartApp).slice(0, 10)) {
+        try {
+          const __v = window.ChartApp[__k];
+          __out.chartAppPreview[__k] = {
+            type: typeof __v,
+            ctor: __v && __v.constructor && __v.constructor.name,
+            isArray: Array.isArray(__v),
+            len: Array.isArray(__v) || typeof __v === "string" ? __v.length : null,
+          };
+        } catch {}
+      }
+    }
+  }
+  // App
+  if (window.App) {
+    __out.appKeys = Object.keys(window.App).slice(0, 30);
+  }
+  // Re-confirm Highcharts charts and series
+  if (window.Highcharts && window.Highcharts.charts) {
+    __out.hcChartCount = window.Highcharts.charts.length;
+    __out.hcAllSeries = window.Highcharts.charts.map(c => {
+      if (!c) return null;
+      return (c.series || []).map(s => ({
+        name: s.name,
+        len: (s.options && s.options.data && s.options.data.length) || 0,
+      }));
+    });
+  }
+  // Search HTML for the series IDs of all 14 we want
+  __out.idHitsInHtml = {};
+  for (const __id of [20052, 20517, 20518, 20519, 20520, 20521, 20522, 20523, 20524, 20525, 20526, 20527, 2, 46974]) {
+    const __idx = __html.indexOf("s:" + __id);
+    __out.idHitsInHtml[__id] = __idx;
+  }
+} catch (__e) {
+  __out.fatal = String(__e);
+}
+const __tag = document.createElement("pre");
+__tag.id = "ant-result";
+__tag.textContent = btoa(unescape(encodeURIComponent(JSON.stringify(__out))));
+document.body.appendChild(__tag);
+"""
+        js_b64 = base64.b64encode(js.encode("utf-8")).decode("ascii")
+        q = {
+            "url": seed_url,
+            "x-api-key": self._key,
+            "proxy_type": "residential",
+            "browser": "true",
+            "js_snippet": js_b64,
+            "wait_for_selector": "#ant-result",
+        }
+        req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
+        last_status, last_body = 0, b""
+        for attempt in range(1, self.MAX_ATTEMPTS + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as r:
+                    last_status, last_body = r.status, r.read()
+            except urllib.error.HTTPError as e:
+                last_status, last_body = e.code, e.read()
+            if last_status < 400:
+                break
+            if attempt < self.MAX_ATTEMPTS:
+                backoff = 15 if last_status == 409 else self.RETRY_BACKOFF_SEC
+                time.sleep(backoff)
+        if last_status >= 400:
+            raise RuntimeError(f"HTTP {last_status}: {last_body[:200].decode('utf-8', 'ignore')}")
+        text = last_body.decode("utf-8", "ignore")
+        m = re.search(r'<pre id="ant-result">([^<]*)</pre>', text)
+        if not m:
+            raise RuntimeError("ant-result missing in probe_ssr_data")
+        decoded = base64.b64decode(m.group(1)).decode("utf-8")
+        return json.loads(decoded)
+
     def fetch_all_series_in_one_page(
         self, seed_url: str, all_ids: list[int], timeout: int = 180
     ) -> dict[int, list[list]]:
-        """Single ScrapingAnt request: load seed page in headless Chrome, then
-        from inside that page do per-ID in-browser fetches against /stats/data/{id}.
-
-        Hypothesis: MacroMicro accepts page-context fetches for a single ID
-        (the page's own code does this for the chart) but rejects 14-ID
-        batched fetches because they look bot-like. If true, we pay 1
-        ScrapingAnt request (~125 credits) and get all 14 series back via
-        free in-browser fetches.
-
-        Returns {series_id: [[epoch_ms, value], ...]} for every series that
-        succeeded; failed series are missing from the dict.
-        """
+        """[disabled — see probe_ssr_data]"""
         ids_json = json.dumps(all_ids)
         js = r"""
 const __out = {};
@@ -697,20 +807,10 @@ def main() -> None:
     backend = _backend_name()
     n_total = len(SERIES) + len(EXTRA_SERIES)
     if isinstance(scraper, _ScrapingAntSession):
-        all_ids = list(SERIES) + list(EXTRA_SERIES)
-        print(f"[1/2] in-one-page fetch via {backend}: 1 ScrapingAnt request, "
-              f"{len(all_ids)} in-browser fetches ...")
-        series_map = scraper.fetch_all_series_in_one_page(SEED_URL, all_ids)
-        data: dict = {}
-        for sid in all_ids:
-            pts = series_map.get(sid)
-            if pts is None:
-                print(f"      s:{sid:<6} MISSING", file=sys.stderr)
-                continue
-            # MacroMicro's API returns [[date_str, value], ...] in series[0],
-            # so we use it as-is (no epoch conversion needed).
-            data[f"s:{sid}"] = {"series": [pts]}
-            print(f"      s:{sid:<6} {len(pts):>5} points")
+        print(f"[probe] SSR data probe via {backend} ...")
+        probe = scraper.probe_ssr_data(SEED_URL)
+        print(f"[probe] result:\n{json.dumps(probe, indent=2)}", file=sys.stderr)
+        raise RuntimeError("probe-only run; see [probe] output above")
     else:
         print(f"[1/3] resolving token (backend={backend}) ...")
         token = get_token(scraper)
