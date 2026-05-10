@@ -155,30 +155,84 @@ class _ScrapingAntSession:
         js = r"""
 const __diag = {};
 try {
-  const __html = document.documentElement.outerHTML;
-  const __m = __html.match(/stk["\s]*[:=]["\s]*["']([^"']+)["']/);
-  if (!__m) throw new Error("token 'stk' not found in DOM");
-  const __token = __m[1];
-  __diag.tokenPrefix = __token.slice(0, 12);
-  __diag.tokenLen = __token.length;
-  __diag.cookies = document.cookie;
+  // Probe: enumerate top-level window keys (filter out browser builtins)
+  // and any variables that might hold chart series data.
+  const __builtins = new Set([
+    "self", "window", "document", "name", "location", "customElements", "history",
+    "locationbar", "menubar", "personalbar", "scrollbars", "statusbar", "toolbar",
+    "status", "closed", "frames", "length", "top", "opener", "parent", "frameElement",
+    "navigator", "origin", "external", "screen", "innerWidth", "innerHeight",
+    "scrollX", "pageXOffset", "scrollY", "pageYOffset", "visualViewport",
+    "screenX", "screenY", "outerWidth", "outerHeight", "devicePixelRatio",
+    "clientInformation", "screenLeft", "screenTop", "styleMedia", "onsearch",
+    "isSecureContext", "performance", "onappinstalled", "onbeforeinstallprompt",
+    "crypto", "indexedDB", "sessionStorage", "localStorage", "onbeforexrselect",
+    "onabort", "onbeforeinput", "onbeforematch", "onbeforetoggle", "onblur",
+    "oncancel", "oncanplay", "oncanplaythrough", "onchange", "onclick", "onclose",
+    "oncontentvisibilityautostatechange", "oncontextlost", "oncontextmenu",
+    "oncontextrestored", "oncuechange", "ondblclick", "ondrag", "ondragend",
+    "ondragenter", "ondragleave", "ondragover", "ondragstart", "ondrop",
+    "ondurationchange", "onemptied", "onended", "onerror", "onfocus", "onformdata",
+    "oninput", "oninvalid", "onkeydown", "onkeypress", "onkeyup", "onload",
+    "onloadeddata", "onloadedmetadata", "onloadstart", "onmousedown", "onmouseenter",
+    "onmouseleave", "onmousemove", "onmouseout", "onmouseover", "onmouseup",
+    "onmousewheel", "onpause", "onplay", "onplaying", "onprogress", "onratechange",
+    "onreset", "onresize", "onscroll", "onsecuritypolicyviolation", "onseeked",
+    "onseeking", "onselect", "onslotchange", "onstalled", "onsubmit", "onsuspend",
+    "ontimeupdate", "ontoggle", "onvolumechange", "onwaiting", "onwebkitanimationend",
+    "onwebkitanimationiteration", "onwebkitanimationstart", "onwebkittransitionend",
+    "onwheel", "onauxclick", "ongotpointercapture", "onlostpointercapture",
+    "onpointerdown", "onpointermove", "onpointerrawupdate", "onpointerup",
+    "onpointercancel", "onpointerover", "onpointerout", "onpointerenter",
+    "onpointerleave", "onselectstart", "onselectionchange", "onanimationend",
+    "onanimationiteration", "onanimationstart", "ontransitionrun", "ontransitionstart",
+    "ontransitionend", "ontransitioncancel", "onafterprint", "onbeforeprint",
+    "onbeforeunload", "onhashchange", "onlanguagechange", "onmessage", "onmessageerror",
+    "onoffline", "ononline", "onpagehide", "onpageshow", "onpopstate", "onrejectionhandled",
+    "onstorage", "onunhandledrejection", "onunload", "crossOriginIsolated",
+    "scheduler", "alert", "atob", "blur", "btoa", "cancelAnimationFrame",
+    "cancelIdleCallback", "captureEvents", "clearInterval", "clearTimeout", "close",
+    "confirm", "createImageBitmap", "fetch", "find", "focus", "getComputedStyle",
+    "getSelection", "matchMedia", "moveBy", "moveTo", "open", "postMessage", "print",
+    "prompt", "queueMicrotask", "releaseEvents", "reportError", "requestAnimationFrame",
+    "requestIdleCallback", "resizeBy", "resizeTo", "scroll", "scrollBy", "scrollTo",
+    "setInterval", "setTimeout", "stop", "structuredClone", "webkitCancelAnimationFrame",
+    "webkitRequestAnimationFrame", "chrome", "AbortController", "TextEncoder",
+    "TextDecoder", "fetchLater", "trustedTypes", "speechSynthesis", "onpageswap",
+    "onpagereveal", "onscrollend", "onscrollsnapchange", "onscrollsnapchanging",
+    "documentPictureInPicture", "onbeforematch", "credentialless", "$", "jQuery"
+  ]);
+  const __pageKeys = Object.keys(window).filter(k => !__builtins.has(k));
   __diag.location = location.href;
-  __diag.userAgent = navigator.userAgent;
-  __diag.referrer = document.referrer;
-  const __r = await fetch("/stats/data/__IDS__", {
-    method: "GET",
-    headers: {
-      "Authorization": "Bearer " + __token,
-      "Accept": "application/json, text/plain, */*",
-      "X-Requested-With": "XMLHttpRequest",
-      "Referer": location.href
-    },
-    credentials: "include"
-  });
-  __diag.status = __r.status;
-  __diag.respHeaders = {};
-  __r.headers.forEach((v, k) => { __diag.respHeaders[k] = v; });
-  __diag.body = await __r.text();
+  __diag.tokenLen = (document.documentElement.outerHTML.match(/stk["\s]*[:=]["\s]*["']([^"']+)["']/) || [])[1]?.length;
+  __diag.pageKeys = __pageKeys.slice(0, 80);
+  // Look for likely chart/data globals: any object with a "data" key holding arrays,
+  // or any value that's an array of [date, number] tuples, or Highcharts/Chart instances.
+  const __candidates = {};
+  for (const k of __pageKeys) {
+    try {
+      const v = window[k];
+      const t = typeof v;
+      if (t === "object" && v !== null) {
+        __candidates[k] = {
+          ctor: v.constructor && v.constructor.name,
+          keys: Object.keys(v).slice(0, 12),
+        };
+      } else if (t !== "function") {
+        __candidates[k] = {type: t, preview: String(v).slice(0, 60)};
+      }
+    } catch (__e) { /* ignore */ }
+  }
+  __diag.candidates = __candidates;
+  // Highcharts often exposes window.Highcharts.charts[] with all chart instances
+  if (window.Highcharts && Array.isArray(window.Highcharts.charts)) {
+    __diag.hcChartCount = window.Highcharts.charts.length;
+    __diag.hcChartSeries = window.Highcharts.charts.map(c => ({
+      title: c && c.title && c.title.textStr,
+      seriesNames: (c && c.series || []).map(s => s.name),
+      pointsLen: (c && c.series || []).map(s => (s.processedXData || s.xData || []).length),
+    }));
+  }
 } catch (__e) {
   __diag.error = String(__e);
   __diag.stack = (__e && __e.stack) || null;
@@ -246,20 +300,10 @@ document.body.appendChild(__tag);
                 f"failed to b64-decode ant-result: {e}; raw: {m.group(1)[:200]!r}"
             )
         diag = json.loads(decoded)
-        diag_no_body = {k: v for k, v in diag.items() if k != "body"}
-        print(f"[diag] {json.dumps(diag_no_body, indent=2)}", file=sys.stderr)
-        if "error" in diag and "body" not in diag:
-            raise RuntimeError(f"in-browser fetch failed: {diag['error']}")
-        body = diag.get("body", "")
-        try:
-            payload = json.loads(body)
-        except json.JSONDecodeError:
-            raise RuntimeError(
-                f"non-JSON body from API (status={diag.get('status')}): {body[:300]!r}"
-            )
-        if payload.get("success") != 1:
-            raise RuntimeError(f"API returned non-success: {payload!r}")
-        return payload["data"]
+        print(f"[diag] {json.dumps(diag, indent=2)}", file=sys.stderr)
+        # PROBE MODE: not extracting real data yet. Force-fail so the workflow
+        # logs the dump and we can read what page state looks like.
+        raise RuntimeError("probe-only run — see [diag] above")
 
 
 def _make_session():
