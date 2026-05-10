@@ -239,7 +239,7 @@ try {
   const __token = __m[1];
   __out.tokenPrefix = __token.slice(0, 12);
   const __ids = __IDS_JSON__;
-  for (const __id of __ids) {
+  const __fetchOne = async (__id) => {
     try {
       const __r = await fetch("/stats/data/" + __id, {
         method: "GET",
@@ -253,19 +253,20 @@ try {
       const __text = await __r.text();
       let __payload;
       try { __payload = JSON.parse(__text); }
-      catch { __errors[__id] = "non-JSON: " + __text.slice(0, 100); continue; }
+      catch { __errors[__id] = "non-JSON " + __r.status + ": " + __text.slice(0, 80); return; }
       if (__payload && __payload.success === 1) {
         const __entry = __payload.data && __payload.data["s:" + __id];
         const __pts = __entry && __entry.series && __entry.series[0];
         if (Array.isArray(__pts)) __series[__id] = __pts;
         else __errors[__id] = "no series[0] in payload";
       } else {
-        __errors[__id] = "non-success: " + JSON.stringify(__payload).slice(0, 200);
+        __errors[__id] = "non-success: " + JSON.stringify(__payload).slice(0, 150);
       }
     } catch (__e) {
       __errors[__id] = "exception: " + String(__e);
     }
-  }
+  };
+  await Promise.all(__ids.map(__fetchOne));
   __out.series = __series;
   __out.errors = __errors;
   __out.successCount = Object.keys(__series).length;
