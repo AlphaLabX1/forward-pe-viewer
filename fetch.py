@@ -173,8 +173,30 @@ document.body.appendChild(__tag);
             "wait_for_selector": "#ant-result",
         }
         req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            text = r.read().decode("utf-8", "ignore")
+        last_status, last_body = 0, b""
+        for attempt in range(1, self.MAX_ATTEMPTS + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as r:
+                    last_status, last_body = r.status, r.read()
+            except urllib.error.HTTPError as e:
+                last_status, last_body = e.code, e.read()
+            if last_status < 400:
+                break
+            if attempt < self.MAX_ATTEMPTS:
+                # 409 = concurrency limit hit; sleep longer before retrying.
+                backoff = 15 if last_status == 409 else self.RETRY_BACKOFF_SEC
+                print(
+                    f"[retry] discover_series_links {last_status} on attempt {attempt}, "
+                    f"backing off {backoff}s",
+                    file=sys.stderr,
+                )
+                time.sleep(backoff)
+        if last_status >= 400:
+            raise RuntimeError(
+                f"HTTP {last_status} discovering series links: "
+                f"{last_body[:200].decode('utf-8', 'ignore')}"
+            )
+        text = last_body.decode("utf-8", "ignore")
         m = re.search(r'<pre id="ant-result">([^<]*)</pre>', text)
         if not m:
             raise RuntimeError("ant-result missing in discover_series_links")
@@ -245,11 +267,13 @@ document.body.appendChild(__tag);
             if last_status < 400:
                 break
             if attempt < self.MAX_ATTEMPTS:
+                backoff = 15 if last_status == 409 else self.RETRY_BACKOFF_SEC
                 print(
-                    f"[retry] {series_url} ScrapingAnt {last_status} on attempt {attempt}",
+                    f"[retry] {series_url} ScrapingAnt {last_status} on attempt {attempt}, "
+                    f"backing off {backoff}s",
                     file=sys.stderr,
                 )
-                time.sleep(self.RETRY_BACKOFF_SEC)
+                time.sleep(backoff)
 
         if last_status >= 400:
             raise RuntimeError(
