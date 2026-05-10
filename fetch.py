@@ -212,6 +212,124 @@ document.body.appendChild(__tag);
                 result[sid] = f"{BASE}/series/{sid}/{slug}"
         return result
 
+    def fetch_all_series_in_one_page(
+        self, seed_url: str, all_ids: list[int], timeout: int = 180
+    ) -> dict[int, list[list]]:
+        """Single ScrapingAnt request: load seed page in headless Chrome, then
+        from inside that page do per-ID in-browser fetches against /stats/data/{id}.
+
+        Hypothesis: MacroMicro accepts page-context fetches for a single ID
+        (the page's own code does this for the chart) but rejects 14-ID
+        batched fetches because they look bot-like. If true, we pay 1
+        ScrapingAnt request (~125 credits) and get all 14 series back via
+        free in-browser fetches.
+
+        Returns {series_id: [[epoch_ms, value], ...]} for every series that
+        succeeded; failed series are missing from the dict.
+        """
+        ids_json = json.dumps(all_ids)
+        js = r"""
+const __out = {};
+const __series = {};
+const __errors = {};
+try {
+  const __html = document.documentElement.outerHTML;
+  const __m = __html.match(/stk["\s]*[:=]["\s]*["']([^"']+)["']/);
+  if (!__m) throw new Error("token 'stk' not found in DOM");
+  const __token = __m[1];
+  __out.tokenPrefix = __token.slice(0, 12);
+  const __ids = __IDS_JSON__;
+  for (const __id of __ids) {
+    try {
+      const __r = await fetch("/stats/data/" + __id, {
+        method: "GET",
+        headers: {
+          "Authorization": "Bearer " + __token,
+          "Accept": "application/json, text/plain, */*",
+          "X-Requested-With": "XMLHttpRequest"
+        },
+        credentials: "include"
+      });
+      const __text = await __r.text();
+      let __payload;
+      try { __payload = JSON.parse(__text); }
+      catch { __errors[__id] = "non-JSON: " + __text.slice(0, 100); continue; }
+      if (__payload && __payload.success === 1) {
+        const __entry = __payload.data && __payload.data["s:" + __id];
+        const __pts = __entry && __entry.series && __entry.series[0];
+        if (Array.isArray(__pts)) __series[__id] = __pts;
+        else __errors[__id] = "no series[0] in payload";
+      } else {
+        __errors[__id] = "non-success: " + JSON.stringify(__payload).slice(0, 200);
+      }
+    } catch (__e) {
+      __errors[__id] = "exception: " + String(__e);
+    }
+  }
+  __out.series = __series;
+  __out.errors = __errors;
+  __out.successCount = Object.keys(__series).length;
+  __out.errorCount = Object.keys(__errors).length;
+} catch (__e) {
+  __out.fatal = String(__e);
+  __out.stack = (__e && __e.stack) || null;
+}
+const __tag = document.createElement("pre");
+__tag.id = "ant-result";
+__tag.textContent = btoa(unescape(encodeURIComponent(JSON.stringify(__out))));
+document.body.appendChild(__tag);
+""".replace("__IDS_JSON__", ids_json)
+        js_b64 = base64.b64encode(js.encode("utf-8")).decode("ascii")
+
+        q = {
+            "url": seed_url,
+            "x-api-key": self._key,
+            "proxy_type": "residential",
+            "browser": "true",
+            "js_snippet": js_b64,
+            "wait_for_selector": "#ant-result",
+        }
+        req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
+
+        last_status, last_body = 0, b""
+        for attempt in range(1, self.MAX_ATTEMPTS + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as r:
+                    last_status, last_body = r.status, r.read()
+            except urllib.error.HTTPError as e:
+                last_status, last_body = e.code, e.read()
+            if last_status < 400:
+                break
+            if attempt < self.MAX_ATTEMPTS:
+                backoff = 15 if last_status == 409 else self.RETRY_BACKOFF_SEC
+                print(
+                    f"[retry] in-one-page ScrapingAnt {last_status} attempt {attempt}, "
+                    f"backing off {backoff}s",
+                    file=sys.stderr,
+                )
+                time.sleep(backoff)
+        if last_status >= 400:
+            raise RuntimeError(
+                f"HTTP {last_status}: {last_body[:200].decode('utf-8', 'ignore')}"
+            )
+        text = last_body.decode("utf-8", "ignore")
+        m = re.search(r'<pre id="ant-result">([^<]*)</pre>', text)
+        if not m:
+            raise RuntimeError("ant-result tag missing for in-one-page fetch")
+        decoded = base64.b64decode(m.group(1)).decode("utf-8")
+        out = json.loads(decoded)
+        if "fatal" in out:
+            raise RuntimeError(f"in-page extraction fatal: {out['fatal']}")
+        print(
+            f"[diag] in-one-page tokenPrefix={out.get('tokenPrefix')} "
+            f"successCount={out.get('successCount')} "
+            f"errorCount={out.get('errorCount')}",
+            file=sys.stderr,
+        )
+        for sid, err in (out.get("errors") or {}).items():
+            print(f"[diag]   s:{sid} -> {err}", file=sys.stderr)
+        return {int(k): v for k, v in (out.get("series") or {}).items()}
+
     def fetch_series_from_page(self, series_url: str, timeout: int = 120) -> list[list]:
         """Load a MacroMicro series page in headless Chrome, then read the
         chart data straight out of Highcharts' state — bypassing the
@@ -579,28 +697,19 @@ def main() -> None:
     n_total = len(SERIES) + len(EXTRA_SERIES)
     if isinstance(scraper, _ScrapingAntSession):
         all_ids = list(SERIES) + list(EXTRA_SERIES)
-        print(f"[1/3] discovering series URLs from seed page ...")
-        try:
-            url_map = scraper.discover_series_links(SEED_URL)
-            print(f"      discovered {len(url_map)} series URLs")
-        except Exception as e:
-            print(f"      discover_series_links FAILED: {e}", file=sys.stderr)
-            url_map = {}
-        url_map[SEED_SERIES_ID] = SEED_URL  # always use the canonical seed URL
-
-        print(f"[2/3] fetching {len(all_ids)} series via {backend} ...")
+        print(f"[1/2] in-one-page fetch via {backend}: 1 ScrapingAnt request, "
+              f"{len(all_ids)} in-browser fetches ...")
+        series_map = scraper.fetch_all_series_in_one_page(SEED_URL, all_ids)
         data: dict = {}
         for sid in all_ids:
-            url = url_map.get(sid)
-            if not url:
-                print(f"      s:{sid:<6} SKIPPED (no URL discovered)", file=sys.stderr)
+            pts = series_map.get(sid)
+            if pts is None:
+                print(f"      s:{sid:<6} MISSING", file=sys.stderr)
                 continue
-            try:
-                epoch_data = scraper.fetch_series_from_page(url)
-                data[f"s:{sid}"] = _series_data_to_macromicro_format(epoch_data)
-                print(f"      s:{sid:<6} {len(epoch_data):>5} points  ({url})")
-            except Exception as e:
-                print(f"      s:{sid:<6} FAILED: {e}", file=sys.stderr)
+            # MacroMicro's API returns [[date_str, value], ...] in series[0],
+            # so we use it as-is (no epoch conversion needed).
+            data[f"s:{sid}"] = {"series": [pts]}
+            print(f"      s:{sid:<6} {len(pts):>5} points")
     else:
         print(f"[1/3] resolving token (backend={backend}) ...")
         token = get_token(scraper)
