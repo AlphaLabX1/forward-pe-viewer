@@ -213,89 +213,96 @@ document.body.appendChild(__tag);
         return result
 
     def probe_ssr_data(self, seed_url: str, timeout: int = 180) -> dict:
-        """One-shot probe: load seed page, dump HTML hints + window globals
-        to figure out where the series data actually lives. Single ScrapingAnt
-        request (~125 credits)."""
+        """One-shot probe: dump page's internal data-fetching method source code
+        and try invoking them. Single ScrapingAnt request (~125 credits)."""
         js = r"""
 const __out = {};
 try {
-  const __html = document.documentElement.outerHTML;
-  __out.htmlLen = __html.length;
-  // Look for common SSR globals
-  const __ssrKeys = [
-    "__INITIAL_STATE__", "__NEXT_DATA__", "__NUXT__", "__APP_STATE__",
-    "__PRELOADED_STATE__", "__DATA__", "INITIAL_STATE"
+  // Dump source code of the candidate methods
+  __out.fnSrc = {};
+  const __toProbe = [
+    ["App.getChartData", () => window.App && window.App.getChartData],
+    ["App.getStatData", () => window.App && window.App.getStatData],
+    ["ChartApp.getStatData", () => window.ChartApp && window.ChartApp.getStatData],
+    ["ChartApp.getChartData", () => window.ChartApp && window.ChartApp.getChartData],
+    ["ChartApp.preloadStats", () => window.ChartApp && window.ChartApp.preloadStats],
+    ["ChartApp.preloadCharts", () => window.ChartApp && window.ChartApp.preloadCharts],
+    ["ChartApp.drawStat", () => window.ChartApp && window.ChartApp.drawStat],
   ];
-  __out.ssrGlobals = {};
-  for (const __k of __ssrKeys) {
-    if (window[__k]) {
-      __out.ssrGlobals[__k] = "present (type=" + typeof window[__k] + ")";
-    }
-  }
-  // Search HTML for known data values from the chart
-  // (last 3 S&P 500 forward PE values we saw earlier: 20.1357, 20.871, 20.8632)
-  __out.knownValueHits = {};
-  for (const __v of ["20.8632", "20.871", "20.1357", "29.2297"]) {
-    const __idx = __html.indexOf(__v);
-    __out.knownValueHits[__v] = __idx;
-  }
-  // Find all <script> tags and look at their content
-  const __scripts = Array.from(document.querySelectorAll("script"));
-  __out.scriptCount = __scripts.length;
-  __out.inlineScripts = [];
-  let __i = 0;
-  for (const __s of __scripts) {
-    const __c = __s.textContent || "";
-    if (__c.length > 200 && (__c.includes("series") || __c.includes("data") || __c.includes("20052"))) {
-      __out.inlineScripts.push({
-        idx: __i, len: __c.length,
-        head: __c.slice(0, 300), tail: __c.slice(-300),
-      });
-    }
-    __i++;
-  }
-  __out.inlineScriptHitCount = __out.inlineScripts.length;
-  // ChartApp inspection
-  if (window.ChartApp) {
-    __out.chartAppKeys = Object.keys(window.ChartApp).slice(0, 30);
-    if (typeof window.ChartApp === "object") {
-      __out.chartAppPreview = {};
-      for (const __k of Object.keys(window.ChartApp).slice(0, 10)) {
-        try {
-          const __v = window.ChartApp[__k];
-          __out.chartAppPreview[__k] = {
-            type: typeof __v,
-            ctor: __v && __v.constructor && __v.constructor.name,
-            isArray: Array.isArray(__v),
-            len: Array.isArray(__v) || typeof __v === "string" ? __v.length : null,
-          };
-        } catch {}
+  for (const [__name, __getter] of __toProbe) {
+    try {
+      const __fn = __getter();
+      if (typeof __fn === "function") {
+        __out.fnSrc[__name] = __fn.toString().slice(0, 1500);
+      } else {
+        __out.fnSrc[__name] = "not-a-function (type=" + typeof __fn + ")";
       }
+    } catch (__e) {
+      __out.fnSrc[__name] = "error: " + String(__e);
     }
   }
-  // App
-  if (window.App) {
-    __out.appKeys = Object.keys(window.App).slice(0, 30);
+  // Try invoking ChartApp.getStatData(20052) — this is what the page's own
+  // chart code presumably calls to get the same data we want.
+  __out.invocations = {};
+  if (window.ChartApp && typeof window.ChartApp.getStatData === "function") {
+    try {
+      const __r = window.ChartApp.getStatData(20052);
+      __out.invocations["ChartApp.getStatData(20052)"] = {
+        type: typeof __r,
+        isPromise: __r && typeof __r.then === "function",
+        ctor: __r && __r.constructor && __r.constructor.name,
+      };
+      if (__r && typeof __r.then === "function") {
+        try {
+          const __resolved = await Promise.race([
+            __r,
+            new Promise((_, __rej) => setTimeout(() => __rej(new Error("timeout-15s")), 15000)),
+          ]);
+          __out.invocations["ChartApp.getStatData(20052)"].resolved = {
+            type: typeof __resolved,
+            isArray: Array.isArray(__resolved),
+            keys: __resolved && typeof __resolved === "object" ? Object.keys(__resolved).slice(0, 10) : null,
+            preview: JSON.stringify(__resolved).slice(0, 500),
+          };
+        } catch (__e) {
+          __out.invocations["ChartApp.getStatData(20052)"].rejection = String(__e);
+        }
+      }
+    } catch (__e) {
+      __out.invocations["ChartApp.getStatData(20052)"] = "throw: " + String(__e);
+    }
   }
-  // Re-confirm Highcharts charts and series
-  if (window.Highcharts && window.Highcharts.charts) {
-    __out.hcChartCount = window.Highcharts.charts.length;
-    __out.hcAllSeries = window.Highcharts.charts.map(c => {
-      if (!c) return null;
-      return (c.series || []).map(s => ({
-        name: s.name,
-        len: (s.options && s.options.data && s.options.data.length) || 0,
-      }));
-    });
-  }
-  // Search HTML for the series IDs of all 14 we want
-  __out.idHitsInHtml = {};
-  for (const __id of [20052, 20517, 20518, 20519, 20520, 20521, 20522, 20523, 20524, 20525, 20526, 20527, 2, 46974]) {
-    const __idx = __html.indexOf("s:" + __id);
-    __out.idHitsInHtml[__id] = __idx;
+  // Try ChartApp.preloadStats with all 14 IDs
+  if (window.ChartApp && typeof window.ChartApp.preloadStats === "function") {
+    try {
+      const __r2 = window.ChartApp.preloadStats([20052, 20517, 20518, 20519, 20520, 20521, 20522, 20523, 20524, 20525, 20526, 20527, 2, 46974]);
+      __out.invocations["ChartApp.preloadStats(14ids)"] = {
+        type: typeof __r2,
+        isPromise: __r2 && typeof __r2.then === "function",
+      };
+      if (__r2 && typeof __r2.then === "function") {
+        try {
+          const __resolved2 = await Promise.race([
+            __r2,
+            new Promise((_, __rej) => setTimeout(() => __rej(new Error("timeout-20s")), 20000)),
+          ]);
+          __out.invocations["ChartApp.preloadStats(14ids)"].resolved = {
+            type: typeof __resolved2,
+            isArray: Array.isArray(__resolved2),
+            keys: __resolved2 && typeof __resolved2 === "object" ? Object.keys(__resolved2).slice(0, 20) : null,
+            preview: JSON.stringify(__resolved2).slice(0, 500),
+          };
+        } catch (__e) {
+          __out.invocations["ChartApp.preloadStats(14ids)"].rejection = String(__e);
+        }
+      }
+    } catch (__e) {
+      __out.invocations["ChartApp.preloadStats(14ids)"] = "throw: " + String(__e);
+    }
   }
 } catch (__e) {
   __out.fatal = String(__e);
+  __out.stack = (__e && __e.stack) || null;
 }
 const __tag = document.createElement("pre");
 __tag.id = "ant-result";
