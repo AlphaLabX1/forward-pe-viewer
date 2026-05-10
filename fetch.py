@@ -66,6 +66,9 @@ TOKEN_RE = re.compile(r'stk["\s]*[:=]["\s]*["\']([^"\']+)["\']')
 # Chart 48243 ("US - S&P 500 Forward PE Ratio by Sector") embeds 12 series in
 # one response. The order of `series[i]` matches the order in `chart_config.
 # seriesConfigs[i].name_en` — confirmed by inspection on 2026-05-10.
+# Chart 50108 ("US - CNN Fear and Greed Index") gives SPX daily price (stat 2)
+# and CNN's F&G index (stat 22748). The MacroMicro-original F&G (stat 46974)
+# isn't reachable via any public chart anymore — its CSV stays stale.
 CHART_SOURCES: list[tuple[int, str, list[tuple[int, int]]]] = [
     (
         48243,
@@ -83,6 +86,13 @@ CHART_SOURCES: list[tuple[int, str, list[tuple[int, int]]]] = [
             (9, 20526),   # Cons Staples
             (10, 20527),  # Health Care
             (11, 20522),  # Utilities
+        ],
+    ),
+    (
+        142681,
+        "us-mm-bull-and-bear-indicator",
+        [
+            (1, 2),       # SPX daily price (27 years of history vs 5y on chart 50108)
         ],
     ),
 ]
@@ -251,19 +261,42 @@ def write_csvs(series_map: dict[int, list[list]], out_dir: Path) -> dict[int, in
     return counts
 
 
+def _merge_with_existing_csv(path: Path, new_pts: list[list], col: str) -> list[list]:
+    """Merge new daily points into the existing CSV at `path`. New values
+    win on overlapping dates; older dates not present in `new_pts` are kept.
+    Returns the merged sorted list. Used to preserve deep history (e.g. the
+    pre-1999 SPX prices) when a fresh chart endpoint serves only recent data.
+    """
+    by_date: dict[str, str] = {}
+    if path.exists():
+        with path.open() as f:
+            reader = csv.reader(f)
+            header = next(reader, None)
+            for row in reader:
+                if len(row) >= 2:
+                    by_date[row[0]] = row[1]
+    for date, value in new_pts:
+        by_date[str(date)] = str(value)
+    return [[d, by_date[d]] for d in sorted(by_date)]
+
+
 def write_extras(series_map: dict[int, list[list]], out_dir: Path) -> dict[int, int]:
     counts: dict[int, int] = {}
     for sid, (stem, col) in EXTRA_SERIES.items():
         pts = series_map.get(sid)
+        path = out_dir / f"{stem}.csv"
         if not pts:
             print(f"[warn] missing s:{sid} ({stem}) — keeping prior CSV", file=sys.stderr)
             continue
-        path = out_dir / f"{stem}.csv"
+        # Merge with existing to preserve any history beyond what the chart
+        # endpoint serves (e.g. SPX pre-1999 prices from the deprecated
+        # /stats/data/ endpoint).
+        merged = _merge_with_existing_csv(path, pts, col)
         with path.open("w", newline="") as f:
             w = csv.writer(f)
             w.writerow(["date", col])
-            w.writerows(pts)
-        counts[sid] = len(pts)
+            w.writerows(merged)
+        counts[sid] = len(merged)
     return counts
 
 
