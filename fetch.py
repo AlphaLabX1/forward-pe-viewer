@@ -95,7 +95,7 @@ class _ScrapingAntSession:
         q = {
             "url": url,
             "x-api-key": self._key,
-            "proxy_type": "residential",
+            "proxy_type": "datacenter",
             "browser": "true",
         }
         # `cookies` URL param injects into the headless Chrome session before
@@ -167,7 +167,7 @@ document.body.appendChild(__tag);
         q = {
             "url": seed_url,
             "x-api-key": self._key,
-            "proxy_type": "residential",
+            "proxy_type": "datacenter",
             "browser": "true",
             "js_snippet": js_b64,
             "wait_for_selector": "#ant-result",
@@ -275,7 +275,7 @@ document.body.appendChild(__tag);
         q = {
             "url": seed_url,
             "x-api-key": self._key,
-            "proxy_type": "residential",
+            "proxy_type": "datacenter",
             "browser": "true",
             "js_snippet": js_b64,
             "wait_for_selector": "#ant-result",
@@ -416,7 +416,7 @@ document.body.appendChild(__tag);
         q = {
             "url": seed_url,
             "x-api-key": self._key,
-            "proxy_type": "residential",
+            "proxy_type": "datacenter",
             "browser": "true",
             "js_snippet": js_b64,
             "wait_for_selector": "#ant-result",
@@ -505,7 +505,7 @@ document.body.appendChild(__tag);
         q = {
             "url": seed_url,
             "x-api-key": self._key,
-            "proxy_type": "residential",
+            "proxy_type": "datacenter",
             "browser": "true",
             "js_snippet": js_b64,
             "wait_for_selector": "#ant-result",
@@ -589,7 +589,7 @@ document.body.appendChild(__tag);
         q = {
             "url": series_url,
             "x-api-key": self._key,
-            "proxy_type": "residential",
+            "proxy_type": "datacenter",
             "browser": "true",
             "js_snippet": js_b64,
             "wait_for_selector": "#ant-result",
@@ -746,7 +746,7 @@ document.body.appendChild(__tag);
         q = {
             "url": seed_url,
             "x-api-key": self._key,
-            "proxy_type": "residential",
+            "proxy_type": "datacenter",
             "browser": "true",
             "js_snippet": js_b64,
             "wait_for_selector": "#ant-result",
@@ -918,17 +918,28 @@ def main() -> None:
     n_total = len(SERIES) + len(EXTRA_SERIES)
     if isinstance(scraper, _ScrapingAntSession):
         all_ids = list(SERIES) + list(EXTRA_SERIES)
-        print(f"[1/2] page-internals fetch via {backend}: 1 ScrapingAnt request, "
-              f"{len(all_ids)} series via ChartApp.getStatData ...")
-        series_map = scraper.fetch_via_page_internals(SEED_URL, all_ids)
+        print(f"[1/3] discovering series URLs from seed page ...")
+        try:
+            url_map = scraper.discover_series_links(SEED_URL)
+            print(f"      discovered {len(url_map)} URLs")
+        except Exception as e:
+            print(f"      discover failed: {e} — falling back to seed only", file=sys.stderr)
+            url_map = {}
+        url_map[SEED_SERIES_ID] = SEED_URL
+
+        print(f"[2/3] fetching {len(all_ids)} series, one page each ...")
         data: dict = {}
         for sid in all_ids:
-            pts = series_map.get(sid)
-            if pts is None:
-                print(f"      s:{sid:<6} MISSING", file=sys.stderr)
+            url = url_map.get(sid)
+            if not url:
+                print(f"      s:{sid:<6} SKIPPED (no URL)", file=sys.stderr)
                 continue
-            data[f"s:{sid}"] = {"series": [pts]}
-            print(f"      s:{sid:<6} {len(pts):>5} points")
+            try:
+                epoch_data = scraper.fetch_series_from_page(url)
+                data[f"s:{sid}"] = _series_data_to_macromicro_format(epoch_data)
+                print(f"      s:{sid:<6} {len(epoch_data):>5} points")
+            except Exception as e:
+                print(f"      s:{sid:<6} FAILED: {e}", file=sys.stderr)
     else:
         print(f"[1/3] resolving token (backend={backend}) ...")
         token = get_token(scraper)
