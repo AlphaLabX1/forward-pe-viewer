@@ -212,6 +212,95 @@ document.body.appendChild(__tag);
                 result[sid] = f"{BASE}/series/{sid}/{slug}"
         return result
 
+    def fetch_via_page_internals(
+        self, seed_url: str, all_ids: list[int], timeout: int = 180
+    ) -> dict[int, list[list]]:
+        """1 ScrapingAnt request: load seed page, then call the page's own
+        `ChartApp.getStatData(ids)` from inside the browser. That function
+        knows the right Authorization prefix + Docref header that MacroMicro's
+        API accepts. Results land in App.data["s:<id>"]. Poll for them then
+        return.
+        """
+        ids_json = json.dumps(all_ids)
+        js = r"""
+const __out = {};
+try {
+  if (!window.ChartApp || typeof window.ChartApp.getStatData !== "function") {
+    throw new Error("ChartApp.getStatData not available");
+  }
+  if (!window.App) window.App = {};
+  if (!window.App.data) window.App.data = {};
+  const __ids = __IDS_JSON__;
+  const __wantedKeys = __ids.map(__id => "s:" + __id);
+  // Trigger the page's own fetch
+  window.ChartApp.getStatData(__ids);
+  // Poll App.data for up to 30s for all keys to appear
+  const __deadline = Date.now() + 30000;
+  while (Date.now() < __deadline) {
+    const __have = __wantedKeys.filter(__k => __k in window.App.data);
+    if (__have.length === __wantedKeys.length) break;
+    await new Promise(r => setTimeout(r, 500));
+  }
+  __out.have = __wantedKeys.filter(__k => __k in window.App.data);
+  __out.missing = __wantedKeys.filter(__k => !(__k in window.App.data));
+  __out.series = {};
+  for (const __id of __ids) {
+    const __key = "s:" + __id;
+    const __entry = window.App.data[__key];
+    if (__entry && __entry.series && Array.isArray(__entry.series[0])) {
+      __out.series[__id] = __entry.series[0];
+    }
+  }
+  __out.appStkLen = (window.App.stk || "").length;
+  __out.appStkPrefix = (window.App.stk || "").slice(0, 12);
+} catch (__e) {
+  __out.fatal = String(__e);
+  __out.stack = (__e && __e.stack) || null;
+}
+const __tag = document.createElement("pre");
+__tag.id = "ant-result";
+__tag.textContent = btoa(unescape(encodeURIComponent(JSON.stringify(__out))));
+document.body.appendChild(__tag);
+""".replace("__IDS_JSON__", ids_json)
+        js_b64 = base64.b64encode(js.encode("utf-8")).decode("ascii")
+        q = {
+            "url": seed_url,
+            "x-api-key": self._key,
+            "proxy_type": "residential",
+            "browser": "true",
+            "js_snippet": js_b64,
+            "wait_for_selector": "#ant-result",
+        }
+        req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
+        last_status, last_body = 0, b""
+        for attempt in range(1, self.MAX_ATTEMPTS + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as r:
+                    last_status, last_body = r.status, r.read()
+            except urllib.error.HTTPError as e:
+                last_status, last_body = e.code, e.read()
+            if last_status < 400:
+                break
+            if attempt < self.MAX_ATTEMPTS:
+                backoff = 15 if last_status == 409 else self.RETRY_BACKOFF_SEC
+                time.sleep(backoff)
+        if last_status >= 400:
+            raise RuntimeError(f"HTTP {last_status}: {last_body[:200].decode('utf-8', 'ignore')}")
+        text = last_body.decode("utf-8", "ignore")
+        m = re.search(r'<pre id="ant-result">([^<]*)</pre>', text)
+        if not m:
+            raise RuntimeError("ant-result missing in fetch_via_page_internals")
+        decoded = base64.b64decode(m.group(1)).decode("utf-8")
+        out = json.loads(decoded)
+        if "fatal" in out:
+            raise RuntimeError(f"in-page invocation fatal: {out['fatal']}")
+        print(
+            f"[diag] page-internals appStkLen={out.get('appStkLen')} "
+            f"have={len(out.get('have', []))} missing={out.get('missing', [])}",
+            file=sys.stderr,
+        )
+        return {int(k): v for k, v in (out.get("series") or {}).items()}
+
     def probe_ssr_data(self, seed_url: str, timeout: int = 180) -> dict:
         """One-shot probe: dump page's internal data-fetching method source code
         and try invoking them. Single ScrapingAnt request (~125 credits)."""
@@ -814,10 +903,18 @@ def main() -> None:
     backend = _backend_name()
     n_total = len(SERIES) + len(EXTRA_SERIES)
     if isinstance(scraper, _ScrapingAntSession):
-        print(f"[probe] SSR data probe via {backend} ...")
-        probe = scraper.probe_ssr_data(SEED_URL)
-        print(f"[probe] result:\n{json.dumps(probe, indent=2)}", file=sys.stderr)
-        raise RuntimeError("probe-only run; see [probe] output above")
+        all_ids = list(SERIES) + list(EXTRA_SERIES)
+        print(f"[1/2] page-internals fetch via {backend}: 1 ScrapingAnt request, "
+              f"{len(all_ids)} series via ChartApp.getStatData ...")
+        series_map = scraper.fetch_via_page_internals(SEED_URL, all_ids)
+        data: dict = {}
+        for sid in all_ids:
+            pts = series_map.get(sid)
+            if pts is None:
+                print(f"      s:{sid:<6} MISSING", file=sys.stderr)
+                continue
+            data[f"s:{sid}"] = {"series": [pts]}
+            print(f"      s:{sid:<6} {len(pts):>5} points")
     else:
         print(f"[1/3] resolving token (backend={backend}) ...")
         token = get_token(scraper)
