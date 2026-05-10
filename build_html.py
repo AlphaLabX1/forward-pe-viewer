@@ -291,11 +291,10 @@ def valuation_payload(spx_fwd_pe: list, us10y: list):
     pe_pts = [(d, float(v)) for d, v in spx_fwd_pe if v]
     ey_pts = [[d, 100.0 / v] for d, v in pe_pts]
 
-    # 5Y rolling percentile bands. With monthly data: window = 60 months.
-    # Start emitting bands once at least 12 months of history is available.
-    band_p20, band_p50, band_p80 = [], [], []
+    # 5Y rolling stats. With monthly data: window = 60 months. Start emitting
+    # once at least 12 months of history is available.
+    band_p20, band_p50, band_p80, band_avg = [], [], [], []
     for i, (d, _) in enumerate(pe_pts):
-        # Window = the prior 60 months (inclusive of current)
         start = max(0, i - 59)
         window = [v for _, v in pe_pts[start:i + 1]]
         if len(window) < 12:
@@ -309,6 +308,7 @@ def valuation_payload(spx_fwd_pe: list, us10y: list):
         band_p20.append([d, pct(0.20)])
         band_p50.append([d, pct(0.50)])
         band_p80.append([d, pct(0.80)])
+        band_avg.append([d, sum(window) / len(window)])
 
     # Build a date -> 10Y yield lookup, then for each EY point find the nearest
     # prior (or same-day) yield observation. 10Y is daily; PE is monthly.
@@ -337,6 +337,7 @@ def valuation_payload(spx_fwd_pe: list, us10y: list):
         "band_p20": band_p20,
         "band_p50": band_p50,
         "band_p80": band_p80,
+        "band_avg": band_avg,
     }
 
 
@@ -1581,6 +1582,14 @@ function stickSolo(id) {
       hovertemplate: "Median %{y:.2f}<extra></extra>",
     },
     {
+      x: xs(v.band_avg), y: ys(v.band_avg),
+      type: "scattergl", mode: "lines",
+      name: "5Y average",
+      line: { color: "#b8421c", width: 1.2, dash: "dot" },
+      yaxis: "y2", xaxis: "x",
+      hovertemplate: "Average %{y:.2f}<extra></extra>",
+    },
+    {
       x: xs(v.pe), y: ys(v.pe),
       type: "scattergl", mode: "lines",
       name: "Forward P/E",
@@ -1691,8 +1700,8 @@ function stickSolo(id) {
     // SPX (log)
     const r1 = rangeOf(spx, true);
     if (r1) { upd["yaxis.range"] = r1; upd["yaxis.autorange"] = false; }
-    // Forward P/E (use combined range of PE + bands)
-    const peAll = v.pe.concat(v.band_p20, v.band_p80);
+    // Forward P/E (use combined range of PE + bands + averages)
+    const peAll = v.pe.concat(v.band_p20, v.band_p80, v.band_avg);
     const r2 = rangeOf(peAll, false);
     if (r2) { upd["yaxis2.range"] = r2; upd["yaxis2.autorange"] = false; }
     // Yields (EY + 10Y)
