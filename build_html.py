@@ -291,13 +291,14 @@ def gauge_payload(fg_points: list[tuple[str, float]]):
 
 
 def build() -> Path:
-    # Forward P/E: already in data/raw.json (MacroMicro batch).
+    # Forward P/E: data/raw.json maps str(series_id) -> [[date, value], ...]
+    # (flat format written by fetch.py after the 2026-05 chart-endpoint switch).
     raw = json.loads((DATA / "raw.json").read_text())
     forward_points: dict[int, list] = {}
     for sid in SERIES:
-        entry = raw.get(f"s:{sid}")
+        entry = raw.get(str(sid))
         if entry:
-            forward_points[sid] = entry["series"][0]
+            forward_points[sid] = entry
     forward = build_family_payload(forward_points)
 
     # Trailing P/E: from data/trailing/*.csv written by fetch_trailing.py.
