@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import csv
 import json
 import os
@@ -134,6 +135,99 @@ class _ScrapingAntSession:
 
         return _ScrapingAntResponse(last_status, last_body)
 
+    def fetch_macromicro_dataset(
+        self, seed_url: str, all_ids: list[int], timeout: int = 120
+    ) -> dict:
+        """Single-request flow: load the seed page in headless Chrome, then run
+        an in-page JS snippet that reads the `stk` token from the DOM, fires a
+        same-origin fetch() to /stats/data/<ids>, and parks the response inside
+        a <pre id="ant-result"> tag (base64-encoded to dodge HTML escaping).
+
+        This sidesteps the Cloudflare detection that fired on standalone API
+        calls: the fetch goes out from a real browser context with real session
+        cookies, real Referer chain, and real navigator fingerprint.
+        """
+        ids = ",".join(str(i) for i in all_ids)
+        js = r"""
+(async () => {
+  let body;
+  try {
+    const html = document.documentElement.outerHTML;
+    const m = html.match(/stk["\s]*[:=]["\s]*["']([^"']+)["']/);
+    if (!m) throw new Error("token 'stk' not found");
+    const token = m[1];
+    const r = await fetch("/stats/data/__IDS__", {
+      method: "GET",
+      headers: {
+        "Authorization": "Bearer " + token,
+        "Accept": "application/json, text/plain, */*",
+        "X-Requested-With": "XMLHttpRequest"
+      },
+      credentials: "include"
+    });
+    body = await r.text();
+  } catch (e) {
+    body = JSON.stringify({error: String(e)});
+  }
+  const tag = document.createElement("pre");
+  tag.id = "ant-result";
+  tag.textContent = btoa(unescape(encodeURIComponent(body)));
+  document.body.appendChild(tag);
+})();
+""".replace("__IDS__", ids)
+        js_b64 = base64.b64encode(js.encode("utf-8")).decode("ascii")
+
+        q = {
+            "url": seed_url,
+            "x-api-key": self._key,
+            "proxy_type": "residential",
+            "browser": "true",
+            "js_snippet": js_b64,
+            "wait_for_selector": "#ant-result",
+        }
+        req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
+
+        last_status, last_body = 0, b""
+        for attempt in range(1, self.MAX_ATTEMPTS + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as r:
+                    last_status, last_body = r.status, r.read()
+            except urllib.error.HTTPError as e:
+                last_status, last_body = e.code, e.read()
+            if last_status < 400:
+                break
+            if attempt < self.MAX_ATTEMPTS:
+                print(
+                    f"[retry] ScrapingAnt {last_status} on attempt {attempt}, "
+                    f"backing off {self.RETRY_BACKOFF_SEC}s",
+                    file=sys.stderr,
+                )
+                time.sleep(self.RETRY_BACKOFF_SEC)
+
+        if last_status >= 400:
+            raise RuntimeError(
+                f"HTTP {last_status}: {last_body[:200].decode('utf-8', 'ignore')}"
+            )
+
+        text = last_body.decode("utf-8", "ignore")
+        m = re.search(r'<pre id="ant-result">([^<]*)</pre>', text)
+        if not m:
+            raise RuntimeError(
+                f"ant-result tag not found in response (first 500 chars): {text[:500]!r}"
+            )
+        try:
+            decoded = base64.b64decode(m.group(1)).decode("utf-8")
+        except Exception as e:
+            raise RuntimeError(
+                f"failed to b64-decode ant-result: {e}; raw: {m.group(1)[:200]!r}"
+            )
+        payload = json.loads(decoded)
+        if "error" in payload and "success" not in payload:
+            raise RuntimeError(f"in-browser fetch failed: {payload['error']}")
+        if payload.get("success") != 1:
+            raise RuntimeError(f"API returned non-success: {payload!r}")
+        return payload["data"]
+
 
 def _make_session():
     if _SCRAPINGANT_KEY:
@@ -233,12 +327,18 @@ def write_combined(data: dict, out_path: Path) -> None:
 def main() -> None:
     out_dir = Path(__file__).parent / "data"
     scraper = _make_session()
-    print(f"[1/3] resolving token (backend={_backend_name()}) ...")
-    token = get_token(scraper)
-    print(f"      token: {token[:12]}... ({len(token)} chars)")
+    backend = _backend_name()
     n_total = len(SERIES) + len(EXTRA_SERIES)
-    print(f"[2/3] fetching {n_total} series in one call ...")
-    data = fetch_data(scraper, token)
+    if isinstance(scraper, _ScrapingAntSession):
+        print(f"[1/2] one-shot via {backend}: load seed + in-browser fetch ({n_total} series) ...")
+        all_ids = list(SERIES) + list(EXTRA_SERIES)
+        data = scraper.fetch_macromicro_dataset(SEED_URL, all_ids)
+    else:
+        print(f"[1/3] resolving token (backend={backend}) ...")
+        token = get_token(scraper)
+        print(f"      token: {token[:12]}... ({len(token)} chars)")
+        print(f"[2/3] fetching {n_total} series in one call ...")
+        data = fetch_data(scraper, token)
     print("[3/3] writing CSVs ...")
     counts = write_csvs(data, out_dir)
     extra_counts = write_extras(data, out_dir)
