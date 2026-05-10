@@ -61,7 +61,11 @@ class _ScrapingAntResponse:
             raise RuntimeError(f"HTTP {self.status_code}: {self.text[:200]}")
 
     def json(self):
-        return json.loads(self.content)
+        try:
+            return json.loads(self.content)
+        except json.JSONDecodeError:
+            print(f"[debug] non-JSON response (first 500 chars): {self.text[:500]!r}", file=sys.stderr)
+            raise
 
 
 class _ScrapingAntSession:
