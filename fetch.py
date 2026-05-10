@@ -85,7 +85,7 @@ class _ScrapingAntSession:
         q = {
             "url": url,
             "x-api-key": self._key,
-            "proxy_type": "datacenter",
+            "proxy_type": "residential",
             "browser": "false",
         }
         req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
