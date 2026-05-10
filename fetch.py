@@ -225,40 +225,39 @@ document.body.appendChild(__tag);
         js = r"""
 const __out = {};
 try {
+  if (typeof window.$ !== "function" || typeof window.$.ajax !== "function") {
+    throw new Error("jQuery $.ajax not available");
+  }
   const __token = (window.App && window.App.stk) || null;
   if (!__token) throw new Error("App.stk not available");
   __out.tokenLen = __token.length;
   __out.tokenPrefix = __token.slice(0, 12);
   const __ids = __IDS_JSON__;
-  const __r = await fetch("/stats/data/" + __ids.join(","), {
-    method: "GET",
-    headers: {
-      "Authorization": "***" + __token,
-      "Docref": document.referrer,
-      "Accept": "application/json, text/plain, */*",
-      "X-Requested-With": "XMLHttpRequest"
-    },
-    credentials: "include"
+  // Replay exactly what ChartApp.getStatData does internally.
+  const __payload = await new Promise((resolve, reject) => {
+    window.$.ajax("/stats/data/" + __ids.join(","), {
+      headers: {
+        Authorization: "***" + __token,
+        Docref: document.referrer
+      },
+      dataType: "json",
+      success: (data) => resolve(data),
+      error: (xhr, status, err) =>
+        reject(new Error(`ajax-error status=${xhr && xhr.status} text=${(xhr && xhr.responseText || "").slice(0, 200)}`))
+    });
   });
-  __out.status = __r.status;
-  const __text = await __r.text();
-  let __payload;
-  try { __payload = JSON.parse(__text); }
-  catch { __out.parseError = "non-JSON: " + __text.slice(0, 200); }
-  if (__payload) {
-    __out.success = __payload.success;
-    if (__payload.success === 1 && __payload.data) {
-      __out.series = {};
-      for (const __id of __ids) {
-        const __entry = __payload.data["s:" + __id];
-        if (__entry && __entry.series && Array.isArray(__entry.series[0])) {
-          __out.series[__id] = __entry.series[0];
-        }
+  __out.success = __payload && __payload.success;
+  if (__payload && __payload.success === 1 && __payload.data) {
+    __out.series = {};
+    for (const __id of __ids) {
+      const __entry = __payload.data["s:" + __id];
+      if (__entry && __entry.series && Array.isArray(__entry.series[0])) {
+        __out.series[__id] = __entry.series[0];
       }
-      __out.seriesCount = Object.keys(__out.series).length;
-    } else {
-      __out.payloadPreview = JSON.stringify(__payload).slice(0, 300);
     }
+    __out.seriesCount = Object.keys(__out.series).length;
+  } else {
+    __out.payloadPreview = JSON.stringify(__payload).slice(0, 300);
   }
 } catch (__e) {
   __out.fatal = String(__e);
