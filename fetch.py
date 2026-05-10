@@ -148,13 +148,35 @@ class _ScrapingAntSession:
         cookies, real Referer chain, and real navigator fingerprint.
         """
         ids = ",".join(str(i) for i in all_ids)
-        # MINIMAL SYNC TEST: prove js_snippet executes at all before adding async logic.
+        # ScrapingAnt wraps the snippet in `async function() { ... }` and awaits
+        # the result. Use top-level await directly — wrapping in our own async
+        # IIFE returns a Promise the wrapper doesn't await, so the snapshot
+        # would be taken before the fetch resolves.
         js = r"""
-var __ant = document.createElement("pre");
-__ant.id = "ant-result";
-__ant.textContent = "c3luY190ZXN0X29r";
-document.body.appendChild(__ant);
-"""
+let __body;
+try {
+  const __html = document.documentElement.outerHTML;
+  const __m = __html.match(/stk["\s]*[:=]["\s]*["']([^"']+)["']/);
+  if (!__m) throw new Error("token 'stk' not found in DOM");
+  const __token = __m[1];
+  const __r = await fetch("/stats/data/__IDS__", {
+    method: "GET",
+    headers: {
+      "Authorization": "Bearer " + __token,
+      "Accept": "application/json, text/plain, */*",
+      "X-Requested-With": "XMLHttpRequest"
+    },
+    credentials: "include"
+  });
+  __body = await __r.text();
+} catch (__e) {
+  __body = JSON.stringify({error: String(__e), stack: (__e && __e.stack) || null});
+}
+const __tag = document.createElement("pre");
+__tag.id = "ant-result";
+__tag.textContent = btoa(unescape(encodeURIComponent(__body)));
+document.body.appendChild(__tag);
+""".replace("__IDS__", ids)
         js_b64 = base64.b64encode(js.encode("utf-8")).decode("ascii")
 
         q = {
