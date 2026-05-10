@@ -234,12 +234,12 @@ try {
   const __wantedKeys = __ids.map(__id => "s:" + __id);
   // Trigger the page's own fetch
   window.ChartApp.getStatData(__ids);
-  // Poll App.data for up to 30s for all keys to appear
-  const __deadline = Date.now() + 30000;
+  // Poll App.data for up to 12s for all keys to appear
+  const __deadline = Date.now() + 12000;
   while (Date.now() < __deadline) {
     const __have = __wantedKeys.filter(__k => __k in window.App.data);
     if (__have.length === __wantedKeys.length) break;
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 250));
   }
   __out.have = __wantedKeys.filter(__k => __k in window.App.data);
   __out.missing = __wantedKeys.filter(__k => !(__k in window.App.data));
