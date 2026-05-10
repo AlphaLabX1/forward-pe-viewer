@@ -155,8 +155,6 @@ class _ScrapingAntSession:
         js = r"""
 const __diag = {};
 try {
-  // Give the page a moment for any deferred JS that issues the session cookie.
-  await new Promise(r => setTimeout(r, 2500));
   const __html = document.documentElement.outerHTML;
   const __m = __html.match(/stk["\s]*[:=]["\s]*["']([^"']+)["']/);
   if (!__m) throw new Error("token 'stk' not found in DOM");
