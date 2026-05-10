@@ -212,8 +212,15 @@ class _ScrapingAntSession:
         text = last_body.decode("utf-8", "ignore")
         m = re.search(r'<pre id="ant-result">([^<]*)</pre>', text)
         if not m:
+            anywhere = "ant-result" in text
+            print(
+                f"[debug] response len={len(text)} ant-result-substring-present={anywhere}",
+                file=sys.stderr,
+            )
+            print(f"[debug] last 800 chars:\n{text[-800:]!r}", file=sys.stderr)
             raise RuntimeError(
-                f"ant-result tag not found in response (first 500 chars): {text[:500]!r}"
+                f"ant-result tag not found (substring present={anywhere}); "
+                f"first 200: {text[:200]!r}"
             )
         try:
             decoded = base64.b64decode(m.group(1)).decode("utf-8")
