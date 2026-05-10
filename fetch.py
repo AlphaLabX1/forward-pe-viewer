@@ -246,16 +246,8 @@ document.body.appendChild(__tag);
                 f"failed to b64-decode ant-result: {e}; raw: {m.group(1)[:200]!r}"
             )
         diag = json.loads(decoded)
-        # Diagnostic dump for debugging the 403 — print everything but the body.
-        print(
-            f"[diag] tokenPrefix={diag.get('tokenPrefix')} "
-            f"tokenLen={diag.get('tokenLen')} "
-            f"cookies={diag.get('cookies')!r} "
-            f"location={diag.get('location')!r} "
-            f"status={diag.get('status')} "
-            f"respHeaders={diag.get('respHeaders')!r}",
-            file=sys.stderr,
-        )
+        diag_no_body = {k: v for k, v in diag.items() if k != "body"}
+        print(f"[diag] {json.dumps(diag_no_body, indent=2)}", file=sys.stderr)
         if "error" in diag and "body" not in diag:
             raise RuntimeError(f"in-browser fetch failed: {diag['error']}")
         body = diag.get("body", "")
