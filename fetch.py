@@ -233,19 +233,22 @@ try {
   __out.tokenLen = __token.length;
   __out.tokenPrefix = __token.slice(0, 12);
   const __ids = __IDS_JSON__;
-  // Replay exactly what ChartApp.getStatData does internally.
-  const __payload = await new Promise((resolve, reject) => {
-    window.$.ajax("/stats/data/" + __ids.join(","), {
-      headers: {
-        Authorization: "***" + __token,
-        Docref: document.referrer
-      },
-      dataType: "json",
-      success: (data) => resolve(data),
-      error: (xhr, status, err) =>
-        reject(new Error(`ajax-error status=${xhr && xhr.status} text=${(xhr && xhr.responseText || "").slice(0, 200)}`))
-    });
+  // Try /charts/data/ instead of /stats/data/ (different endpoint, possibly
+  // different rate limit). ChartApp.getChartData uses fetch with this URL.
+  const __r = await fetch("/charts/data/" + __ids.join(","), {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "***" + __token,
+      "Docref": document.referrer
+    },
+    credentials: "include"
   });
+  __out.status = __r.status;
+  const __text = await __r.text();
+  let __payload;
+  try { __payload = JSON.parse(__text); }
+  catch { __out.parseError = "non-JSON: " + __text.slice(0, 200); }
   __out.success = __payload && __payload.success;
   if (__payload && __payload.success === 1 && __payload.data) {
     __out.series = {};
