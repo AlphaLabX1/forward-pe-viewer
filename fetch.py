@@ -71,6 +71,7 @@ KOYFIN_PE_KIDS: dict[int, tuple[str, str]] = {
 }
 
 KOYFIN_SPX_KID = "et-n5kqqt"    # SPY ETF — proxy for S&P 500 index price
+KOYFIN_QQQ_KID = "et-gpvivq"    # QQQ ETF — proxy for NDX (Nasdaq-100)
 KOYFIN_US10Y_KID = "bn-dm6gok"  # US 10Y Treasury (close = yield in %)
 
 # Output filenames for non-PE series.
@@ -338,12 +339,19 @@ def main() -> None:
         write_pe_csv(trailing_dir, sid, SERIES[sid], trl, "trailing_pe")
         print(f"  s:{sid:<6} {tk:<5} fwd={len(fwd):>5}  trail={len(trl):>5}")
 
-    print(f"[2/4] Koyfin SPX price + 10Y yield ...")
+    print(f"[2/4] Koyfin SPX price + QQQ + 10Y yield ...")
     extras: dict[int, list] = {}
     spx = koy_price(KOYFIN_SPX_KID)
     extras[2] = spx
     n_spx = write_extra_csv(out_dir, "spx_price", "price", spx, merge=True)
-    print(f"  spx_price  Koyfin {len(spx):>5} pts; merged with existing → {n_spx} pts")
+    print(f"  spx_price  Koyfin {len(spx):>5} pts; merged → {n_spx} pts")
+
+    qqq_pe = koy_fundamental(KOYFIN_QQQ_KID, "f_pe")
+    qqq_price = koy_price(KOYFIN_QQQ_KID)
+    n_qqq_pe = write_extra_csv(out_dir, "qqq_forward_pe", "forward_pe", qqq_pe, merge=False)
+    n_qqq_p = write_extra_csv(out_dir, "qqq_price", "price", qqq_price, merge=True)
+    print(f"  qqq_fwd_pe Koyfin {len(qqq_pe):>5} pts → {n_qqq_pe} pts")
+    print(f"  qqq_price  Koyfin {len(qqq_price):>5} pts; merged → {n_qqq_p} pts")
 
     us10y = koy_price(KOYFIN_US10Y_KID)
     extras[354] = us10y
@@ -364,6 +372,8 @@ def main() -> None:
         "forward": {str(sid): pts for sid, pts in forward_points.items()},
         "trailing": {str(sid): pts for sid, pts in trailing_points.items()},
         "spx": extras.get(2, []),
+        "qqq_pe": qqq_pe,
+        "qqq_price": qqq_price,
         "us10y": extras.get(354, []),
         "fg": extras.get(46974, []),
     }
