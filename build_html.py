@@ -13,7 +13,7 @@ from fetch import SERIES
 
 ROOT = Path(__file__).parent
 DATA = ROOT / "data"
-TRAILING_DIR = DATA / "trailing"
+TRAILING_DIR = DATA / "trailing"  # kept for back-compat; trailing now lives in raw.json
 
 SECTOR_COLORS = {
     20052: "#1b1813",  # S&P 500 - ink
@@ -291,24 +291,47 @@ def valuation_payload(spx_fwd_pe: list, us10y: list):
     pe_pts = [(d, float(v)) for d, v in spx_fwd_pe if v]
     ey_pts = [[d, 100.0 / v] for d, v in pe_pts]
 
-    # 5Y rolling stats. With monthly data: window = 60 months. Start emitting
-    # once at least 12 months of history is available.
+    # 5Y rolling stats — date-based 1825-day trailing window. Works for either
+    # monthly or daily input. Emit once at least 1 year of history is available.
+    from bisect import insort, bisect_left
+    from datetime import date as _date
     band_p20, band_p50, band_p80, band_avg = [], [], [], []
-    for i, (d, _) in enumerate(pe_pts):
-        start = max(0, i - 59)
-        window = [v for _, v in pe_pts[start:i + 1]]
-        if len(window) < 12:
+    window_vals: list[float] = []
+    window_dates: list[str] = []
+    sorted_window: list[float] = []
+    running_sum = 0.0
+    WINDOW_DAYS = 365 * 5
+    MIN_DAYS = 365  # need ≥1Y of points before emitting a band
+
+    for d, v in pe_pts:
+        insort(sorted_window, v)
+        window_vals.append(v)
+        window_dates.append(d)
+        running_sum += v
+        # Drop expired points
+        cutoff = _date.fromisoformat(d) - timedelta(days=WINDOW_DAYS)
+        cutoff_str = cutoff.isoformat()
+        while window_dates and window_dates[0] < cutoff_str:
+            old_v = window_vals.pop(0)
+            window_dates.pop(0)
+            idx = bisect_left(sorted_window, old_v)
+            sorted_window.pop(idx)
+            running_sum -= old_v
+        if not window_dates:
             continue
-        window_sorted = sorted(window)
-        def pct(p):
-            idx = (len(window_sorted) - 1) * p
-            lo = int(idx); hi = min(lo + 1, len(window_sorted) - 1)
+        span_days = (_date.fromisoformat(d) - _date.fromisoformat(window_dates[0])).days
+        if span_days < MIN_DAYS:
+            continue
+        n = len(sorted_window)
+        def pct(p, _w=sorted_window, _n=n):
+            idx = (_n - 1) * p
+            lo = int(idx); hi = min(lo + 1, _n - 1)
             frac = idx - lo
-            return window_sorted[lo] * (1 - frac) + window_sorted[hi] * frac
+            return _w[lo] * (1 - frac) + _w[hi] * frac
         band_p20.append([d, pct(0.20)])
         band_p50.append([d, pct(0.50)])
         band_p80.append([d, pct(0.80)])
-        band_avg.append([d, sum(window) / len(window)])
+        band_avg.append([d, running_sum / n])
 
     # Build a date -> 10Y yield lookup, then for each EY point find the nearest
     # prior (or same-day) yield observation. 10Y is daily; PE is monthly.
@@ -330,14 +353,14 @@ def valuation_payload(spx_fwd_pe: list, us10y: list):
             spread_pts.append([d, ey - y10])
 
     return {
-        "pe": [[d, v] for d, v in pe_pts],
-        "ey": ey_pts,
-        "us10y": [[d, v] for d, v in us10y],
-        "spread": spread_pts,
-        "band_p20": band_p20,
-        "band_p50": band_p50,
-        "band_p80": band_p80,
-        "band_avg": band_avg,
+        "pe": [[d, round(v, 4)] for d, v in pe_pts],
+        "ey": [[d, round(v, 4)] for d, v in ey_pts],
+        "us10y": [[d, round(v, 3)] for d, v in us10y],
+        "spread": [[d, round(v, 4)] for d, v in spread_pts],
+        "band_p20": [[d, round(v, 4)] for d, v in band_p20],
+        "band_p50": [[d, round(v, 4)] for d, v in band_p50],
+        "band_p80": [[d, round(v, 4)] for d, v in band_p80],
+        "band_avg": [[d, round(v, 4)] for d, v in band_avg],
     }
 
 
@@ -357,32 +380,32 @@ def gauge_payload(fg_points: list[tuple[str, float]]):
     }
 
 
-def build() -> Path:
-    # Forward P/E: data/raw.json maps str(series_id) -> [[date, value], ...]
-    # (flat format written by fetch.py after the 2026-05 chart-endpoint switch).
-    raw = json.loads((DATA / "raw.json").read_text())
-    forward_points: dict[int, list] = {}
-    for sid in SERIES:
-        entry = raw.get(str(sid))
-        if entry:
-            forward_points[sid] = entry
-    forward = build_family_payload(forward_points)
+def _round_series(pts, ndigits=4):
+    return [[d, round(float(v), ndigits)] for d, v in pts if v is not None]
 
-    # Trailing P/E: from data/trailing/*.csv written by fetch_trailing.py.
+
+def build() -> Path:
+    # Forward + trailing P/E come from data/raw.json under nested keys
+    # `forward`/`trailing` (each maps str(series_id) -> [[date, value], ...]).
+    # Schema set by fetch.py after the Koyfin migration (2026-05).
+    raw = json.loads((DATA / "raw.json").read_text())
+    fwd_raw = raw.get("forward", {})
+    trl_raw = raw.get("trailing", {})
+
+    forward_points: dict[int, list] = {}
     trailing_points: dict[int, list] = {}
-    if TRAILING_DIR.exists():
-        for sid, name in SERIES.items():
-            slug = name.lower().replace("&", "and").replace(" ", "_")
-            p = TRAILING_DIR / f"{sid}_{slug}.csv"
-            pts = _load_csv_points(p)
-            if pts:
-                trailing_points[sid] = pts
+    for sid in SERIES:
+        if str(sid) in fwd_raw:
+            forward_points[sid] = _round_series(fwd_raw[str(sid)], 4)
+        if str(sid) in trl_raw:
+            trailing_points[sid] = _round_series(trl_raw[str(sid)], 4)
+    forward = build_family_payload(forward_points)
     trailing = build_family_payload(trailing_points) if trailing_points else None
 
     # Sentiment: Fear & Greed + SPX price.
-    fg_points = _load_csv_points(DATA / "fear_greed.csv")
-    spx_points = _load_csv_points(DATA / "spx_price.csv")
-    us10y_points = _load_csv_points(DATA / "us10y.csv")
+    fg_points = _round_series(_load_csv_points(DATA / "fear_greed.csv"), 2)
+    spx_points = _round_series(_load_csv_points(DATA / "spx_price.csv"), 2)
+    us10y_points = _round_series(_load_csv_points(DATA / "us10y.csv"), 3)
     gauge = gauge_payload(fg_points)
 
     # Valuation panel (section 06): forward EY, 10Y yield, spread, percentile bands.

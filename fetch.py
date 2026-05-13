@@ -1,22 +1,27 @@
-"""Fetch S&P 500 forward P/E data (overall + 11 sectors) from MacroMicro.
+"""Fetch S&P 500 valuation data for the Forward P/E viewer.
 
-Uses MacroMicro's per-chart endpoint /charts/data/<chart_id> which returns all
-series for a chart in one response, instead of /stats/data/<series_ids> which
-the site started rejecting from non-residential / replay sessions in April 2026.
+Data sources (post 2026-05 migration):
+  - Koyfin internal API (no auth) for all P/E and price data via the
+    /api/v3p/data/graph (fundamental) and /api/v3/data/graph (price/yield)
+    endpoints. KIDs captured 2026-05-12; verifiable via the public search
+    endpoint `POST /api/v1/bfc/tickers/search`.
+  - MacroMicro chart 50108 via ScrapingAnt for the CNN Fear & Greed index
+    (Koyfin doesn't carry sentiment data).
 
-Two HTTP calls per refresh:
-  1. GET the chart page (sets PHPSESSID, embeds the stk token in HTML)
-  2. GET /charts/data/<chart_id> with `Authorization: Bearer <stk>`
-
-Backends:
-  - curl_cffi (Chrome impersonation) when run from a residential IP
-  - ScrapingAnt residential proxy when run on GitHub Actions (datacenter IPs
-    are blocked by Cloudflare)
+Outputs:
+  data/<sid>_<slug>.csv           — forward P/E (12 series)
+  data/trailing/<sid>_<slug>.csv  — trailing P/E (12 series)
+  data/spx_price.csv              — S&P 500 daily price (SPY ETF proxy)
+  data/us10y.csv                  — US 10-year Treasury yield (%)
+  data/fear_greed.csv             — CNN Fear & Greed Index
+  data/raw.json                   — combined raw points, used by build_html.py
 """
 
 from __future__ import annotations
 
+import base64
 import csv
+import datetime
 import json
 import os
 import re
@@ -27,16 +32,12 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-_SCRAPINGANT_KEY = os.environ.get("SCRAPINGANT_API_KEY")
+# ──────────────────────────────────────────────────────────────────────────────
+# Series catalog
+# ──────────────────────────────────────────────────────────────────────────────
 
-try:
-    from curl_cffi import requests as _requests
-    _USE_CFFI = True
-except ImportError:
-    import cloudscraper
-    _USE_CFFI = False
-
-# Output series — the 12 forward-PE series come from one MacroMicro chart.
+# Internal series IDs (originally MacroMicro stat IDs; kept for compatibility
+# with existing CSV filenames and build_html.py SECTOR_* dicts).
 SERIES = {
     20052: "S&P 500",
     20517: "Information Technology",
@@ -52,64 +53,108 @@ SERIES = {
     20527: "Health Care",
 }
 
-# Auxiliary series written to their own CSVs.
-#   2     = S&P 500 daily price (F&G overlay + valuation chart)
-#   46974 = CNN Fear & Greed (sentiment gauge)
-#   354   = US 10-year Treasury bond yield (valuation chart — equity risk premium)
-EXTRA_SERIES = {
+# Koyfin KIDs (Koyfin's internal primary keys). Captured 2026-05-12 via the
+# public POST /api/v1/bfc/tickers/search endpoint.
+KOYFIN_PE_KIDS: dict[int, tuple[str, str]] = {
+    20052: ("et-n5kqqt", "SPY"),    # S&P 500
+    20517: ("et-xvw944", "XLK"),    # Information Technology
+    20518: ("et-p8fjob", "XLC"),    # Communication Services (data from 2018-06)
+    20519: ("et-dxhekb", "XLY"),    # Consumer Discretionary
+    20520: ("et-z6uurv", "XLF"),    # Financials
+    20521: ("et-aboaoc", "XLI"),    # Industrials
+    20522: ("et-5lxlgf", "XLU"),    # Utilities
+    20523: ("et-y6w6i1", "XLE"),    # Energy
+    20524: ("et-j6123q", "XLRE"),   # Real Estate (data from 2016-01)
+    20525: ("et-skcbat", "XLB"),    # Materials
+    20526: ("et-ngtedv", "XLP"),    # Consumer Staples
+    20527: ("et-3q29co", "XLV"),    # Health Care
+}
+
+KOYFIN_SPX_KID = "et-n5kqqt"    # SPY ETF — proxy for S&P 500 index price
+KOYFIN_US10Y_KID = "bn-dm6gok"  # US 10Y Treasury (close = yield in %)
+
+# Output filenames for non-PE series.
+EXTRA_FILES = {
     2: ("spx_price", "price"),
     46974: ("fear_greed", "value"),
     354: ("us10y", "yield"),
 }
 
-BASE = "https://en.macromicro.me"
-TOKEN_RE = re.compile(r'stk["\s]*[:=]["\s]*["\']([^"\']+)["\']')
+# ──────────────────────────────────────────────────────────────────────────────
+# Koyfin client
+# ──────────────────────────────────────────────────────────────────────────────
 
-# Each entry: (chart_id, slug, [(series_index_in_chart, our_series_id), ...])
-# Chart 48243 ("US - S&P 500 Forward PE Ratio by Sector") embeds 12 series in
-# one response. The order of `series[i]` matches the order in `chart_config.
-# seriesConfigs[i].name_en` — confirmed by inspection on 2026-05-10.
-# Chart 50108 ("US - CNN Fear and Greed Index") gives SPX daily price (stat 2)
-# and CNN's F&G index (stat 22748). The MacroMicro-original F&G (stat 46974)
-# isn't reachable via any public chart anymore — its CSV stays stale.
-CHART_SOURCES: list[tuple[int, str, list[tuple[int, int]]]] = [
-    (
-        48243,
-        "s5cond-forward-pe-ratio",
-        [
-            (0, 20052),   # S&P 500
-            (1, 20517),   # Info Tech
-            (2, 20518),   # Comm Svcs
-            (3, 20521),   # Industrials
-            (4, 20520),   # Financials
-            (5, 20525),   # Materials
-            (6, 20523),   # Energy
-            (7, 20524),   # Real Estate
-            (8, 20519),   # Cons Disc
-            (9, 20526),   # Cons Staples
-            (10, 20527),  # Health Care
-            (11, 20522),  # Utilities
-        ],
-    ),
-    (
-        3919,
-        "sp500-10y-yield",
-        [
-            (0, 354),     # US 10-year Treasury bond yield (daily, since 1962)
-            (1, 2),       # SPX daily price (daily, since 1962 — longer than chart 142681)
-        ],
-    ),
-    (
-        50108,
-        "cnn-fear-and-greed",
-        [
-            (0, 46974),   # CNN F&G index — replaces the deprecated MacroMicro
-                          # Investor F&G (also id 46974). Different methodology
-                          # and only 5 years of history, but it's the only
-                          # publicly fetchable F&G chart on the site now.
-        ],
-    ),
-]
+KOYFIN_BASE = "https://app.koyfin.com"
+KOYFIN_HEADERS = {
+    "Content-Type": "application/json",
+    "Referer": "https://app.koyfin.com/",
+    "Origin": "https://app.koyfin.com",
+    "User-Agent": "Mozilla/5.0",
+}
+
+MAX_ATTEMPTS = 3
+RETRY_BACKOFF_SEC = 4
+
+
+def _today() -> str:
+    return datetime.date.today().isoformat()
+
+
+def _koyfin_post(path: str, body: dict, timeout: int = 60):
+    last_err = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            req = urllib.request.Request(
+                f"{KOYFIN_BASE}{path}",
+                data=json.dumps(body).encode(),
+                headers=KOYFIN_HEADERS,
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            last_err = f"HTTP {e.code}: {e.read()[:200].decode('utf-8', 'ignore')}"
+        except Exception as e:
+            last_err = str(e)
+        if attempt < MAX_ATTEMPTS:
+            print(f"[retry] Koyfin {path} attempt {attempt}: {last_err}", file=sys.stderr)
+            time.sleep(RETRY_BACKOFF_SEC)
+    raise RuntimeError(f"Koyfin {path} failed after {MAX_ATTEMPTS} attempts: {last_err}")
+
+
+def koy_fundamental(kid: str, key: str, date_from: str = "2003-01-01") -> list[list]:
+    """Pull a fundamental time series via /api/v3p/data/graph. Used for P/E."""
+    body = {
+        "id": kid, "key": key, "currency": "USD",
+        "financialPeriodType": "LTM", "priceFormat": "standard",
+        "dateFrom": date_from, "dateTo": _today(),
+    }
+    r = _koyfin_post("/api/v3p/data/graph?schema=packed", body)
+    g = r["graph"]
+    return [[d, v] for d, v in zip(g["date"], g["value"]) if v is not None]
+
+
+def koy_price(kid: str, date_from: str = "1990-01-01") -> list[list]:
+    """Pull daily close via /api/v3/data/graph p_candle_range. For ETF prices
+    this is the trading price; for bond securities this is the yield in %."""
+    body = {
+        "id": kid, "key": "p_candle_range",
+        "dateFrom": date_from, "dateTo": _today(),
+        "priceFormat": "both",
+    }
+    r = _koyfin_post("/api/v3/data/graph?schema=packed", body)
+    g = r["graph"]
+    return [[d, c] for d, c in zip(g["date"], g["close"]) if c is not None]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CNN Fear & Greed fetcher (via MacroMicro chart 50108)
+# ──────────────────────────────────────────────────────────────────────────────
+
+_SCRAPINGANT_KEY = os.environ.get("SCRAPINGANT_API_KEY")
+_TOKEN_RE = re.compile(r'stk["\s]*[:=]["\s]*["\']([^"\']+)["\']')
+MM_FG_CHART_ID = 50108
+MM_FG_SLUG = "cnn-fear-and-greed"
+MM_BASE = "https://en.macromicro.me"
 
 
 class _ScrapingAntResponse:
@@ -117,9 +162,8 @@ class _ScrapingAntResponse:
         self.status_code = status
         self.content = body
         self.text = body.decode("utf-8", "ignore")
-        self.cookies: dict = {}  # populated by session
 
-    def raise_for_status(self) -> None:
+    def raise_for_status(self):
         if self.status_code >= 400:
             raise RuntimeError(f"HTTP {self.status_code}: {self.text[:200]}")
 
@@ -127,38 +171,46 @@ class _ScrapingAntResponse:
         return json.loads(self.content)
 
 
-class _ScrapingAntSession:
-    """Route GET through ScrapingAnt's v2 API with residential proxy and
-    browser=false (raw HTML, no JS — cheaper and avoids the page's natural
-    fetch consuming our token).
+class _MacroMicroSession:
+    """Two-call client for MacroMicro chart pages. Routes through ScrapingAnt
+    when SCRAPINGANT_API_KEY is set (CI / datacenter), falls back to direct
+    curl_cffi otherwise (local / residential). Persists PHPSESSID across calls
+    — required for MacroMicro's stk token to validate."""
 
-    Cost: ~50 credits per request × 2 per refresh = 100 credits/day,
-    well inside the 10,000/month free tier even at daily cadence."""
-
-    ENDPOINT = "https://api.scrapingant.com/v2/general"
-    MAX_ATTEMPTS = 4
-    RETRY_BACKOFF_SEC = 5
-
-    def __init__(self, api_key: str):
-        self._key = api_key
+    def __init__(self):
         self._cookies: dict[str, str] = {}
+        self._curl_session = None
+        if not _SCRAPINGANT_KEY:
+            try:
+                from curl_cffi import requests as _r
+                self._curl_session = _r.Session(impersonate="chrome124")
+            except ImportError as e:
+                raise RuntimeError(
+                    "Need SCRAPINGANT_API_KEY or curl_cffi installed"
+                ) from e
 
     def get(self, url: str, headers: dict | None = None, timeout: int = 60):
-        h = dict(headers or {})
+        if _SCRAPINGANT_KEY:
+            return self._scrapingant_get(url, headers=headers, timeout=timeout)
+        return self._curl_session.get(url, headers=headers or {}, timeout=timeout)
+
+    def _scrapingant_get(self, url: str, headers: dict | None = None, timeout: int = 60):
+        from http.cookies import SimpleCookie
         q = {
-            "url": url,
-            "x-api-key": self._key,
-            "proxy_type": "residential",
-            "browser": "false",
+            "url": url, "x-api-key": _SCRAPINGANT_KEY,
+            "proxy_type": "residential", "browser": "false",
         }
+        # Forward persisted cookies via the documented `cookies=` URL param.
         if self._cookies:
             q["cookies"] = ";".join(f"{k}={v}" for k, v in self._cookies.items())
-        req = urllib.request.Request(f"{self.ENDPOINT}?{urllib.parse.urlencode(q)}")
-        for k, v in h.items():
+        req = urllib.request.Request(
+            f"https://api.scrapingant.com/v2/general?{urllib.parse.urlencode(q)}"
+        )
+        for k, v in (headers or {}).items():
             req.add_header(f"Ant-{k}", v)
 
         last_status, last_body, last_hdrs = 0, b"", None
-        for attempt in range(1, self.MAX_ATTEMPTS + 1):
+        for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
                 with urllib.request.urlopen(req, timeout=timeout) as r:
                     last_status, last_body, last_hdrs = r.status, r.read(), r.headers
@@ -166,59 +218,38 @@ class _ScrapingAntSession:
                 last_status, last_body, last_hdrs = e.code, e.read(), e.headers
             if last_status < 400:
                 break
-            if attempt < self.MAX_ATTEMPTS:
-                # 409 = concurrency limit on free tier; sleep longer.
-                backoff = 15 if last_status == 409 else self.RETRY_BACKOFF_SEC
+            if attempt < MAX_ATTEMPTS:
+                backoff = 15 if last_status == 409 else RETRY_BACKOFF_SEC
                 print(
-                    f"[retry] ScrapingAnt {last_status} on attempt {attempt} for "
-                    f"{url}, backing off {backoff}s",
+                    f"[retry] ScrapingAnt {last_status} attempt {attempt}, backing off {backoff}s",
                     file=sys.stderr,
                 )
                 time.sleep(backoff)
 
+        # Capture any Set-Cookie from the target site (forwarded by ScrapingAnt).
         if last_hdrs is not None:
-            from http.cookies import SimpleCookie
-            set_cookie = last_hdrs.get("Ant-Original-Header-Set-Cookie", "")
-            if set_cookie:
+            sc = last_hdrs.get("Ant-Original-Header-Set-Cookie", "")
+            if sc:
                 try:
                     jar = SimpleCookie()
-                    jar.load(set_cookie)
+                    jar.load(sc)
                     for name, morsel in jar.items():
                         self._cookies[name] = morsel.value
                 except Exception:
                     pass
-
         return _ScrapingAntResponse(last_status, last_body)
 
 
-def _make_session():
-    if _SCRAPINGANT_KEY:
-        return _ScrapingAntSession(_SCRAPINGANT_KEY)
-    if _USE_CFFI:
-        return _requests.Session(impersonate="chrome124")
-    return cloudscraper.create_scraper(
-        browser={"browser": "chrome", "platform": "windows", "desktop": True}
-    )
-
-
-def _backend_name() -> str:
-    if _SCRAPINGANT_KEY:
-        return "scrapingant"
-    return "curl_cffi" if _USE_CFFI else "cloudscraper"
-
-
-def fetch_chart(scraper, chart_id: int, slug: str) -> dict:
-    """Two-step pull for one MacroMicro chart:
-       1. GET the chart page (sets PHPSESSID, embeds the stk token in HTML)
-       2. GET /charts/data/<id> with Authorization: Bearer <stk>
-    Returns the parsed JSON payload (`{"data": {"c:<id>": {...}}, ...}`).
-    """
-    page_url = f"{BASE}/charts/{chart_id}/{slug}"
-    r1 = scraper.get(page_url, timeout=60)
+def fetch_fear_greed() -> list[list]:
+    """Pull the CNN F&G daily series from MacroMicro chart 50108. Two calls:
+    seed page → /charts/data/<id> with the page-issued stk token."""
+    session = _MacroMicroSession()
+    page_url = f"{MM_BASE}/charts/{MM_FG_CHART_ID}/{MM_FG_SLUG}"
+    r1 = session.get(page_url, timeout=60)
     r1.raise_for_status()
-    m = TOKEN_RE.search(r1.text)
+    m = _TOKEN_RE.search(r1.text)
     if not m:
-        raise RuntimeError(f"stk token not found on /charts/{chart_id}/{slug}")
+        raise RuntimeError(f"stk token not found on {page_url}")
     token = m.group(1)
 
     headers = {
@@ -227,128 +258,123 @@ def fetch_chart(scraper, chart_id: int, slug: str) -> dict:
         "Accept": "application/json, text/plain, */*",
         "X-Requested-With": "XMLHttpRequest",
     }
-    r2 = scraper.get(f"{BASE}/charts/data/{chart_id}", headers=headers, timeout=60)
+    r2 = session.get(f"{MM_BASE}/charts/data/{MM_FG_CHART_ID}", headers=headers)
     r2.raise_for_status()
     payload = r2.json()
     if payload.get("success") != 1:
-        raise RuntimeError(f"chart {chart_id} returned non-success: {payload!r}")
-    return payload
+        raise RuntimeError(f"MacroMicro F&G chart returned non-success: {payload!r}")
+    chart = payload["data"][f"c:{MM_FG_CHART_ID}"]
+    # series[0] = CNN F&G index, series[1] = SPX (which we now get from Koyfin).
+    return chart["series"][0]
 
 
-def collect_series(scraper) -> dict[int, list[list]]:
-    """Walk CHART_SOURCES, fetch each chart once, distribute the series array
-    into our flat `{series_id: [[date_str, value], ...]}` map."""
-    out: dict[int, list[list]] = {}
-    for chart_id, slug, mapping in CHART_SOURCES:
-        print(f"[1/2] fetching chart {chart_id} ({slug}) — {len(mapping)} series ...")
-        payload = fetch_chart(scraper, chart_id, slug)
-        chart_entry = payload["data"][f"c:{chart_id}"]
-        chart_series = chart_entry["series"]
-        for series_idx, our_id in mapping:
-            if series_idx >= len(chart_series):
-                print(f"    [warn] chart {chart_id} series[{series_idx}] missing", file=sys.stderr)
-                continue
-            pts = chart_series[series_idx]
-            if not isinstance(pts, list):
-                print(f"    [warn] chart {chart_id} series[{series_idx}] not a list", file=sys.stderr)
-                continue
-            out[our_id] = pts
-            print(f"      s:{our_id:<6} {len(pts):>5} points")
-    return out
+# ──────────────────────────────────────────────────────────────────────────────
+# CSV merge + write
+# ──────────────────────────────────────────────────────────────────────────────
 
-
-def write_csvs(series_map: dict[int, list[list]], out_dir: Path) -> dict[int, int]:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    counts: dict[int, int] = {}
-    for sid, name in SERIES.items():
-        pts = series_map.get(sid)
-        if not pts:
-            print(f"[warn] missing s:{sid} ({name})", file=sys.stderr)
-            continue
-        slug = name.lower().replace("&", "and").replace(" ", "_")
-        path = out_dir / f"{sid}_{slug}.csv"
-        with path.open("w", newline="") as f:
-            w = csv.writer(f)
-            w.writerow(["date", "forward_pe"])
-            w.writerows(pts)
-        counts[sid] = len(pts)
-    return counts
-
-
-def _merge_with_existing_csv(path: Path, new_pts: list[list], col: str) -> list[list]:
-    """Merge new daily points into the existing CSV at `path`. New values
-    win on overlapping dates; older dates not present in `new_pts` are kept.
-    Returns the merged sorted list. Used to preserve deep history (e.g. the
-    pre-1999 SPX prices) when a fresh chart endpoint serves only recent data.
-    """
+def _merge_with_existing_csv(path: Path, new_pts: list[list]) -> list[list]:
+    """Merge new points into existing CSV by date — new wins on overlap, old
+    dates not present in new are kept. Preserves deep history (e.g. SPX 1928+)."""
     by_date: dict[str, str] = {}
     if path.exists():
         with path.open() as f:
             reader = csv.reader(f)
-            header = next(reader, None)
+            next(reader, None)
             for row in reader:
                 if len(row) >= 2:
                     by_date[row[0]] = row[1]
-    for date, value in new_pts:
-        by_date[str(date)] = str(value)
+    for d, v in new_pts:
+        by_date[str(d)] = str(v)
     return [[d, by_date[d]] for d in sorted(by_date)]
 
 
-def write_extras(series_map: dict[int, list[list]], out_dir: Path) -> dict[int, int]:
-    counts: dict[int, int] = {}
-    for sid, (stem, col) in EXTRA_SERIES.items():
-        pts = series_map.get(sid)
-        path = out_dir / f"{stem}.csv"
-        if not pts:
-            print(f"[warn] missing s:{sid} ({stem}) — keeping prior CSV", file=sys.stderr)
-            continue
-        # F&G (id 46974): source switched from MacroMicro-proprietary to CNN
-        # — different methodology, do NOT mix the two; replace outright.
-        # Everything else (SPX price, 10Y yield, ...): same series across runs,
-        # merge to preserve any prior history beyond what the chart serves.
-        rows = pts if sid == 46974 else _merge_with_existing_csv(path, pts, col)
-        with path.open("w", newline="") as f:
-            w = csv.writer(f)
-            w.writerow(["date", col])
-            w.writerows(rows)
-        counts[sid] = len(rows)
-    return counts
-
-
-def write_combined(series_map: dict[int, list[list]], out_path: Path) -> None:
-    by_date: dict[str, dict[int, float]] = {}
-    for sid in SERIES:
-        pts = series_map.get(sid)
-        if not pts:
-            continue
-        for date, value in pts:
-            by_date.setdefault(date, {})[sid] = value
-    with out_path.open("w", newline="") as f:
+def write_pe_csv(out_dir: Path, sid: int, name: str, pts: list[list], header_col: str):
+    slug = name.lower().replace("&", "and").replace(" ", "_")
+    path = out_dir / f"{sid}_{slug}.csv"
+    with path.open("w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["date"] + [SERIES[i] for i in SERIES])
-        for date in sorted(by_date):
-            row = by_date[date]
-            w.writerow([date] + [row.get(i, "") for i in SERIES])
+        w.writerow(["date", header_col])
+        w.writerows(pts)
 
+
+def write_extra_csv(out_dir: Path, stem: str, col: str, pts: list[list], merge: bool):
+    """Write an extras CSV. If merge=True, preserves any prior history beyond
+    what Koyfin/MacroMicro returns (e.g. SPX pre-1993 from the legacy source)."""
+    path = out_dir / f"{stem}.csv"
+    rows = _merge_with_existing_csv(path, pts) if merge else pts
+    with path.open("w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["date", col])
+        w.writerows(rows)
+    return len(rows)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Main
+# ──────────────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    out_dir = Path(__file__).parent / "data"
-    scraper = _make_session()
-    print(f"backend: {_backend_name()}")
-    series_map = collect_series(scraper)
+    root = Path(__file__).parent
+    out_dir = root / "data"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    trailing_dir = out_dir / "trailing"
+    trailing_dir.mkdir(parents=True, exist_ok=True)
 
-    print("[2/2] writing CSVs ...")
-    counts = write_csvs(series_map, out_dir)
-    extra_counts = write_extras(series_map, out_dir)
-    write_combined(series_map, out_dir / "combined.csv")
+    forward_points: dict[int, list] = {}
+    trailing_points: dict[int, list] = {}
 
-    raw_path = out_dir / "raw.json"
-    raw_path.write_text(json.dumps({str(k): v for k, v in series_map.items()}, indent=2))
+    print(f"[1/4] Koyfin forward + trailing P/E ({len(KOYFIN_PE_KIDS)} series) ...")
+    for sid in SERIES:
+        kid, tk = KOYFIN_PE_KIDS[sid]
+        try:
+            fwd = koy_fundamental(kid, "f_pe")
+            trl = koy_fundamental(kid, "f_peltm")
+        except Exception as e:
+            print(f"  s:{sid:<6} {tk:<5} FAILED: {e}", file=sys.stderr)
+            continue
+        forward_points[sid] = fwd
+        trailing_points[sid] = trl
+        write_pe_csv(out_dir, sid, SERIES[sid], fwd, "forward_pe")
+        write_pe_csv(trailing_dir, sid, SERIES[sid], trl, "trailing_pe")
+        print(f"  s:{sid:<6} {tk:<5} fwd={len(fwd):>5}  trail={len(trl):>5}")
 
-    for sid, name in SERIES.items():
-        print(f"  {sid} {name:<24} {counts.get(sid, 0):>5} points")
-    for sid, (stem, _) in EXTRA_SERIES.items():
-        print(f"  {sid} {stem:<24} {extra_counts.get(sid, 0):>5} points")
+    print(f"[2/4] Koyfin SPX price + 10Y yield ...")
+    extras: dict[int, list] = {}
+    spx = koy_price(KOYFIN_SPX_KID)
+    extras[2] = spx
+    n_spx = write_extra_csv(out_dir, "spx_price", "price", spx, merge=True)
+    print(f"  spx_price  Koyfin {len(spx):>5} pts; merged with existing → {n_spx} pts")
+
+    us10y = koy_price(KOYFIN_US10Y_KID)
+    extras[354] = us10y
+    n_10y = write_extra_csv(out_dir, "us10y", "yield", us10y, merge=True)
+    print(f"  us10y      Koyfin {len(us10y):>5} pts; merged → {n_10y} pts")
+
+    print(f"[3/4] MacroMicro CNN F&G (chart {MM_FG_CHART_ID}) ...")
+    try:
+        fg = fetch_fear_greed()
+        extras[46974] = fg
+        n_fg = write_extra_csv(out_dir, "fear_greed", "value", fg, merge=False)
+        print(f"  fear_greed {n_fg:>5} pts (CNN, replace)")
+    except Exception as e:
+        print(f"  fear_greed FAILED: {e} — keeping prior CSV", file=sys.stderr)
+
+    print(f"[4/4] writing raw.json ...")
+    raw = {
+        "forward": {str(sid): pts for sid, pts in forward_points.items()},
+        "trailing": {str(sid): pts for sid, pts in trailing_points.items()},
+        "spx": extras.get(2, []),
+        "us10y": extras.get(354, []),
+        "fg": extras.get(46974, []),
+    }
+    (out_dir / "raw.json").write_text(json.dumps(raw, indent=2))
+
+    print(f"\nSummary:")
+    print(f"  forward P/E   : {len(forward_points)}/{len(SERIES)} series")
+    print(f"  trailing P/E  : {len(trailing_points)}/{len(SERIES)} series")
+    print(f"  SPX price     : {len(extras.get(2, []))} new daily pts")
+    print(f"  10Y yield     : {len(extras.get(354, []))} new daily pts")
+    print(f"  CNN F&G       : {len(extras.get(46974, []))} pts")
     print(f"output: {out_dir}")
 
 
