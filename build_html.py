@@ -16,18 +16,18 @@ DATA = ROOT / "data"
 TRAILING_DIR = DATA / "trailing"  # kept for back-compat; trailing now lives in raw.json
 
 SECTOR_COLORS = {
-    20052: "#1b1813",  # S&P 500 - ink
-    20517: "#2d6a8a",  # Information Technology - slate blue
-    20518: "#7a5ba8",  # Communication Services - violet
-    20519: "#a8406a",  # Consumer Discretionary - berry
-    20520: "#2f7d5e",  # Financials - pine
-    20521: "#c2711d",  # Industrials - amber
-    20522: "#3e8a95",  # Utilities - teal
-    20523: "#8c4418",  # Energy - umber
-    20524: "#4a4a94",  # Real Estate - indigo
-    20525: "#718a2c",  # Materials - olive
-    20526: "#b8421c",  # Consumer Staples - vermillion
-    20527: "#2d7066",  # Health Care - spruce
+    20052: "#E9E3D4",  # S&P 500 - ivory (benchmark, reads white on dark)
+    20517: "#3B6FB0",  # Information Technology - slate blue
+    20518: "#5AA5C4",  # Communication Services - sky
+    20519: "#4E7C59",  # Consumer Discretionary - moss
+    20520: "#6E9A46",  # Financials - lime olive
+    20521: "#CBA02B",  # Industrials - gold
+    20522: "#3A5878",  # Utilities - steel
+    20523: "#A6392B",  # Energy - rust
+    20524: "#7A5AA6",  # Real Estate - violet
+    20525: "#9A6A38",  # Materials - bronze
+    20526: "#C77D3B",  # Consumer Staples - amber
+    20527: "#3E8A86",  # Health Care - teal
 }
 
 SECTOR_INFO = {
@@ -118,7 +118,7 @@ def compute_5y(points):
     }
 
 
-def assign_rows(rows_asc, row_count=3, min_gap=7.0):
+def assign_rows(rows_asc, row_count=4, min_gap=7.0):
     last = [-999.0] * row_count
     out = []
     for r in rows_asc:
@@ -151,7 +151,6 @@ def render_strip(rows_with_row):
         parts.append(
             f'<div class="pin pin-row-{r["_row"]}" style="left:{pct:.2f}%" '
             f'data-id="{r["id"]}" data-rank="{pct:.0f}">'
-            f'<span class="pin-stem" style="background:{r["color"]}"></span>'
             f'<span class="pin-dot" style="background:{r["color"]};color:{r["color"]}"></span>'
             f'<span class="pin-label">{r["ticker"]}'
             f'<span class="pin-pct">{pct:.0f}</span></span>'
@@ -170,7 +169,7 @@ def render_table(rows):
     parts = []
     for i, r in enumerate(rows, 1):
         pct = r["rank_5y"]
-        heat = "hot" if pct >= 75 else "cold" if pct <= 25 else "mid"
+        heat = "hot" if pct >= 85 else "cold" if pct <= 45 else "mid"
         index_cls = " is-index" if r["isIndex"] else ""
         definition, holdings_html = _holdings_html(r["id"])
         parts.append(f'''
@@ -190,7 +189,7 @@ def render_table(rows):
   </span>
   <span class="pct mono">{pct:.0f}</span>
   <span class="range-col mono">
-    <span>{r["min_5y"]:.1f}</span><span class="sep">→</span><span>{r["max_5y"]:.1f}</span>
+    <span>{r["min_5y"]:.1f}</span><span class="sep">–</span><span>{r["max_5y"]:.1f}</span>
   </span>
   <div class="tip">
     <div class="tip-def">{definition}</div>
@@ -460,49 +459,48 @@ def build() -> Path:
     return out
 
 
+def _fg_word(v):
+    if v < 25:
+        return "Extreme fear"
+    if v < 45:
+        return "Fear"
+    if v <= 55:
+        return "Neutral"
+    if v <= 75:
+        return "Greed"
+    return "Extreme greed"
+
+
 def render_gauge(g):
     if not g:
-        return "<p style='color:var(--mute)'>Fear &amp; Greed data unavailable.</p>"
+        return "<p style='color:var(--dim)'>Fear &amp; Greed data unavailable.</p>"
     cur = g["current"]["value"]
-    # Main pointer position (0-100 → percentage along bar)
     pointer_pos = max(0, min(100, cur))
-    marker_html = "".join(
-        f'<div class="gauge-marker" style="left:{max(0,min(100,m["value"])):.2f}%" '
-        f'data-label="{m["label"]}" data-value="{m["value"]}" data-date="{m["date"]}">'
-        f'<span class="gm-arrow">▽</span>'
-        f'<span class="gm-label">{m["label"]}<span class="gm-val">{m["value"]:.0f}</span></span>'
-        f'</div>'
+    tile_names = {"1W": "1 week", "1M": "1 month", "3M": "3 months", "1Y": "1 year"}
+    tiles = (
+        f'<div class="gauge-tile"><div class="gt-label">Now</div>'
+        f'<div class="gt-val mono">{cur:.0f}</div></div>'
+    )
+    tiles += "".join(
+        f'<div class="gauge-tile" title="{m["date"]}">'
+        f'<div class="gt-label">{tile_names.get(m["label"], m["label"])}</div>'
+        f'<div class="gt-val mono">{m["value"]:.0f}</div></div>'
         for m in g["markers"]
     )
     return f'''
-<div class="gauge-frame">
-  <div class="gauge-track">
-    <div class="gauge-zone gz-xfear"  style="left:0%; width:25%"></div>
-    <div class="gauge-zone gz-fear"   style="left:25%; width:20%"></div>
-    <div class="gauge-zone gz-neut"   style="left:45%; width:11%"></div>
-    <div class="gauge-zone gz-greed"  style="left:56%; width:20%"></div>
-    <div class="gauge-zone gz-xgreed" style="left:76%; width:24%"></div>
+<div class="gauge">
+  <div class="gauge-big">
+    <div class="gauge-num">{cur:.0f}</div>
+    <div class="gauge-word mono">Today · {_fg_word(cur)}</div>
   </div>
-  <div class="gauge-axis">
-    <span class="ga-tick" style="left:0%"></span>
-    <span class="ga-tick" style="left:25%"></span>
-    <span class="ga-tick" style="left:45%"></span>
-    <span class="ga-tick" style="left:56%"></span>
-    <span class="ga-tick" style="left:76%"></span>
-    <span class="ga-tick" style="left:100%"></span>
-  </div>
-  <div class="gauge-labels">
-    <span style="left:12.5%">extreme fear</span>
-    <span style="left:35%">fear</span>
-    <span style="left:50.5%">neutral</span>
-    <span style="left:66%">greed</span>
-    <span style="left:88%">extreme greed</span>
-  </div>
-  <div class="gauge-markers">{marker_html}</div>
-  <div class="gauge-pointer" style="left:{pointer_pos:.2f}%">
-    <span class="gp-arrow">▼</span>
-    <span class="gp-value">{cur:.0f}</span>
-    <span class="gp-caption">today · {g["current"]["date"]}</span>
+  <div class="gauge-right">
+    <div class="gauge-bar">
+      <span class="gauge-pointer" style="left:{pointer_pos:.2f}%" title="today · {g["current"]["date"]}"></span>
+    </div>
+    <div class="gauge-scale mono">
+      <span>Extreme fear</span><span>Fear</span><span>Neutral</span><span>Greed</span><span>Extreme greed</span>
+    </div>
+    <div class="gauge-tiles">{tiles}</div>
   </div>
 </div>
 '''.strip()
@@ -516,648 +514,594 @@ TEMPLATE = r"""<!doctype html>
 <title>Valuation &amp; Mood · AlphaLabX1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,400..800,0..100,0..1;1,9..144,400..800,0..100,0..1&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
   :root {
-    --paper:       #f2ecdf;
-    --paper-sub:   #ebe3d0;
-    --paper-deep:  #e3d9c0;
-    --ink:         #1b1813;
-    --ink-soft:    #55493b;
-    --mute:        #8a7e6d;
-    --rule:        #d5c8b1;
-    --rule-soft:   #e6dcc6;
-    --accent:      #b8421c;
-    --cheap:       #2e5d56;
-    --font-display: "Fraunces", "Times New Roman", serif;
-    --font-body:    "IBM Plex Sans", -apple-system, system-ui, sans-serif;
-    --font-mono:    "IBM Plex Mono", ui-monospace, monospace;
+    --bg:           #060608;
+    --shell-border: #1E2026;
+    --card:         rgba(22,24,31,0.55);
+    --card-border:  rgba(255,255,255,0.07);
+    --inset:        rgba(10,11,14,0.5);
+    --inset-border: rgba(255,255,255,0.04);
+    --hair:         rgba(255,255,255,0.08);
+    --text:         #EDEEF0;
+    --text-2:       #DDE0E5;
+    --soft:         #9BA0AB;
+    --lede:         #868A93;
+    --dim:          #6B7078;
+    --dimmer:       #565C64;
+    --accent:       #8B7CF6;
+    --accent-hi:    #9B8CFA;
+    --magenta:      #D66AE0;
+    --hot:          #F87171;
+    --cold:         #34D399;
+    --font-body: "Plus Jakarta Sans", -apple-system, system-ui, sans-serif;
+    --font-mono: "Spline Sans Mono", ui-monospace, "SF Mono", monospace;
   }
   *, *::before, *::after { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0;
-    background: var(--paper);
-    color: var(--ink);
+    background: var(--bg);
+    color: var(--text);
     font-family: var(--font-body);
     font-size: 14px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-  body {
-    background-image:
-      radial-gradient(circle at 10% 0%, rgba(184,66,28,0.04) 0%, transparent 45%),
-      radial-gradient(circle at 90% 100%, rgba(46,93,86,0.04) 0%, transparent 45%);
-  }
-  .container { max-width: 1240px; margin: 0 auto; padding: 0 40px; }
+  body { padding: 48px 24px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
   .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
-  /* ─────────────────── Masthead ─────────────────── */
-  .masthead { padding: 56px 0 36px; border-bottom: 2px solid var(--ink); position: relative; }
-  .masthead::after {
-    content: ""; display: block; position: absolute; left: 0; right: 0; bottom: -6px;
-    height: 1px; background: var(--ink);
+  /* ─────────────────── Shell + ambient blobs ─────────────────── */
+  .shell {
+    position: relative;
+    max-width: 1180px;
+    margin: 0 auto;
+    overflow: hidden;
+    border-radius: 28px;
+    background: linear-gradient(158deg, #0D0F16 0%, #0B0C0E 48%, #140B18 100%);
+    border: 1px solid var(--shell-border);
+    box-shadow: 0 40px 80px -40px rgba(0,0,0,0.7);
   }
-  .kicker {
-    font-family: var(--font-body);
-    font-size: 10.5px; font-weight: 500;
-    letter-spacing: 0.22em; text-transform: uppercase;
-    color: var(--accent);
-    margin: 0 0 18px;
-    display: flex; align-items: center; gap: 12px;
-  }
-  .kicker::before { content: ""; width: 28px; height: 1px; background: currentColor; flex: 0 0 auto; }
-  .kicker::after { content: ""; height: 1px; background: var(--rule); flex: 1; }
-  .kicker .edition { color: var(--mute); letter-spacing: 0.2em; }
-  .wordmark {
-    font-family: var(--font-display);
-    font-variation-settings: "opsz" 144, "SOFT" 30, "WONK" 0;
-    font-weight: 700;
-    font-size: clamp(60px, 10vw, 136px);
-    line-height: 0.88;
-    letter-spacing: -0.035em;
-    color: var(--ink);
-    margin: 0;
-  }
-  .wordmark em {
-    font-style: italic;
-    font-variation-settings: "opsz" 144, "SOFT" 100, "WONK" 1;
-    font-weight: 400;
-    color: var(--accent);
-    margin-left: 0.08em;
-  }
-  .standfirst {
-    font-family: var(--font-display);
-    font-variation-settings: "opsz" 24;
-    font-style: italic;
-    font-weight: 400;
-    font-size: 19px;
-    color: var(--ink-soft);
-    margin: 24px 0 0;
-    max-width: 760px;
-    line-height: 1.45;
-  }
-  .standfirst time {
-    font-style: normal;
-    font-variation-settings: "opsz" 16;
-    font-weight: 500;
-    color: var(--ink);
-    white-space: nowrap;
+  .blobs { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  .blobs i { position: absolute; border-radius: 50%; }
+  .blob-1 { top: -120px; left: 4%; width: 480px; height: 480px; background: radial-gradient(circle, #7C5CF0, transparent 66%); opacity: 0.42; filter: blur(40px); }
+  .blob-2 { top: 12%; right: -110px; width: 540px; height: 540px; background: radial-gradient(circle, #2E8FA0, transparent 66%); opacity: 0.28; filter: blur(48px); }
+  .blob-3 { top: 31%; left: 38%; width: 560px; height: 560px; background: radial-gradient(circle, #B04AD6, transparent 66%); opacity: 0.24; filter: blur(52px); }
+  .blob-4 { top: 52%; left: -140px; width: 520px; height: 520px; background: radial-gradient(circle, #7C5CF0, transparent 66%); opacity: 0.22; filter: blur(48px); }
+  .blob-5 { top: 71%; right: -130px; width: 560px; height: 560px; background: radial-gradient(circle, #2E8FA0, transparent 66%); opacity: 0.2; filter: blur(50px); }
+  .blob-6 { bottom: -160px; left: 28%; width: 540px; height: 540px; background: radial-gradient(circle, #B04AD6, transparent 66%); opacity: 0.22; filter: blur(50px); }
+  .inner {
+    position: relative; z-index: 1;
+    padding: 44px 44px 40px;
+    display: flex; flex-direction: column; gap: 22px;
   }
 
-  /* ─────────────────── Lens toggle ─────────────────── */
-  .lens-row { margin: 28px 0 0; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
-  .lens-label {
-    font-family: var(--font-mono); font-size: 10px;
-    color: var(--mute); letter-spacing: 0.18em; text-transform: uppercase;
+  /* ─────────────────── Masthead ─────────────────── */
+  .masthead {
+    display: flex; justify-content: space-between; align-items: flex-end; gap: 28px;
+    border-bottom: 1px solid var(--hair);
+    padding-bottom: 24px;
   }
+  .kicker {
+    font-family: var(--font-mono);
+    font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: #7A7F8A; margin: 0;
+  }
+  .wordmark {
+    margin: 12px 0 0;
+    font-size: clamp(38px, 5.5vw, 58px);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 0.98;
+    color: var(--text);
+  }
+  .wordmark em {
+    font-style: normal;
+    background: linear-gradient(120deg, #9B8CFA, #D66AE0);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .standfirst {
+    margin: 16px 0 0;
+    font-size: 17px; line-height: 1.55;
+    color: var(--soft);
+    max-width: 640px;
+  }
+  .standfirst time { color: var(--dim); }
+  .masthead-side { text-align: right; flex: 0 0 auto; }
+
+  /* ─────────────────── Lens toggle ─────────────────── */
   .lens {
     display: inline-flex;
-    border: 1px solid var(--ink);
-    background: var(--paper);
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 4px; gap: 2px;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   }
   .lens button {
     border: 0; background: transparent; cursor: pointer;
-    padding: 9px 18px 8px;
-    font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
-    letter-spacing: 0.14em; text-transform: uppercase;
-    color: var(--ink-soft);
-    transition: color .12s ease-out, background .12s ease-out;
-    position: relative;
+    padding: 8px 18px;
+    border-radius: 8px;
+    font-family: var(--font-body); font-size: 13px; font-weight: 700;
+    color: var(--dim);
+    transition: color .15s ease-out, background .15s ease-out;
   }
-  .lens button + button { border-left: 1px solid var(--ink); }
-  .lens button:hover { background: var(--paper-sub); color: var(--ink); }
-  .lens button.active { background: var(--ink); color: var(--paper); }
+  .lens button:hover { color: var(--text); }
+  .lens button.active {
+    background: linear-gradient(120deg, #8B7CF6, #6C5CE7);
+    color: #FFF;
+  }
   .lens-note {
-    font-family: var(--font-display); font-style: italic;
-    font-variation-settings: "opsz" 14;
-    font-size: 13px; color: var(--ink-soft);
+    font-family: var(--font-mono);
+    font-size: 11px; color: var(--dim);
+    margin-top: 10px;
   }
+  body[data-lens="forward"]  .lens-note::before { content: "12-month analyst estimates"; }
+  body[data-lens="trailing"] .lens-note::before { content: "reported TTM earnings"; }
 
   /* Show/hide views based on body data-lens */
   .view-trailing { display: none; }
   body[data-lens="trailing"] .view-forward { display: none; }
   body[data-lens="trailing"] .view-trailing { display: block; }
 
-  /* ─────────────────── Section framing ─────────────────── */
-  .section { padding: 64px 0; border-top: 1px solid var(--rule); }
-  .section:first-of-type { border-top: 0; padding-top: 56px; }
-  .section-head {
-    display: grid;
-    grid-template-columns: 64px 1fr auto;
-    gap: 28px;
-    align-items: baseline;
-    margin-bottom: 36px;
+  /* ─────────────────── Cards + section heads ─────────────────── */
+  .card {
+    position: relative;
+    background: var(--card);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--card-border);
+    border-radius: 22px;
+    padding: 26px 30px;
   }
-  .section-num {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--accent);
-    letter-spacing: 0.14em;
-    padding-top: 4px;
+  .card:hover { z-index: 30; } /* tooltips escape sibling stacking contexts */
+  .card-head {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 24px; margin-bottom: 6px;
   }
-  .section-num::before { content: "/ "; color: var(--rule); }
-  .section-title {
-    font-family: var(--font-display);
-    font-variation-settings: "opsz" 48;
-    font-weight: 600;
-    font-size: clamp(24px, 3vw, 34px);
-    line-height: 1.1;
-    color: var(--ink);
-    margin: 0 0 8px;
-    letter-spacing: -0.015em;
+  .card-title { display: flex; gap: 14px; align-items: baseline; min-width: 0; }
+  .card-num { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent); }
+  .card h2 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); }
+  .lede { margin: 6px 0 0; font-size: 14px; line-height: 1.5; color: var(--lede); max-width: 640px; }
+  .lede strong { color: var(--soft); font-weight: 600; }
+  .card-aside {
+    flex: 0 0 auto; text-align: right;
+    font-family: var(--font-mono); font-size: 11px; color: var(--dim);
+    white-space: nowrap; padding-top: 4px;
   }
-  .section-title em {
-    font-style: italic;
-    font-variation-settings: "opsz" 48, "SOFT" 80, "WONK" 1;
-    font-weight: 400;
-    color: var(--accent);
-  }
-  .section-lede {
-    font-family: var(--font-body);
-    font-size: 13.5px;
-    color: var(--ink-soft);
-    margin: 0;
-    max-width: 640px;
-    line-height: 1.55;
-  }
-  .section-lede strong { color: var(--ink); font-weight: 500; }
-  .section-meta {
-    font-family: var(--font-mono); font-size: 10.5px;
-    color: var(--mute); letter-spacing: 0.06em;
-    text-align: right;
-  }
-  .section-meta .lens-echo {
+  .lens-echo {
     display: inline-block;
-    padding: 3px 8px 2px;
-    border: 1px solid var(--rule);
-    color: var(--ink);
-    letter-spacing: 0.14em;
+    padding: 4px 10px;
+    border: 1px solid var(--hair); border-radius: 8px;
+    color: var(--soft); letter-spacing: 0.06em;
   }
-  body[data-lens="forward"]  .section-meta .lens-echo::before { content: "forward · daily"; }
-  body[data-lens="trailing"] .section-meta .lens-echo::before { content: "trailing · monthly"; }
+  body[data-lens="forward"]  .lens-echo::before { content: "forward · daily"; }
+  body[data-lens="trailing"] .lens-echo::before { content: "trailing · monthly"; }
 
-  /* ─────────────────── Strip (pin chart) ─────────────────── */
+  /* ─────────────────── Controls: seg pills + outline buttons ─────────────────── */
+  .chart-controls {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 10px; margin: 14px 0; flex-wrap: wrap;
+  }
+  .ctrl-group { display: flex; gap: 8px; align-items: center; }
+  .seg {
+    display: inline-flex;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 3px; gap: 2px;
+  }
+  .seg button {
+    border: 0; background: transparent; cursor: pointer;
+    padding: 6px 12px; border-radius: 7px;
+    font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--dim);
+    transition: color .12s ease-out, background .12s ease-out;
+  }
+  .seg button:hover { color: var(--text); }
+  .seg button.active { background: var(--accent); color: #0B0C0E; }
+  .obtn {
+    border: 1px solid rgba(255,255,255,0.1); background: transparent;
+    color: var(--lede);
+    padding: 6px 12px; border-radius: 8px;
+    font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+    cursor: pointer;
+    transition: color .12s ease-out, border-color .12s ease-out;
+  }
+  .obtn:hover { border-color: var(--accent); color: var(--text); }
+
+  .chart-wrap {
+    background: var(--inset);
+    border: 1px solid var(--inset-border);
+    border-radius: 14px;
+    padding: 14px 16px 6px;
+  }
+  #chart, #mood-chart { width: 100%; height: 560px; }
+  #val-chart { width: 100%; height: 760px; }
+
+  /* ─────────────────── Strip (dot distribution) ─────────────────── */
   .strip-frame {
     position: relative;
-    padding: 64px 56px 20px;
-    height: 280px;
-    background: var(--paper-sub);
-    background-image:
-      linear-gradient(to right, transparent 0, transparent calc(50% - 0.5px),
-        rgba(27,24,19,0.04) calc(50% - 0.5px), rgba(27,24,19,0.04) calc(50% + 0.5px),
-        transparent calc(50% + 0.5px));
-    border: 1px solid var(--rule);
+    height: 240px;
+    margin-top: 18px;
+    background: var(--inset);
+    border: 1px solid var(--inset-border);
+    border-radius: 14px;
   }
-  .strip-labels-top {
-    position: absolute; top: 20px; left: 56px; right: 56px;
+  .strip-frame::before { /* baseline */
+    content: ""; position: absolute; left: 24px; right: 24px; bottom: 34px;
+    height: 1px; background: rgba(255,255,255,0.1);
+  }
+  .strip-frame::after { /* dashed median */
+    content: ""; position: absolute; left: 50%; top: 16px; bottom: 34px; width: 1px;
+    background: repeating-linear-gradient(rgba(255,255,255,0.12), rgba(255,255,255,0.12) 3px, transparent 3px, transparent 7px);
+  }
+  .strip-labels {
+    position: absolute; left: 24px; right: 24px; bottom: 10px;
     display: flex; justify-content: space-between;
-    font-family: var(--font-body); font-size: 10px;
-    letter-spacing: 0.18em; text-transform: uppercase;
-    color: var(--mute); font-weight: 500;
+    font-family: var(--font-mono);
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--dimmer);
   }
-  .strip-labels-top .middle { color: var(--ink); }
-  .strip-axis { position: absolute; top: 58px; left: 56px; right: 56px; height: 2px; background: var(--ink); }
-  .strip-axis::before, .strip-axis::after {
-    content: ""; position: absolute; top: -3px;
-    width: 2px; height: 8px; background: var(--ink);
-  }
-  .strip-axis::before { left: 0; }
-  .strip-axis::after { right: 0; }
-  .strip-ticks { position: absolute; top: 60px; left: 56px; right: 56px; height: 8px; pointer-events: none; }
-  .strip-tick { position: absolute; top: 0; width: 1px; height: 6px; background: var(--ink-soft); transform: translateX(-0.5px); }
-  .strip-tick-label {
-    position: absolute; top: 10px;
-    font-family: var(--font-mono); font-size: 10px; color: var(--mute);
-    transform: translateX(-50%);
-    font-variant-numeric: tabular-nums;
-  }
-  .strip-pins { position: absolute; top: 60px; left: 56px; right: 56px; bottom: 20px; }
+  .strip-pins { position: absolute; left: 24px; right: 24px; top: 18px; bottom: 34px; }
   .pin {
-    position: absolute; top: 0;
+    position: absolute;
     transform: translateX(-50%);
-    display: flex; flex-direction: column; align-items: center;
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
     cursor: pointer;
     animation: pinIn 0.6s cubic-bezier(.2,.7,.2,1) both;
   }
-  .pin-stem { width: 1px; }
-  .pin-row-0 .pin-stem { height: 12px; }
-  .pin-row-1 .pin-stem { height: 60px; }
-  .pin-row-2 .pin-stem { height: 108px; }
+  .pin-row-0 { top: 2px; }
+  .pin-row-1 { top: 48px; }
+  .pin-row-2 { top: 94px; }
+  .pin-row-3 { top: 140px; }
   .pin-dot {
-    width: 10px; height: 10px; border-radius: 50%;
-    border: 2px solid var(--paper-sub);
-    box-shadow: 0 0 0 1.5px currentColor;
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid #141518;
+    box-shadow: 0 0 8px -1px rgba(0,0,0,0.6);
     transition: transform .15s ease-out;
   }
   .pin-label {
-    margin-top: 7px;
-    font-family: var(--font-mono); font-size: 10px; font-weight: 600;
-    color: var(--ink); letter-spacing: 0.04em;
-    padding: 3px 6px 2px;
-    background: var(--paper-sub);
-    border-radius: 2px;
+    font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--dim);
+    background: rgba(10,11,14,0.7);
+    padding: 2px 6px; border-radius: 6px;
     white-space: nowrap;
-    display: flex; gap: 6px; align-items: baseline;
-    transition: all .15s ease-out;
+    display: flex; gap: 5px; align-items: baseline;
+    transition: color .15s ease-out, background .15s ease-out;
   }
-  .pin-pct { font-size: 9px; font-weight: 400; color: var(--mute); font-variant-numeric: tabular-nums; }
-  .pin:hover .pin-dot { transform: scale(1.5); }
-  .pin:hover .pin-label { background: var(--ink); color: var(--paper); }
-  .pin:hover .pin-pct { color: var(--paper-sub); }
+  .pin-pct { font-size: 9px; font-weight: 400; color: var(--dimmer); font-variant-numeric: tabular-nums; }
+  .pin:hover .pin-dot { transform: scale(1.45); }
+  .pin:hover .pin-label { color: var(--text); background: rgba(139,124,246,0.2); }
   .strip-frame.highlighting .pin:not(.highlighted) { opacity: 0.22; }
-  .strip-frame.highlighting .pin.highlighted .pin-dot { transform: scale(1.7); }
+  .strip-frame.highlighting .pin.highlighted .pin-dot { transform: scale(1.6); }
 
   /* ─────────────────── Rank table ─────────────────── */
-  .rank-table {
-    list-style: none; margin: 0; padding: 0;
-    border-top: 1.5px solid var(--ink);
-    border-bottom: 1.5px solid var(--ink);
-  }
+  .rank-table { list-style: none; margin: 12px 0 0; padding: 0; }
   .rank-head, .row {
     display: grid;
-    grid-template-columns: 44px 2.4fr 74px 1.3fr 50px 120px;
-    gap: 20px;
+    grid-template-columns: 34px 2.2fr 84px 1.9fr 54px 120px;
+    gap: 16px;
     align-items: center;
-    padding: 14px 8px;
-    border-bottom: 1px solid var(--rule-soft);
   }
   .rank-head {
-    font-family: var(--font-body); font-size: 10px;
-    letter-spacing: 0.16em; text-transform: uppercase;
-    color: var(--mute); font-weight: 500;
-    padding: 12px 8px;
-    border-bottom: 1px solid var(--rule);
+    padding: 0 8px 10px;
+    font-family: var(--font-mono);
+    font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--dim);
+    border-bottom: 1px solid var(--hair);
   }
-  .rank-head > *:last-child { text-align: right; }
   .row {
-    font-size: 14px; transition: background .15s;
+    padding: 11px 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    border-radius: 10px;
     cursor: pointer;
-    animation: rowIn 0.45s ease-out both;
     position: relative;
-    z-index: 1;
+    animation: rowIn 0.45s ease-out both;
+    transition: background .15s;
   }
-  .row:hover { background: var(--paper-sub); z-index: 200; }
   .row:last-child { border-bottom: 0; }
-  .row.is-index { background: linear-gradient(to right, rgba(27,24,19,0.05), rgba(27,24,19,0.01) 60%); }
-  .row.is-index::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--ink); }
-  .rank-num { font-family: var(--font-mono); font-size: 12px; color: var(--mute); font-weight: 500; font-variant-numeric: tabular-nums; }
-  .name-col { display: flex; align-items: center; gap: 12px; min-width: 0; }
-  .swatch { width: 8px; height: 16px; border-radius: 1px; flex: 0 0 8px; }
+  .row:hover { background: rgba(255,255,255,0.04); }
+  .row.is-index { background: rgba(139,124,246,0.12); }
+  .row.is-index:hover { background: rgba(139,124,246,0.18); }
+  .rank-num { font-family: var(--font-mono); font-size: 11px; color: var(--dimmer); font-variant-numeric: tabular-nums; }
+  .name-col { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .swatch { width: 9px; height: 9px; border-radius: 3px; flex: 0 0 9px; }
   .name {
-    font-family: var(--font-display);
-    font-variation-settings: "opsz" 20;
-    font-weight: 500; font-size: 16.5px;
-    color: var(--ink);
-    letter-spacing: -0.005em;
+    font-size: 15px; font-weight: 600; color: var(--text-2);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .ticker {
-    font-family: var(--font-mono); font-size: 9.5px;
-    color: var(--mute); letter-spacing: 0.1em;
-    padding: 2px 5px 1px;
-    border: 1px solid var(--rule); border-radius: 2px;
+  .ticker { font-family: var(--font-mono); font-size: 10px; color: var(--dimmer); letter-spacing: 0.06em; }
+  .val { font-size: 15px; font-weight: 600; text-align: right; color: var(--text); }
+  .bar-col { position: relative; display: block; }
+  .bar { position: relative; display: flex; align-items: center; height: 14px; width: 100%; }
+  .bar::before {
+    content: ""; position: absolute; left: 0; right: 0;
+    height: 2px; border-radius: 2px; background: rgba(255,255,255,0.1);
   }
-  .val { font-size: 17px; font-weight: 500; color: var(--ink); }
-  .bar-col { position: relative; padding: 0 4px; display: block; }
-  .bar { position: relative; display: block; height: 3px; background: var(--rule); width: 100%; }
-  .bar-fill { position: absolute; left: 0; top: 0; height: 100%; background: var(--ink); }
+  .bar-fill { position: absolute; left: 0; height: 3px; border-radius: 2px; }
   .bar-marker {
-    position: absolute; top: 50%;
-    width: 11px; height: 11px; border-radius: 50%;
-    background: var(--ink);
-    transform: translate(-50%, -50%);
-    border: 2px solid var(--paper);
-    box-shadow: 0 0 0 1.5px var(--ink);
+    position: absolute;
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid #141518;
+    box-shadow: 0 0 6px rgba(0,0,0,0.5);
+    transform: translateX(-50%);
   }
-  .row.heat-hot .bar-fill, .row.heat-hot .bar-marker { background: var(--accent); }
-  .row.heat-hot .bar-marker { box-shadow: 0 0 0 1.5px var(--accent); }
-  .row.heat-cold .bar-fill, .row.heat-cold .bar-marker { background: var(--cheap); }
-  .row.heat-cold .bar-marker { box-shadow: 0 0 0 1.5px var(--cheap); }
-  .pct { font-size: 20px; font-weight: 600; color: var(--ink); text-align: right; letter-spacing: -0.01em; }
-  .row.heat-hot .pct { color: var(--accent); }
-  .row.heat-cold .pct { color: var(--cheap); }
-  .range-col { font-size: 11.5px; color: var(--mute); display: flex; gap: 6px; justify-content: flex-end; }
-  .range-col .sep { color: var(--rule); }
+  .heat-mid  .bar-fill { background: linear-gradient(90deg, #A78BFA, #7C6CF0); }
+  .heat-mid  .bar-marker { background: var(--accent); }
+  .heat-hot  .bar-fill { background: linear-gradient(90deg, #FB9B8B, #F87171); }
+  .heat-hot  .bar-marker { background: var(--hot); }
+  .heat-cold .bar-fill { background: linear-gradient(90deg, #5EEAB4, #34D399); }
+  .heat-cold .bar-marker { background: var(--cold); }
+  .pct { font-size: 17px; font-weight: 800; text-align: right; letter-spacing: -0.01em; }
+  .heat-mid  .pct { color: var(--accent); }
+  .heat-hot  .pct { color: var(--hot); }
+  .heat-cold .pct { color: var(--cold); }
+  .range-col {
+    font-family: var(--font-mono);
+    font-size: 12px; color: var(--dim);
+    display: flex; gap: 6px; justify-content: flex-end;
+  }
+  .range-col .sep { color: #3A3D45; }
 
   /* ─────────────────── Row / pin tooltips ─────────────────── */
-  .rank-table { overflow: visible; }
   .row .tip {
     position: absolute;
     top: calc(100% - 2px); right: 0;
     width: 380px; max-width: calc(100vw - 80px);
     z-index: 50;
-    background: var(--ink); color: var(--paper);
+    background: linear-gradient(180deg, #1A1C25, #14161D);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    color: var(--text);
     padding: 18px 22px 20px;
     opacity: 0; pointer-events: none;
     transform: translateY(-4px);
     transition: opacity .16s ease-out, transform .16s ease-out;
-    box-shadow: 0 14px 36px rgba(27,24,19,0.25), 0 0 0 1px var(--ink);
+    box-shadow: 0 24px 60px -12px rgba(0,0,0,0.7);
     text-align: left;
+    cursor: default;
   }
   .row:hover .tip { opacity: 1; transform: translateY(0); pointer-events: auto; }
   .row:nth-last-child(-n+4) .tip { top: auto; bottom: calc(100% - 2px); transform: translateY(4px); }
   .row:nth-last-child(-n+4):hover .tip { transform: translateY(0); }
   .tip-def {
-    font-family: var(--font-display);
-    font-variation-settings: "opsz" 18;
-    font-style: italic; font-weight: 400;
-    font-size: 14.5px; line-height: 1.45;
-    color: var(--paper);
+    font-size: 13.5px; line-height: 1.5;
+    color: var(--soft);
     margin: 0 0 14px; padding-bottom: 14px;
-    border-bottom: 1px solid rgba(242,236,223,0.18);
+    border-bottom: 1px solid var(--hair);
   }
   .tip-label {
     font-family: var(--font-mono); font-size: 9.5px;
     letter-spacing: 0.18em; text-transform: uppercase;
-    color: rgba(242,236,223,0.55);
+    color: var(--dimmer);
     margin: 0 0 8px;
   }
   .tip-holdings { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr; gap: 5px; }
   .tip-holdings li { display: grid; grid-template-columns: 68px 1fr; gap: 14px; align-items: baseline; }
-  .tip-tk { font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: 0.08em; color: #e8955a; }
-  .tip-nm { font-family: var(--font-body); font-size: 13px; font-weight: 400; color: var(--paper); }
+  .tip-tk { font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: 0.08em; color: var(--accent-hi); }
+  .tip-nm { font-size: 13px; font-weight: 400; color: var(--text-2); }
 
   .pin-tip {
-    position: absolute; top: auto; bottom: calc(100% + 18px); left: 50%;
-    transform: translate(-50%, 6px);
+    position: absolute; top: calc(100% + 14px); left: 50%;
+    transform: translate(-50%, -6px);
     width: 260px; max-width: calc(100vw - 60px);
-    background: var(--ink); color: var(--paper);
+    background: linear-gradient(180deg, #1A1C25, #14161D);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    color: var(--text);
     padding: 14px 16px 16px;
     opacity: 0; pointer-events: none;
     transition: opacity .16s ease-out, transform .16s ease-out;
-    box-shadow: 0 14px 36px rgba(27,24,19,0.25), 0 0 0 1px var(--ink);
+    box-shadow: 0 24px 60px -12px rgba(0,0,0,0.7);
     z-index: 100; text-align: left;
   }
   .pin:hover .pin-tip { opacity: 1; transform: translate(-50%, 0); }
-  .pin-row-2 .pin-tip { bottom: auto; top: calc(100% + 10px); transform: translate(-50%, -6px); }
-  .pin-row-2:hover .pin-tip { transform: translate(-50%, 0); }
-  .pin-tip-name {
-    font-family: var(--font-display);
-    font-variation-settings: "opsz" 24;
-    font-weight: 600; font-size: 15px; letter-spacing: -0.005em;
-    margin: 0 0 6px;
-  }
+  .pin-tip-name { font-weight: 700; font-size: 15px; letter-spacing: -0.005em; margin: 0 0 6px; }
   .pin-tip-def {
-    font-family: var(--font-display);
-    font-variation-settings: "opsz" 14;
-    font-style: italic; font-size: 12.5px; line-height: 1.4;
-    color: rgba(242,236,223,0.82);
+    font-size: 12.5px; line-height: 1.45;
+    color: var(--soft);
     margin: 0 0 12px; padding-bottom: 10px;
-    border-bottom: 1px solid rgba(242,236,223,0.18);
+    border-bottom: 1px solid var(--hair);
   }
   .pin-tip-label {
     font-family: var(--font-mono); font-size: 9px;
     letter-spacing: 0.16em; text-transform: uppercase;
-    color: rgba(242,236,223,0.5);
+    color: var(--dimmer);
     margin: 0 0 6px;
   }
   .pin-tip .tip-holdings li { grid-template-columns: 54px 1fr; gap: 10px; }
   .pin-tip .tip-tk { font-size: 10px; }
   .pin-tip .tip-nm { font-size: 12px; }
 
-  /* ─────────────────── Chart ─────────────────── */
-  .chart-controls { display: flex; gap: 8px; margin-bottom: 18px; align-items: baseline; flex-wrap: wrap; }
-  .chart-controls button {
-    border: 1px solid var(--rule);
-    background: transparent;
-    color: var(--ink-soft);
-    padding: 7px 14px 6px;
-    font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
-    letter-spacing: 0.14em; text-transform: uppercase;
-    cursor: pointer;
-    transition: all .12s ease-out;
-  }
-  .chart-controls button:hover { border-color: var(--ink); color: var(--ink); background: var(--paper-sub); }
-  .chart-controls button.active { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-  .chart-controls .spacer { flex: 1; }
-  .chart-controls-sep { display: inline-block; width: 1px; height: 14px; background: var(--rule); margin: 0 6px; align-self: center; }
-  .chart-controls .meta { font-family: var(--font-mono); font-size: 10px; color: var(--mute); letter-spacing: 0.08em; }
-  .chart-wrap { background: var(--paper); border: 1px solid var(--rule); padding: 14px 8px 6px; }
-  #chart, #mood-chart { width: 100%; height: 560px; }
-  #val-chart { width: 100%; height: 760px; }
-
   /* ─────────────────── Gauge (Fear & Greed) ─────────────────── */
-  .gauge-frame {
-    position: relative;
-    padding: 96px 56px 96px;
-    background: var(--paper-sub);
-    border: 1px solid var(--rule);
-    height: 280px;
+  .gauge { display: flex; align-items: center; gap: 40px; margin-top: 20px; }
+  .gauge-big { text-align: center; flex: 0 0 auto; }
+  .gauge-num {
+    font-size: 76px; font-weight: 800; line-height: 0.9; letter-spacing: -0.03em;
+    background: linear-gradient(120deg, #9B8CFA, #D66AE0);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
-  .gauge-track {
-    position: absolute;
-    top: 96px; left: 56px; right: 56px;
-    height: 16px;
-    display: block;
-    border: 1px solid var(--ink);
-    overflow: hidden;
+  .gauge-word {
+    font-size: 11px; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--accent-hi);
+    margin-top: 8px;
   }
-  .gauge-zone {
-    position: absolute; top: 0; bottom: 0;
-  }
-  .gz-xfear  { background: var(--cheap); }
-  .gz-fear   { background: var(--cheap); opacity: 0.45; }
-  .gz-neut   { background: var(--paper-deep); }
-  .gz-greed  { background: var(--accent); opacity: 0.45; }
-  .gz-xgreed { background: var(--accent); }
-
-  .gauge-axis {
-    position: absolute;
-    top: 113px; left: 56px; right: 56px; height: 8px;
-    pointer-events: none;
-  }
-  .ga-tick {
-    position: absolute; top: 0;
-    width: 1px; height: 6px; background: var(--ink-soft);
-    transform: translateX(-0.5px);
-  }
-  .gauge-labels {
-    position: absolute;
-    top: 130px; left: 56px; right: 56px;
-    font-family: var(--font-mono); font-size: 9.5px;
-    letter-spacing: 0.18em; text-transform: uppercase;
-    color: var(--mute);
-    pointer-events: none;
-  }
-  .gauge-labels span {
-    position: absolute;
-    transform: translateX(-50%);
-    white-space: nowrap;
+  .gauge-right { flex: 1; min-width: 0; padding-top: 22px; }
+  .gauge-bar {
+    position: relative; height: 14px; border-radius: 8px;
+    background: linear-gradient(90deg, #2E8B6E, #8FC9A0, #E0C97A, #E09A5A, #D6503C);
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.4);
   }
   .gauge-pointer {
-    position: absolute;
-    top: 40px;
+    position: absolute; top: -26px;
+    width: 2px; height: 30px;
+    background: var(--text);
     transform: translateX(-50%);
-    display: flex; flex-direction: column; align-items: center;
     animation: gaugeDrop 0.8s cubic-bezier(.2,.6,.3,1.2) both .2s;
   }
-  .gp-arrow {
-    font-size: 18px;
-    color: var(--ink);
-    line-height: 1;
-  }
-  .gp-value {
-    font-family: var(--font-display);
-    font-variation-settings: "opsz" 64, "SOFT" 40, "WONK" 0;
-    font-weight: 700;
-    font-size: 48px; line-height: 0.9;
-    color: var(--ink);
-    letter-spacing: -0.02em;
-    margin-top: -42px;
-  }
-  .gp-caption {
-    margin-top: 6px;
-    font-family: var(--font-mono); font-size: 9.5px;
-    letter-spacing: 0.12em; text-transform: uppercase;
-    color: var(--mute);
-    white-space: nowrap;
-  }
-  .gauge-markers {
-    position: absolute; bottom: 30px; left: 56px; right: 56px; height: 40px;
-    pointer-events: none;
-  }
-  .gauge-marker {
-    position: absolute; bottom: 0;
+  .gauge-pointer::before {
+    content: ""; position: absolute; top: -7px; left: 50%;
     transform: translateX(-50%);
-    display: flex; flex-direction: column; align-items: center;
-    animation: pinIn 0.6s ease-out both;
+    border-left: 6px solid transparent; border-right: 6px solid transparent;
+    border-top: 8px solid var(--text);
   }
-  .gm-arrow { font-size: 11px; color: var(--ink-soft); line-height: 1; }
-  .gm-label {
-    margin-top: 3px;
-    font-family: var(--font-mono); font-size: 9.5px; font-weight: 500;
-    color: var(--ink-soft);
-    letter-spacing: 0.08em;
-    white-space: nowrap;
-    display: flex; gap: 4px; align-items: baseline;
+  .gauge-scale {
+    display: flex; justify-content: space-between;
+    font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--dim);
+    margin-top: 6px;
   }
-  .gm-val { font-size: 8.5px; color: var(--mute); font-weight: 400; }
+  .gauge-tiles { display: flex; gap: 14px; margin-top: 18px; }
+  .gauge-tile {
+    flex: 1; text-align: center;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 10px;
+    padding: 10px;
+  }
+  .gt-label { font-size: 11px; color: var(--dim); font-weight: 600; }
+  .gt-val { font-size: 18px; font-weight: 700; color: var(--text); }
 
   @keyframes gaugeDrop {
-    from { opacity: 0; transform: translateX(-50%) translateY(-14px); }
+    from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
     to   { opacity: 1; transform: translateX(-50%) translateY(0); }
   }
 
   /* ─────────────────── Footer ─────────────────── */
-  footer { margin-top: 48px; padding: 28px 0 60px; border-top: 1.5px solid var(--ink); }
-  footer .inner {
+  footer {
     display: flex; justify-content: space-between; align-items: baseline;
-    font-family: var(--font-mono); font-size: 10.5px;
-    color: var(--mute); letter-spacing: 0.08em;
-    flex-wrap: wrap; gap: 10px;
+    gap: 10px; flex-wrap: wrap;
+    font-family: var(--font-mono);
+    font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--dim);
+    border-top: 1px solid var(--hair);
+    padding-top: 18px; margin-top: 4px;
   }
-  footer .inner .left { display: flex; gap: 14px; flex-wrap: wrap; }
-  footer .dot { color: var(--rule); }
-  footer strong { color: var(--ink); font-weight: 600; letter-spacing: 0.14em; }
+  footer .left { display: flex; gap: 12px; flex-wrap: wrap; }
+  footer .dot { color: #3A3D45; }
+  footer strong { color: var(--soft); font-weight: 600; }
 
   /* ─────────────────── Animations ─────────────────── */
   @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes pinIn { from { opacity: 0; transform: translateX(-50%) translateY(-8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
   @keyframes rowIn { from { opacity: 0; } to { opacity: 1; } }
-  .kicker       { animation: rise .55s ease-out .00s both; }
-  .wordmark     { animation: rise .80s cubic-bezier(.2,.6,.2,1) .10s both; }
-  .standfirst   { animation: rise .60s ease-out .35s both; }
-  .lens-row     { animation: rise .50s ease-out .55s both; }
+  .kicker        { animation: rise .55s ease-out .00s both; }
+  .wordmark      { animation: rise .80s cubic-bezier(.2,.6,.2,1) .10s both; }
+  .standfirst    { animation: rise .60s ease-out .35s both; }
+  .masthead-side { animation: rise .50s ease-out .55s both; }
 
-  @media (max-width: 860px) {
-    .container { padding: 0 20px; }
-    .section { padding: 40px 0; }
-    .section-head { grid-template-columns: 1fr; gap: 4px; }
-    .section-meta { text-align: left; }
-    .rank-head, .row { grid-template-columns: 30px 1.5fr 60px 1fr 44px; gap: 12px; padding: 12px 6px; }
+  @media (max-width: 900px) {
+    body { padding: 16px 10px; }
+    .shell { border-radius: 20px; }
+    .inner { padding: 24px 18px 24px; gap: 16px; }
+    .masthead { flex-direction: column; align-items: flex-start; }
+    .masthead-side { text-align: left; }
+    .card { padding: 20px 16px; border-radius: 18px; }
+    .card-head { flex-direction: column; gap: 8px; }
+    .card-aside { text-align: left; padding-top: 0; }
+    .rank-head, .row { grid-template-columns: 26px 1.6fr 60px 1fr 40px; gap: 10px; }
     .rank-head > *:nth-child(6), .row > *:nth-child(6) { display: none; }
-    .name { font-size: 14px; }
-    .val { font-size: 14px; }
-    .pct { font-size: 16px; }
-    .strip-frame { padding: 56px 30px 16px; height: 240px; }
-    .strip-labels-top, .strip-axis, .strip-ticks, .strip-pins { left: 30px; right: 30px; }
-    .gauge-frame { padding: 96px 30px 96px; }
-    .gauge-track, .gauge-axis, .gauge-labels, .gauge-markers { left: 30px; right: 30px; }
+    .name { font-size: 13px; }
+    .val { font-size: 13px; }
+    .pct { font-size: 15px; }
+    .gauge { flex-direction: column; gap: 24px; align-items: stretch; }
+    .gauge-right { padding-top: 30px; }
+    .gauge-tiles { flex-wrap: wrap; }
+    .gauge-tile { flex: 1 1 40%; }
+    .gauge-scale span:nth-child(even) { display: none; }
+    /* strip: dots only — labels collide at percentile spacing on narrow screens */
+    .strip-frame { height: 150px; }
+    .pin-label { display: none; }
+    .pin-row-0 { top: 6px; }
+    .pin-row-1 { top: 34px; }
+    .pin-row-2 { top: 62px; }
+    .pin-row-3 { top: 90px; }
+    .strip-labels { font-size: 9px; }
+    .strip-labels span:nth-child(2) { display: none; }
   }
 </style>
 </head>
 <body data-lens="forward">
 
-<header class="masthead">
-  <div class="container">
-    <p class="kicker">AlphaLabX1 · internal research <span class="edition">Vol. II</span></p>
-    <h1 class="wordmark">Valuation <em>&amp; Mood</em></h1>
-    <p class="standfirst">S&amp;P 500 and its eleven sectors, seen through two P/E lenses — and the market's mood, plotted against the price beneath it. Updated <time>__LATEST_LABEL__</time>.</p>
-    <div class="lens-row">
-      <span class="lens-label">valuation lens</span>
-      <div class="lens" id="lens">
-        <button data-lens="forward" class="active">Forward</button>
-        <button data-lens="trailing">Trailing</button>
-      </div>
-      <span class="lens-note">Forward uses 12-month analyst estimates; trailing uses reported TTM earnings.</span>
-    </div>
+<div class="shell">
+  <div class="blobs">
+    <i class="blob-1"></i><i class="blob-2"></i><i class="blob-3"></i>
+    <i class="blob-4"></i><i class="blob-5"></i><i class="blob-6"></i>
   </div>
-</header>
 
-<main>
-  <!-- ═══ 01. Pin strip ═══ -->
-  <section class="section">
-    <div class="container">
-      <div class="section-head">
-        <span class="section-num">01</span>
-        <div>
-          <h2 class="section-title">Where everyone <em>stands today</em></h2>
-          <p class="section-lede">Each marker is a sector's current P/E placed as a percentile of its own trailing five years. <strong>Right is expensive.</strong> A reading of 50 means the sector is trading at its own five-year median.</p>
+  <div class="inner">
+    <!-- ═══ Masthead ═══ -->
+    <header class="masthead">
+      <div>
+        <p class="kicker">AlphaLabX1 — Internal Research · Vol. II</p>
+        <h1 class="wordmark">Valuation <em>&amp; Mood</em></h1>
+        <p class="standfirst">The S&amp;P 500 and its eleven sectors, seen through two P/E lenses — and the market's mood, plotted against the price beneath it. <time>Updated __LATEST_LABEL__.</time></p>
+      </div>
+      <div class="masthead-side">
+        <div class="lens" id="lens">
+          <button data-lens="forward" class="active">Forward</button>
+          <button data-lens="trailing">Trailing</button>
         </div>
-        <div class="section-meta"><span class="lens-echo"></span></div>
+        <div class="lens-note"></div>
+      </div>
+    </header>
+
+    <!-- ═══ 01. Dot distribution ═══ -->
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="card-num">01</span>
+          <div>
+            <h2>Where everyone stands today</h2>
+            <p class="lede">Each dot is a sector's current P/E placed as a percentile of its own trailing five years. <strong>Right is expensive.</strong> A reading of 50 sits on the sector's own five-year median.</p>
+          </div>
+        </div>
+        <div class="card-aside"><span class="lens-echo"></span></div>
       </div>
 
       <div class="view-forward">
         <div class="strip-frame" id="strip-forward" data-family="forward">
-          <div class="strip-labels-top"><span>← cheap vs own 5Y</span><span class="middle">median</span><span>expensive vs own 5Y →</span></div>
-          <div class="strip-axis"></div>
-          <div class="strip-ticks">
-            <span class="strip-tick" style="left:0%"></span><span class="strip-tick-label" style="left:0%">0</span>
-            <span class="strip-tick" style="left:25%"></span><span class="strip-tick-label" style="left:25%">25</span>
-            <span class="strip-tick" style="left:50%"></span><span class="strip-tick-label" style="left:50%">50</span>
-            <span class="strip-tick" style="left:75%"></span><span class="strip-tick-label" style="left:75%">75</span>
-            <span class="strip-tick" style="left:100%"></span><span class="strip-tick-label" style="left:100%">100</span>
-          </div>
           <div class="strip-pins">__STRIP_FORWARD__</div>
+          <div class="strip-labels"><span>Cheap vs own 5y</span><span>Median</span><span>Expensive vs own 5y</span></div>
         </div>
       </div>
 
       <div class="view-trailing">
         <div class="strip-frame" id="strip-trailing" data-family="trailing">
-          <div class="strip-labels-top"><span>← cheap vs own 5Y</span><span class="middle">median</span><span>expensive vs own 5Y →</span></div>
-          <div class="strip-axis"></div>
-          <div class="strip-ticks">
-            <span class="strip-tick" style="left:0%"></span><span class="strip-tick-label" style="left:0%">0</span>
-            <span class="strip-tick" style="left:25%"></span><span class="strip-tick-label" style="left:25%">25</span>
-            <span class="strip-tick" style="left:50%"></span><span class="strip-tick-label" style="left:50%">50</span>
-            <span class="strip-tick" style="left:75%"></span><span class="strip-tick-label" style="left:75%">75</span>
-            <span class="strip-tick" style="left:100%"></span><span class="strip-tick-label" style="left:100%">100</span>
-          </div>
           <div class="strip-pins">__STRIP_TRAILING__</div>
+          <div class="strip-labels"><span>Cheap vs own 5y</span><span>Median</span><span>Expensive vs own 5y</span></div>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- ═══ 02. Rank table ═══ -->
-  <section class="section">
-    <div class="container">
-      <div class="section-head">
-        <span class="section-num">02</span>
-        <div>
-          <h2 class="section-title">Five-year <em>rank</em></h2>
-          <p class="section-lede">Sectors ordered from richest to cheapest relative to their own history. <strong>Click any row</strong> to isolate it on the chart below.</p>
+    <!-- ═══ 02. Rank table ═══ -->
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="card-num">02</span>
+          <div>
+            <h2>Five-year rank</h2>
+            <p class="lede">Sectors ordered richest → cheapest against their own history. <strong>Click any row</strong> to isolate it on the chart below.</p>
+          </div>
         </div>
-        <div class="section-meta"><span class="lens-echo"></span></div>
+        <div class="card-aside"><span class="lens-echo"></span></div>
       </div>
 
       <div class="view-forward">
         <ul class="rank-table" data-family="forward">
           <li class="rank-head">
-            <span></span><span>Sector</span><span>P/E</span><span>5Y percentile</span>
-            <span style="text-align:right">pctl</span><span style="text-align:right">5Y range</span>
+            <span></span><span>Sector</span><span style="text-align:right">P/E</span><span>5y percentile</span>
+            <span style="text-align:right">Rank</span><span style="text-align:right">5y range</span>
           </li>
           __TABLE_FORWARD__
         </ul>
@@ -1166,123 +1110,128 @@ TEMPLATE = r"""<!doctype html>
       <div class="view-trailing">
         <ul class="rank-table" data-family="trailing">
           <li class="rank-head">
-            <span></span><span>Sector</span><span>P/E</span><span>5Y percentile</span>
-            <span style="text-align:right">pctl</span><span style="text-align:right">5Y range</span>
+            <span></span><span>Sector</span><span style="text-align:right">P/E</span><span>5y percentile</span>
+            <span style="text-align:right">Rank</span><span style="text-align:right">5y range</span>
           </li>
           __TABLE_TRAILING__
         </ul>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- ═══ 03. Historical chart ═══ -->
-  <section class="section">
-    <div class="container">
-      <div class="section-head">
-        <span class="section-num">03</span>
-        <div>
-          <h2 class="section-title">Historical <em>path</em></h2>
-          <p class="section-lede">Forward view shows 12-month analyst estimates (daily, since 2008). Trailing view uses reported TTM earnings (monthly, since 1995 for sectors — since 1871 for the index). The Y axis auto-scales to whichever window and series are visible.</p>
+    <!-- ═══ 03. Historical chart ═══ -->
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="card-num">03</span>
+          <div>
+            <h2>Historical path</h2>
+            <p class="lede">Forward view shows 12-month analyst estimates (daily, since 2008). Trailing view uses reported TTM earnings (monthly, since 1995 for sectors — since 1871 for the index). The Y axis auto-scales to whichever window and series are visible.</p>
+          </div>
         </div>
-        <div class="section-meta"><span class="lens-echo"></span></div>
+        <div class="card-aside"><span class="lens-echo"></span></div>
       </div>
       <div class="chart-controls">
-        <button data-range="all">All</button>
-        <button data-range="10y">10Y</button>
-        <button data-range="5y" class="active">5Y</button>
-        <button data-range="3y">3Y</button>
-        <button data-range="1y">1Y</button>
-        <button data-range="ytd">YTD</button>
-        <span class="spacer"></span>
-        <button id="only-index">Index</button>
-        <button id="only-sectors">Sectors</button>
-        <button id="show-all">Reset</button>
+        <div class="seg">
+          <button data-range="all">All</button>
+          <button data-range="10y">10Y</button>
+          <button data-range="5y" class="active">5Y</button>
+          <button data-range="3y">3Y</button>
+          <button data-range="1y">1Y</button>
+          <button data-range="ytd">YTD</button>
+        </div>
+        <div class="ctrl-group">
+          <button class="obtn" id="only-index">Index</button>
+          <button class="obtn" id="only-sectors">Sectors</button>
+          <button class="obtn" id="show-all">Reset</button>
+        </div>
       </div>
       <div class="chart-wrap"><div id="chart"></div></div>
-    </div>
-  </section>
+    </section>
 
-  <!-- ═══ 04. Fear & Greed gauge ═══ -->
-  <section class="section">
-    <div class="container">
-      <div class="section-head">
-        <span class="section-num">04</span>
-        <div>
-          <h2 class="section-title">Sentiment, <em>at a glance</em></h2>
-          <p class="section-lede">MacroMicro's Fear &amp; Greed composite reduces the market's mood to a single 0–100 reading. Under 25 is panicked fear; over 75 is euphoric greed. The open triangles show how mood has drifted over the past week, month, quarter, and year.</p>
+    <!-- ═══ 04. Fear & Greed gauge ═══ -->
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="card-num">04</span>
+          <div>
+            <h2>Sentiment, at a glance</h2>
+            <p class="lede">MacroMicro's Fear &amp; Greed composite reduces the market's mood to a single 0–100 reading. Under 25 is panicked fear; over 75 is euphoric greed.</p>
+          </div>
         </div>
-        <div class="section-meta">composite · 0–100</div>
+        <div class="card-aside">Composite · 0–100</div>
       </div>
       __GAUGE__
-    </div>
-  </section>
+    </section>
 
-  <!-- ═══ 05. F&G vs SPX chart ═══ -->
-  <section class="section">
-    <div class="container">
-      <div class="section-head">
-        <span class="section-num">05</span>
-        <div>
-          <h2 class="section-title">Mood <em>against price</em></h2>
-          <p class="section-lede">Sentiment on the left axis, S&amp;P 500 on the right. Bear phases bottom with fear readings below 25; tops tend to coincide with extreme-greed plateaus — not coincidence, but also not a tradable signal on its own.</p>
+    <!-- ═══ 05. F&G vs SPX chart ═══ -->
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="card-num">05</span>
+          <div>
+            <h2>Mood against price</h2>
+            <p class="lede">Sentiment on the left axis, S&amp;P 500 on the right. Bear phases bottom with fear readings below 25; tops tend to coincide with extreme-greed plateaus — not coincidence, but also not a tradable signal on its own.</p>
+          </div>
         </div>
-        <div class="section-meta">dual axis · shared X</div>
+        <div class="card-aside">Dual axis · shared X</div>
       </div>
       <div class="chart-controls">
-        <button data-mood-range="all">All</button>
-        <button data-mood-range="10y">10Y</button>
-        <button data-mood-range="5y" class="active">5Y</button>
-        <button data-mood-range="3y">3Y</button>
-        <button data-mood-range="1y">1Y</button>
-        <button data-mood-range="ytd">YTD</button>
+        <div class="seg">
+          <button data-mood-range="all">All</button>
+          <button data-mood-range="10y">10Y</button>
+          <button data-mood-range="5y" class="active">5Y</button>
+          <button data-mood-range="3y">3Y</button>
+          <button data-mood-range="1y">1Y</button>
+          <button data-mood-range="ytd">YTD</button>
+        </div>
       </div>
       <div class="chart-wrap"><div id="mood-chart"></div></div>
-    </div>
-  </section>
+    </section>
 
-  <!-- ═══ 06. Valuation: price, multiple, and yield gap ═══ -->
-  <section class="section">
-    <div class="container">
-      <div class="section-head">
-        <span class="section-num">06</span>
-        <div>
-          <h2 class="section-title">Are we <em>expensive</em>?</h2>
-          <p class="section-lede">Three stacked panels on one time axis. Top: the index. Middle: its forward P/E against the 20th–80th percentile band of the trailing five years, plus a 200-day moving average — when the blue line pokes above the band you're paying more than usual for a dollar of next-year earnings. Bottom: forward earnings yield (1 ÷ forward P/E) next to the 10-year Treasury yield, with bars showing the spread. Bars near zero mean stocks no longer offer much premium over bonds.</p>
+    <!-- ═══ 06. Valuation: price, multiple, and yield gap ═══ -->
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="card-num">06</span>
+          <div>
+            <h2>Are we expensive?</h2>
+            <p class="lede">Three stacked panels on one time axis. Top: the index. Middle: its forward P/E against the 20th–80th percentile band of the trailing five years, plus a 200-day moving average. Bottom: forward earnings yield (1 ÷ forward P/E) next to the 10-year Treasury yield, with bars showing the spread — bars near zero mean stocks no longer offer much premium over bonds.</p>
+          </div>
         </div>
-        <div class="section-meta">3 panels · shared X</div>
+        <div class="card-aside">3 panels · shared X</div>
       </div>
       <div class="chart-controls">
-        <button data-val-index="spy" class="active">SPY</button>
-        <button data-val-index="qqq">QQQ</button>
-        <span class="chart-controls-sep"></span>
-        <button data-val-range="all">All</button>
-        <button data-val-range="10y">10Y</button>
-        <button data-val-range="5y" class="active">5Y</button>
-        <button data-val-range="3y">3Y</button>
-        <button data-val-range="1y">1Y</button>
-        <button data-val-range="ytd">YTD</button>
+        <div class="ctrl-group">
+          <div class="seg">
+            <button data-val-index="spy" class="active">SPY</button>
+            <button data-val-index="qqq">QQQ</button>
+          </div>
+          <div class="seg">
+            <button data-val-range="all">All</button>
+            <button data-val-range="10y">10Y</button>
+            <button data-val-range="5y" class="active">5Y</button>
+            <button data-val-range="3y">3Y</button>
+            <button data-val-range="1y">1Y</button>
+            <button data-val-range="ytd">YTD</button>
+          </div>
+        </div>
       </div>
       <div class="chart-wrap"><div id="val-chart"></div></div>
-    </div>
-  </section>
-</main>
+    </section>
 
-<footer>
-  <div class="container">
-    <div class="inner">
+    <!-- ═══ Footer ═══ -->
+    <footer>
       <div class="left">
-        <span><strong>AlphaLabX1</strong> internal</span>
+        <span><strong>AlphaLabX1</strong> — internal research</span>
         <span class="dot">·</span>
-        <span>Forward P/E &amp; Sentiment · MacroMicro</span>
+        <span>P/E &amp; prices · Koyfin</span>
         <span class="dot">·</span>
-        <span>Trailing P/E · worldperatio.com</span>
-        <span class="dot">·</span>
-        <span>Chart · Plotly</span>
+        <span>Fear &amp; Greed · MacroMicro</span>
       </div>
       <span>as of __LATEST_ISO__ · 5-year window</span>
-    </div>
+    </footer>
   </div>
-</footer>
+</div>
 
 <script>
 const DATA = __DATA__;
@@ -1305,33 +1254,38 @@ function makeTraces(family, outlierMax) {
     mode: "lines",
     name: s.name,
     line: { color: s.color, width: s.isIndex ? 2.6 : 1.4 },
+    opacity: s.isIndex ? 1 : 0.85,
     hovertemplate: "<b>" + s.name + "</b>  %{y:.2f}<extra></extra>",
     visible: true,
     meta: s.id,
   }));
 }
 
+const MONO = '"Spline Sans Mono", monospace';
+const BODY = '"Plus Jakarta Sans", sans-serif';
+const TICK_FONT = { family: MONO, size: 10, color: "#6B7078" };
+
 const baseLayout = {
   margin: { l: 56, r: 20, t: 10, b: 44 },
   hovermode: "x unified",
   hoverlabel: {
-    font: { family: '"IBM Plex Mono", monospace', size: 11, color: "#f2ecdf" },
-    bgcolor: "#1b1813", bordercolor: "#1b1813",
+    font: { family: MONO, size: 11, color: "#EDEEF0" },
+    bgcolor: "#16181F", bordercolor: "rgba(255,255,255,0.15)",
   },
   xaxis: {
-    showgrid: false, linecolor: "#d5c8b1", tickcolor: "#8a7e6d",
-    tickfont: { family: '"IBM Plex Mono", monospace', size: 10, color: "#55493b" },
+    showgrid: false, linecolor: "rgba(255,255,255,0.12)", tickcolor: "rgba(255,255,255,0.25)",
+    tickfont: TICK_FONT,
     type: "date",
   },
   yaxis: {
-    gridcolor: "#e6dcc6", zeroline: false,
-    tickfont: { family: '"IBM Plex Mono", monospace', size: 10, color: "#55493b" },
-    tickcolor: "#8a7e6d",
-    title: { text: "P/E", font: { family: '"IBM Plex Sans", sans-serif', size: 11, color: "#8a7e6d" }, standoff: 14 },
+    gridcolor: "rgba(255,255,255,0.06)", zeroline: false,
+    tickfont: TICK_FONT,
+    tickcolor: "rgba(255,255,255,0.25)",
+    title: { text: "P/E", font: { family: BODY, size: 11, color: "#6B7078" }, standoff: 14 },
   },
-  legend: { orientation: "h", y: -0.18, font: { family: '"IBM Plex Mono", monospace', size: 10, color: "#1b1813" } },
-  paper_bgcolor: "#f2ecdf", plot_bgcolor: "#f2ecdf",
-  font: { family: '"IBM Plex Sans", sans-serif', size: 11, color: "#1b1813" },
+  legend: { orientation: "h", y: -0.18, font: { family: MONO, size: 10, color: "#9BA0AB" } },
+  paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+  font: { family: BODY, size: 11, color: "#9BA0AB" },
 };
 
 const chartConfig = { displaylogo: false, responsive: true, modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"] };
@@ -1471,7 +1425,7 @@ function unsoloViaStrip() {
   document.querySelectorAll(".strip-frame").forEach(el => el.classList.remove("highlighting"));
   document.querySelectorAll(".pin").forEach(p => p.classList.remove("highlighted"));
   const family = DATA[currentLens];
-  if (family) Plotly.restyle("chart", { opacity: family.series.map(() => 1) });
+  if (family) Plotly.restyle("chart", { opacity: family.series.map(s => s.isIndex ? 1 : 0.85) });
 }
 function stickSolo(id) {
   const family = DATA[currentLens];
@@ -1495,7 +1449,8 @@ function stickSolo(id) {
       y: spx.map(p => p[1]),
       type: "scattergl", mode: "lines",
       name: "S&P 500",
-      line: { color: "#1b1813", width: 2.2 },
+      line: { color: "#A78BFA", width: 2.4 },
+      fill: "tozeroy", fillcolor: "rgba(139,124,246,0.10)",
       yaxis: "y2",
       hovertemplate: "<b>S&P 500</b>  %{y:.2f}<extra></extra>",
     },
@@ -1504,30 +1459,31 @@ function stickSolo(id) {
       y: fg.map(p => p[1]),
       type: "scattergl", mode: "lines",
       name: "Fear & Greed",
-      line: { color: "#b8421c", width: 1.2 },
+      line: { color: "#F87171", width: 1.3 },
+      opacity: 0.8,
       yaxis: "y",
       hovertemplate: "<b>F&G</b>  %{y:.1f}<extra></extra>",
     },
   ];
   const moodLayout = Object.assign({}, baseLayout, {
     yaxis: {
-      gridcolor: "#e6dcc6", zeroline: false,
-      tickfont: { family: '"IBM Plex Mono", monospace', size: 10, color: "#55493b" },
-      tickcolor: "#8a7e6d",
-      title: { text: "fear & greed", font: { family: '"IBM Plex Sans", sans-serif', size: 11, color: "#b8421c" }, standoff: 14 },
+      gridcolor: "rgba(255,255,255,0.06)", zeroline: false,
+      tickfont: TICK_FONT,
+      tickcolor: "rgba(255,255,255,0.25)",
+      title: { text: "Fear & Greed", font: { family: BODY, size: 11, color: "#F87171" }, standoff: 14 },
       range: [0, 100],
       tickvals: [0, 25, 50, 75, 100],
     },
     yaxis2: {
       overlaying: "y", side: "right",
       gridcolor: "rgba(0,0,0,0)", zeroline: false,
-      tickfont: { family: '"IBM Plex Mono", monospace', size: 10, color: "#55493b" },
-      tickcolor: "#8a7e6d",
-      title: { text: "S&P 500", font: { family: '"IBM Plex Sans", sans-serif', size: 11, color: "#1b1813" }, standoff: 14 },
+      tickfont: TICK_FONT,
+      tickcolor: "rgba(255,255,255,0.25)",
+      title: { text: "S&P 500", font: { family: BODY, size: 11, color: "#A78BFA" }, standoff: 14 },
     },
     shapes: [
-      { type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: 25, y1: 25, line: { color: "#2e5d56", width: 1, dash: "dot" } },
-      { type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: 75, y1: 75, line: { color: "#b8421c", width: 1, dash: "dot" } },
+      { type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: 25, y1: 25, line: { color: "rgba(52,211,153,0.55)", width: 1, dash: "dot" } },
+      { type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: 75, y1: 75, line: { color: "rgba(248,113,113,0.55)", width: 1, dash: "dot" } },
     ],
   });
   Plotly.newPlot("mood-chart", moodTraces, moodLayout, chartConfig).then(() => applyMoodRange("5y"));
@@ -1575,8 +1531,7 @@ function stickSolo(id) {
 (function renderValuationChart() {
   if (!DATA.valuation || !DATA.valuation.spy) return;
 
-  const TICK_FONT = { family: '"IBM Plex Mono", monospace', size: 10, color: "#55493b" };
-  const TITLE_FONT = { family: '"IBM Plex Sans", sans-serif', size: 11 };
+  const TITLE_FONT = { family: BODY, size: 11 };
 
   const xs = (pts) => pts.map(p => p[0]);
   const ys = (pts) => pts.map(p => p[1]);
@@ -1599,7 +1554,7 @@ function stickSolo(id) {
         x: xs(price), y: ys(price),
         type: "scattergl", mode: "lines",
         name: priceLabel(idx),
-        line: { color: "#1b1813", width: 1.6 },
+        line: { color: "#A78BFA", width: 1.8 },
         yaxis: "y", xaxis: "x",
         hovertemplate: "<b>" + priceLabel(idx) + "</b> %{y:.2f}<extra></extra>",
       },
@@ -1607,7 +1562,7 @@ function stickSolo(id) {
       {
         x: xs(v.band_p80), y: ys(v.band_p80),
         type: "scattergl", mode: "lines",
-        name: "5Y P80", line: { color: "rgba(180,66,28,0)", width: 0 },
+        name: "5Y P80", line: { color: "rgba(0,0,0,0)", width: 0 },
         yaxis: "y2", xaxis: "x", showlegend: false,
         hovertemplate: "P80 %{y:.2f}<extra></extra>",
       },
@@ -1615,8 +1570,8 @@ function stickSolo(id) {
         x: xs(v.band_p20), y: ys(v.band_p20),
         type: "scattergl", mode: "lines",
         name: "5Y P20–P80 band",
-        line: { color: "rgba(180,140,90,0)", width: 0 },
-        fill: "tonexty", fillcolor: "rgba(180,140,90,0.18)",
+        line: { color: "rgba(0,0,0,0)", width: 0 },
+        fill: "tonexty", fillcolor: "rgba(139,124,246,0.18)",
         yaxis: "y2", xaxis: "x",
         hovertemplate: "P20 %{y:.2f}<extra></extra>",
       },
@@ -1624,7 +1579,7 @@ function stickSolo(id) {
         x: xs(v.sma200), y: ys(v.sma200),
         type: "scattergl", mode: "lines",
         name: "200d SMA",
-        line: { color: "#b8421c", width: 1.2, dash: "dash" },
+        line: { color: "#D66AE0", width: 1.2, dash: "dash" },
         yaxis: "y2", xaxis: "x",
         hovertemplate: "SMA200 %{y:.2f}<extra></extra>",
       },
@@ -1632,7 +1587,7 @@ function stickSolo(id) {
         x: xs(v.pe), y: ys(v.pe),
         type: "scattergl", mode: "lines",
         name: "Forward P/E",
-        line: { color: "#2d6a8a", width: 2 },
+        line: { color: "#5EEAD4", width: 2 },
         yaxis: "y2", xaxis: "x",
         hovertemplate: "<b>Fwd P/E</b> %{y:.2f}<extra></extra>",
       },
@@ -1641,7 +1596,7 @@ function stickSolo(id) {
         x: xs(v.us10y), y: ys(v.us10y),
         type: "scattergl", mode: "lines",
         name: "10Y Treasury",
-        line: { color: "#1b1813", width: 1.4 },
+        line: { color: "#6AA0E0", width: 1.4, dash: "dash" },
         yaxis: "y3", xaxis: "x",
         hovertemplate: "<b>10Y</b> %{y:.2f}%<extra></extra>",
       },
@@ -1649,7 +1604,7 @@ function stickSolo(id) {
         x: xs(v.ey), y: ys(v.ey),
         type: "scattergl", mode: "lines",
         name: "Forward EY (1÷PE)",
-        line: { color: "#2d6a8a", width: 1.6 },
+        line: { color: "#F0A868", width: 1.8 },
         yaxis: "y3", xaxis: "x",
         hovertemplate: "<b>Fwd EY</b> %{y:.2f}%<extra></extra>",
       },
@@ -1657,7 +1612,7 @@ function stickSolo(id) {
         x: xs(v.spread), y: ys(v.spread),
         type: "bar",
         name: "EY − 10Y",
-        marker: { color: ys(v.spread).map(s => s >= 0 ? "rgba(46,93,86,0.55)" : "rgba(184,66,28,0.55)") },
+        marker: { color: ys(v.spread).map(s => s >= 0 ? "rgba(52,211,153,0.45)" : "rgba(248,113,113,0.45)") },
         yaxis: "y4", xaxis: "x",
         hovertemplate: "<b>Spread</b> %{y:+.2f} pp<extra></extra>",
       },
@@ -1669,40 +1624,40 @@ function stickSolo(id) {
       margin: { l: 56, r: 60, t: 16, b: 36 },
       hovermode: "x unified",
       hoverlabel: {
-        font: { family: '"IBM Plex Mono", monospace', size: 11, color: "#f2ecdf" },
-        bgcolor: "#1b1813", bordercolor: "#1b1813",
+        font: { family: MONO, size: 11, color: "#EDEEF0" },
+        bgcolor: "#16181F", bordercolor: "rgba(255,255,255,0.15)",
       },
-      paper_bgcolor: "#f2ecdf", plot_bgcolor: "#f2ecdf",
-      font: { family: '"IBM Plex Sans", sans-serif', size: 11, color: "#1b1813" },
-      legend: { orientation: "h", y: -0.08, x: 0, font: { family: '"IBM Plex Mono", monospace', size: 10, color: "#1b1813" } },
+      paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+      font: { family: BODY, size: 11, color: "#9BA0AB" },
+      legend: { orientation: "h", y: -0.08, x: 0, font: { family: MONO, size: 10, color: "#9BA0AB" } },
       xaxis: {
         anchor: "y3", domain: [0, 1],
-        showgrid: false, linecolor: "#d5c8b1", tickcolor: "#8a7e6d",
+        showgrid: false, linecolor: "rgba(255,255,255,0.12)", tickcolor: "rgba(255,255,255,0.25)",
         tickfont: TICK_FONT, type: "date",
       },
       yaxis: {
         domain: [0.70, 1.0], type: "log",
-        gridcolor: "#e6dcc6", zeroline: false,
-        tickfont: TICK_FONT, tickcolor: "#8a7e6d",
-        title: { text: (idx === "qqq" ? "QQQ" : "S&P 500") + " (log)", font: Object.assign({}, TITLE_FONT, { color: "#1b1813" }), standoff: 12 },
+        gridcolor: "rgba(255,255,255,0.06)", zeroline: false,
+        tickfont: TICK_FONT, tickcolor: "rgba(255,255,255,0.25)",
+        title: { text: (idx === "qqq" ? "QQQ" : "S&P 500") + " (log)", font: Object.assign({}, TITLE_FONT, { color: "#A78BFA" }), standoff: 12 },
       },
       yaxis2: {
         domain: [0.37, 0.66],
-        gridcolor: "#e6dcc6", zeroline: false,
-        tickfont: TICK_FONT, tickcolor: "#8a7e6d",
-        title: { text: "Forward P/E", font: Object.assign({}, TITLE_FONT, { color: "#2d6a8a" }), standoff: 12 },
+        gridcolor: "rgba(255,255,255,0.06)", zeroline: false,
+        tickfont: TICK_FONT, tickcolor: "rgba(255,255,255,0.25)",
+        title: { text: "Forward P/E", font: Object.assign({}, TITLE_FONT, { color: "#5EEAD4" }), standoff: 12 },
       },
       yaxis3: {
         domain: [0.0, 0.33],
-        gridcolor: "#e6dcc6", zeroline: false,
-        tickfont: TICK_FONT, tickcolor: "#8a7e6d",
-        title: { text: "Yield (%)", font: Object.assign({}, TITLE_FONT, { color: "#1b1813" }), standoff: 12 },
+        gridcolor: "rgba(255,255,255,0.06)", zeroline: false,
+        tickfont: TICK_FONT, tickcolor: "rgba(255,255,255,0.25)",
+        title: { text: "Yield (%)", font: Object.assign({}, TITLE_FONT, { color: "#F0A868" }), standoff: 12 },
       },
       yaxis4: {
         domain: [0.0, 0.33], overlaying: "y3", side: "right",
-        showgrid: false, zeroline: true, zerolinecolor: "#8a7e6d", zerolinewidth: 1,
-        tickfont: TICK_FONT, tickcolor: "#8a7e6d",
-        title: { text: "Spread (pp)", font: Object.assign({}, TITLE_FONT, { color: "#2e5d56" }), standoff: 12 },
+        showgrid: false, zeroline: true, zerolinecolor: "rgba(255,255,255,0.2)", zerolinewidth: 1,
+        tickfont: TICK_FONT, tickcolor: "rgba(255,255,255,0.25)",
+        title: { text: "Spread (pp)", font: Object.assign({}, TITLE_FONT, { color: "#34D399" }), standoff: 12 },
       },
     };
   }
