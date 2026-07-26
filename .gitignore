@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .playwright-mcp/
 *.png
+!apple-touch-icon.png
 data/raw.json
 .env
 .env.*
