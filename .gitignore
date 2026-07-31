@@ -6,3 +6,5 @@ __pycache__/
 data/raw.json
 .env
 .env.*
+.DS_Store
+*.jpeg

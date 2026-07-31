@@ -118,6 +118,17 @@ def compute_5y(points):
     }
 
 
+def pct_asof(points, asof: date):
+    """5y percentile rank of the series as it stood on `asof` (using only
+    points dated on or before it), or None if no data reaches back that far."""
+    asof_str = asof.isoformat()
+    for i in range(len(points) - 1, -1, -1):
+        if points[i][0] <= asof_str:
+            five = compute_5y(points[: i + 1])
+            return five["rank"] if five else None
+    return None
+
+
 def assign_rows(rows_asc, row_count=4, min_gap=7.0):
     last = [-999.0] * row_count
     out = []
@@ -165,13 +176,23 @@ def render_strip(rows_with_row):
     return "\n".join(parts)
 
 
-def render_table(rows):
+def render_table(rows, growth=None):
+    growth = growth or {}
     parts = []
     for i, r in enumerate(rows, 1):
         pct = r["rank_5y"]
         heat = "hot" if pct >= 85 else "cold" if pct <= 45 else "mid"
         index_cls = " is-index" if r["isIndex"] else ""
         definition, holdings_html = _holdings_html(r["id"])
+        g = growth.get(r["id"])
+        if g is None:
+            growth_html = '<span class="grw mono na">–</span>'
+        else:
+            g_cls = "pos" if g > 0.005 else "neg" if g < -0.005 else "na"
+            growth_html = (
+                f'<span class="grw mono {g_cls}" title="Trailing P/E ÷ forward P/E − 1: '
+                f'the next-12-month earnings growth analyst estimates imply">{g:+.0%}</span>'
+            )
         parts.append(f'''
 <li class="row heat-{heat}{index_cls}" data-id="{r["id"]}">
   <span class="rank-num">{i:02d}</span>
@@ -181,6 +202,7 @@ def render_table(rows):
     <span class="ticker">{r["ticker"]}</span>
   </span>
   <span class="val mono">{r["latest"]:.2f}</span>
+  {growth_html}
   <span class="bar-col">
     <span class="bar">
       <span class="bar-fill" style="width:{pct:.2f}%"></span>
@@ -197,6 +219,41 @@ def render_table(rows):
     <ul class="tip-holdings">{holdings_html}</ul>
   </div>
 </li>'''.strip())
+    return "\n".join(parts)
+
+
+def render_movers(rows):
+    """Sector rows sorted by 1-week percentile move, richer-drifting first,
+    with a diverging bar centered on zero."""
+    usable = [r for r in rows if r.get("d1w") is not None]
+    if not usable:
+        return ""
+    usable = sorted(usable, key=lambda r: -r["d1w"])
+    scale = max(max(abs(r["d1w"]) for r in usable), 1.0)
+    parts = []
+    for r in usable:
+        d1w, d1m = r["d1w"], r["d1m"]
+        cls = "up" if d1w > 0.5 else "dn" if d1w < -0.5 else "flat"
+        width = abs(d1w) / scale * 50
+        anchor = "left:50%" if d1w >= 0 else "right:50%"
+        bar_cls = "up" if d1w >= 0 else "dn"
+        d1m_html = (
+            f'<span class="mv-d mv-d1m mono {"up" if d1m > 0.5 else "dn" if d1m < -0.5 else "flat"}">{d1m:+.0f}</span>'
+            if d1m is not None else '<span class="mv-d mv-d1m mono flat">–</span>'
+        )
+        parts.append(
+            f'<li class="mv-row" data-id="{r["id"]}">'
+            f'<span class="name-col">'
+            f'<span class="swatch" style="background:{r["color"]}"></span>'
+            f'<span class="name">{r["name"]}</span>'
+            f'<span class="ticker">{r["ticker"]}</span>'
+            f'</span>'
+            f'<span class="mv-now mono">{r["rank_5y"]:.0f}</span>'
+            f'<span class="mv-bar"><span class="mv-fill {bar_cls}" style="{anchor};width:{width:.1f}%"></span></span>'
+            f'<span class="mv-d mono {cls}">{d1w:+.0f}</span>'
+            f'{d1m_html}'
+            f'</li>'
+        )
     return "\n".join(parts)
 
 
@@ -230,6 +287,9 @@ def build_family_payload(points_by_sid: dict[int, list[tuple[str, float]]]):
         five = compute_5y(points)
         if not five:
             continue
+        latest_d = date.fromisoformat(latest_date_str)
+        p1w = pct_asof(points, latest_d - timedelta(days=7))
+        p1m = pct_asof(points, latest_d - timedelta(days=30))
         series_payload.append({
             "id": sid,
             "name": name,
@@ -251,6 +311,8 @@ def build_family_payload(points_by_sid: dict[int, list[tuple[str, float]]]):
             "median_5y": five["median"],
             "max_5y": five["max"],
             "n_5y": five["n"],
+            "d1w": five["rank"] - p1w if p1w is not None else None,
+            "d1m": five["rank"] - p1m if p1m is not None else None,
         })
     summary_rows.sort(key=lambda r: -r["rank_5y"])
     strip_rows = assign_rows(sorted(summary_rows, key=lambda r: r["rank_5y"]))
@@ -259,7 +321,7 @@ def build_family_payload(points_by_sid: dict[int, list[tuple[str, float]]]):
         "series": series_payload,
         "summary": summary_rows,
         "strip_html": render_strip(strip_rows),
-        "table_html": render_table(summary_rows),
+        "movers_html": render_movers(summary_rows),
         "latest_date": latest_date_str,
     }
 
@@ -385,6 +447,84 @@ def gauge_payload(fg_points: list[tuple[str, float]]):
     }
 
 
+def fg_stats_payload(fg_points, spx_points):
+    """Forward SPX price returns conditioned on the F&G reading of the day.
+    Horizons are counted in trading sessions on the price series (63/126/252
+    ≈ 3/6/12 months). Overlapping windows — descriptive stats, not a backtest."""
+    if not fg_points or not spx_points:
+        return None
+    from bisect import bisect_right
+    pdates = [d for d, _ in spx_points]
+    pvals = [v for _, v in spx_points]
+    horizons = [("3M", 63), ("6M", 126), ("12M", 252)]
+    buckets = [
+        ("fear", "Extreme fear", "F&G below 25", lambda v: v < 25),
+        ("greed", "Extreme greed", "F&G above 75", lambda v: v > 75),
+        ("all", "Any reading", "every day since 2021", lambda v: True),
+    ]
+    rets = {b: {h: [] for h, _ in horizons} for b, *_ in buckets}
+    days = {b: 0 for b, *_ in buckets}
+    for d, v in fg_points:
+        i = bisect_right(pdates, d) - 1
+        if i < 0 or (date.fromisoformat(d) - date.fromisoformat(pdates[i])).days > 7:
+            continue
+        for key, _, _, cond in buckets:
+            if cond(v):
+                days[key] += 1
+        for h, n in horizons:
+            j = i + n
+            if j >= len(pvals):
+                continue
+            r = pvals[j] / pvals[i] - 1
+            for key, _, _, cond in buckets:
+                if cond(v):
+                    rets[key][h].append(r)
+    out = []
+    for key, label, sub, _ in buckets:
+        cells = []
+        for h, _ in horizons:
+            rr = rets[key][h]
+            cells.append({
+                "h": h,
+                "n": len(rr),
+                "median": statistics.median(rr) * 100 if rr else None,
+                "win": sum(1 for x in rr if x > 0) / len(rr) * 100 if rr else None,
+            })
+        out.append({"key": key, "label": label, "sub": sub, "days": days[key], "cells": cells})
+    return {"rows": out, "since": fg_points[0][0]}
+
+
+def render_fg_stats(stats):
+    if not stats:
+        return "<p style='color:var(--dim)'>Not enough data for conditional stats.</p>"
+    head = "".join(f"<th>{h} later</th>" for h in ("3M", "6M", "12M"))
+    body = []
+    for row in stats["rows"]:
+        cells = []
+        for c in row["cells"]:
+            if c["median"] is None:
+                cells.append('<td><span class="sig-med">–</span></td>')
+                continue
+            m_cls = "pos" if c["median"] > 0 else "neg"
+            cells.append(
+                f'<td><span class="sig-med {m_cls}">{c["median"]:+.1f}%</span>'
+                f'<span class="sig-win">{c["win"]:.0f}% up · n={c["n"]}</span></td>'
+            )
+        base_cls = ' class="sig-base"' if row["key"] == "all" else ""
+        body.append(
+            f'<tr{base_cls}><td>{row["label"]}'
+            f'<span class="sig-cond-sub">{row["sub"]}</span></td>'
+            f'<td><span class="sig-med">{row["days"]}</span>'
+            f'<span class="sig-win">days</span></td>'
+            f'{"".join(cells)}</tr>'
+        )
+    return (
+        '<div class="sig-wrap"><table class="sig-table">'
+        f'<thead><tr><th>Condition</th><th>Sample</th>{head}</tr></thead>'
+        f'<tbody>{"".join(body)}</tbody></table></div>'
+    )
+
+
 def _round_series(pts, ndigits=4):
     return [[d, round(float(v), ndigits)] for d, v in pts if v is not None]
 
@@ -420,11 +560,21 @@ def build() -> Path:
     forward = build_family_payload(forward_points)
     trailing = build_family_payload(trailing_points) if trailing_points else None
 
+    # Implied next-12M earnings growth per sector: trailing P/E ÷ forward P/E − 1.
+    growth = {}
+    if trailing:
+        fwd_latest = {r["id"]: r["latest"] for r in forward["summary"]}
+        for r in trailing["summary"]:
+            f = fwd_latest.get(r["id"])
+            if f:
+                growth[r["id"]] = r["latest"] / f - 1
+
     # Sentiment: Fear & Greed + SPX price.
     fg_points = _round_series(_load_csv_points(DATA / "fear_greed.csv"), 2)
     spx_points = _round_series(_load_csv_points(DATA / "spx_price.csv"), 2)
     us10y_points = _round_series(_load_csv_points(DATA / "us10y.csv"), 3)
     gauge = gauge_payload(fg_points)
+    fg_stats = fg_stats_payload(fg_points, spx_points)
 
     # Valuation panel (section 06) — built per index, switchable in the UI.
     qqq_pe = _round_series(raw.get("qqq_pe") or [], 4)
@@ -462,9 +612,12 @@ def build() -> Path:
         .replace("__LATEST_ISO__", latest_date_str)
         .replace("__LATEST_LABEL__", latest_label)
         .replace("__STRIP_FORWARD__", forward["strip_html"])
-        .replace("__STRIP_TRAILING__", (trailing or {}).get("strip_html", "") if trailing else "")
-        .replace("__TABLE_FORWARD__", forward["table_html"])
-        .replace("__TABLE_TRAILING__", (trailing or {}).get("table_html", "") if trailing else "")
+        .replace("__STRIP_TRAILING__", trailing["strip_html"] if trailing else "")
+        .replace("__TABLE_FORWARD__", render_table(forward["summary"], growth))
+        .replace("__TABLE_TRAILING__", render_table(trailing["summary"], growth) if trailing else "")
+        .replace("__MOVERS_FORWARD__", forward["movers_html"])
+        .replace("__MOVERS_TRAILING__", trailing["movers_html"] if trailing else "")
+        .replace("__FG_STATS__", render_fg_stats(fg_stats))
         .replace("__GAUGE__", render_gauge(gauge)))
 
     out = ROOT / "index.html"
@@ -696,7 +849,7 @@ TEMPLATE = r"""<!doctype html>
     color: var(--soft); letter-spacing: 0.06em;
   }
   body[data-lens="forward"]  .lens-echo::before { content: "forward · daily"; }
-  body[data-lens="trailing"] .lens-echo::before { content: "trailing · monthly"; }
+  body[data-lens="trailing"] .lens-echo::before { content: "trailing · daily"; }
 
   /* ─────────────────── Controls: seg pills + outline buttons ─────────────────── */
   .chart-controls {
@@ -803,7 +956,7 @@ TEMPLATE = r"""<!doctype html>
   .rank-table { list-style: none; margin: 12px 0 0; padding: 0; }
   .rank-head, .row {
     display: grid;
-    grid-template-columns: 34px 2.2fr 84px 1.9fr 54px 120px;
+    grid-template-columns: 34px 2.2fr 84px 74px 1.9fr 54px 120px;
     gap: 16px;
     align-items: center;
   }
@@ -937,6 +1090,85 @@ TEMPLATE = r"""<!doctype html>
   .pin-tip .tip-tk { font-size: 10px; }
   .pin-tip .tip-nm { font-size: 12px; }
 
+  /* ─────────────────── Movers ─────────────────── */
+  .mv-table { list-style: none; margin: 12px 0 0; padding: 0; }
+  .mv-head, .mv-row {
+    display: grid;
+    grid-template-columns: 2.2fr 54px 1.9fr 74px 74px;
+    gap: 16px;
+    align-items: center;
+  }
+  .mv-head {
+    padding: 0 8px 10px;
+    font-family: var(--font-mono);
+    font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--dim);
+    border-bottom: 1px solid var(--hair);
+  }
+  .mv-row {
+    padding: 10px 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    border-radius: 10px;
+    cursor: pointer;
+    animation: rowIn 0.45s ease-out both;
+    transition: background .15s;
+  }
+  .mv-row:hover { background: rgba(255,255,255,0.04); }
+  .mv-row:last-child { border-bottom: 0; }
+  .mv-now { font-size: 13px; text-align: right; color: var(--soft); font-variant-numeric: tabular-nums; }
+  .mv-bar { position: relative; height: 14px; display: block; }
+  .mv-bar::before {
+    content: ""; position: absolute; left: 0; right: 0; top: 6px;
+    height: 2px; border-radius: 2px; background: rgba(255,255,255,0.08);
+  }
+  .mv-bar::after {
+    content: ""; position: absolute; left: 50%; top: 1px; bottom: 1px; width: 1px;
+    background: rgba(255,255,255,0.22);
+  }
+  .mv-fill { position: absolute; top: 5px; height: 4px; border-radius: 2px; }
+  .mv-fill.up { background: linear-gradient(90deg, #FB9B8B, #F87171); }
+  .mv-fill.dn { background: linear-gradient(90deg, #34D399, #5EEAB4); }
+  .mv-d { font-size: 15px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+  .mv-d.up { color: var(--hot); }
+  .mv-d.dn { color: var(--cold); }
+  .mv-d.flat { color: var(--dim); }
+  .mv-d1m { font-size: 12.5px; font-weight: 600; }
+
+  /* ─────────────────── Implied-growth column ─────────────────── */
+  .grw { font-size: 13px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+  .grw.pos { color: var(--cold); }
+  .grw.neg { color: var(--hot); }
+  .grw.na { color: var(--dimmer); }
+
+  /* ─────────────────── Conditional-returns table ─────────────────── */
+  .sig-wrap { overflow-x: auto; margin-top: 16px; }
+  .sig-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); min-width: 540px; }
+  .sig-table th {
+    text-align: right; padding: 0 10px 10px;
+    font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--dim); font-weight: 600;
+    border-bottom: 1px solid var(--hair);
+  }
+  .sig-table th:first-child { text-align: left; }
+  .sig-table td {
+    padding: 13px 10px; text-align: right;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    font-size: 14px; color: var(--text-2);
+    font-variant-numeric: tabular-nums;
+    vertical-align: top;
+  }
+  .sig-table tr:last-child td { border-bottom: 0; }
+  .sig-table td:first-child {
+    text-align: left; font-family: var(--font-body);
+    font-weight: 600; font-size: 14px; color: var(--text-2);
+  }
+  .sig-cond-sub { display: block; font-family: var(--font-mono); font-size: 10.5px; font-weight: 400; color: var(--dim); margin-top: 3px; }
+  .sig-med { font-weight: 700; }
+  .sig-med.pos { color: var(--cold); }
+  .sig-med.neg { color: var(--hot); }
+  .sig-win { display: block; font-size: 10.5px; color: var(--dim); margin-top: 3px; }
+  .sig-base td { opacity: 0.75; }
+
   /* ─────────────────── Gauge (Fear & Greed) ─────────────────── */
   .gauge { display: flex; align-items: center; gap: 40px; margin-top: 20px; }
   .gauge-big { text-align: center; flex: 0 0 auto; }
@@ -1026,7 +1258,11 @@ TEMPLATE = r"""<!doctype html>
     .card-head { flex-direction: column; gap: 8px; }
     .card-aside { text-align: left; padding-top: 0; }
     .rank-head, .row { grid-template-columns: 26px 1.6fr 60px 1fr 40px; gap: 10px; }
-    .rank-head > *:nth-child(6), .row > *:nth-child(6) { display: none; }
+    .rank-head > *:nth-child(4), .row > *:nth-child(4),
+    .rank-head > *:nth-child(7), .row > *:nth-child(7) { display: none; }
+    .mv-head, .mv-row { grid-template-columns: 1.6fr 1fr 48px; gap: 10px; }
+    .mv-head > *:nth-child(2), .mv-row > *:nth-child(2),
+    .mv-head > *:nth-child(5), .mv-row > *:nth-child(5) { display: none; }
     .name { font-size: 13px; }
     .val { font-size: 13px; }
     .pct { font-size: 15px; }
@@ -1116,7 +1352,9 @@ TEMPLATE = r"""<!doctype html>
       <div class="view-forward">
         <ul class="rank-table" data-family="forward">
           <li class="rank-head">
-            <span></span><span>Sector</span><span style="text-align:right">P/E</span><span>5y percentile</span>
+            <span></span><span>Sector</span><span style="text-align:right">P/E</span>
+            <span style="text-align:right" title="Trailing P/E ÷ forward P/E − 1: the next-12-month earnings growth analyst estimates imply">Impl. growth</span>
+            <span>5y percentile</span>
             <span style="text-align:right">Rank</span><span style="text-align:right">5y range</span>
           </li>
           __TABLE_FORWARD__
@@ -1126,7 +1364,9 @@ TEMPLATE = r"""<!doctype html>
       <div class="view-trailing">
         <ul class="rank-table" data-family="trailing">
           <li class="rank-head">
-            <span></span><span>Sector</span><span style="text-align:right">P/E</span><span>5y percentile</span>
+            <span></span><span>Sector</span><span style="text-align:right">P/E</span>
+            <span style="text-align:right" title="Trailing P/E ÷ forward P/E − 1: the next-12-month earnings growth analyst estimates imply">Impl. growth</span>
+            <span>5y percentile</span>
             <span style="text-align:right">Rank</span><span style="text-align:right">5y range</span>
           </li>
           __TABLE_TRAILING__
@@ -1134,19 +1374,58 @@ TEMPLATE = r"""<!doctype html>
       </div>
     </section>
 
-    <!-- ═══ 03. Historical chart ═══ -->
+    <!-- ═══ 03. Movers ═══ -->
     <section class="card">
       <div class="card-head">
         <div class="card-title">
           <span class="card-num">03</span>
           <div>
+            <h2>What moved</h2>
+            <p class="lede">Each sector's five-year percentile against where it stood one week and one month ago, biggest richward drift first. <strong>Red grows right — getting richer;</strong> green grows left — getting cheaper.</p>
+          </div>
+        </div>
+        <div class="card-aside"><span class="lens-echo"></span></div>
+      </div>
+
+      <div class="view-forward">
+        <ul class="mv-table">
+          <li class="mv-head">
+            <span>Sector</span><span style="text-align:right">Now</span><span>1w swing</span>
+            <span style="text-align:right">Δ 1w</span><span style="text-align:right">Δ 1m</span>
+          </li>
+          __MOVERS_FORWARD__
+        </ul>
+      </div>
+
+      <div class="view-trailing">
+        <ul class="mv-table">
+          <li class="mv-head">
+            <span>Sector</span><span style="text-align:right">Now</span><span>1w swing</span>
+            <span style="text-align:right">Δ 1w</span><span style="text-align:right">Δ 1m</span>
+          </li>
+          __MOVERS_TRAILING__
+        </ul>
+      </div>
+    </section>
+
+    <!-- ═══ 04. Historical chart ═══ -->
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="card-num">04</span>
+          <div>
             <h2>Historical path</h2>
-            <p class="lede">Forward view shows 12-month analyst estimates (daily, since 2008). Trailing view uses reported TTM earnings (monthly, since 1995 for sectors — since 1871 for the index). The Y axis auto-scales to whichever window and series are visible.</p>
+            <p class="lede">Forward view shows 12-month analyst estimates; trailing view uses reported TTM earnings — both daily since 2003 (Real Estate 2016, Communication Services 2018). The percentile view replots every series as its rolling five-year rank, 0–100. The Y axis auto-scales to whichever window and series are visible.</p>
           </div>
         </div>
         <div class="card-aside"><span class="lens-echo"></span></div>
       </div>
       <div class="chart-controls">
+        <div class="ctrl-group">
+        <div class="seg">
+          <button data-view="pe" class="active">P/E</button>
+          <button data-view="pct">5y percentile</button>
+        </div>
         <div class="seg">
           <button data-range="all">All</button>
           <button data-range="10y">10Y</button>
@@ -1154,6 +1433,7 @@ TEMPLATE = r"""<!doctype html>
           <button data-range="3y">3Y</button>
           <button data-range="1y">1Y</button>
           <button data-range="ytd">YTD</button>
+        </div>
         </div>
         <div class="ctrl-group">
           <button class="obtn" id="only-index">Index</button>
@@ -1164,11 +1444,11 @@ TEMPLATE = r"""<!doctype html>
       <div class="chart-wrap"><div id="chart"></div></div>
     </section>
 
-    <!-- ═══ 04. Fear & Greed gauge ═══ -->
+    <!-- ═══ 05. Fear & Greed gauge ═══ -->
     <section class="card">
       <div class="card-head">
         <div class="card-title">
-          <span class="card-num">04</span>
+          <span class="card-num">05</span>
           <div>
             <h2>Sentiment, at a glance</h2>
             <p class="lede">MacroMicro's Fear &amp; Greed composite reduces the market's mood to a single 0–100 reading. Under 25 is panicked fear; over 75 is euphoric greed.</p>
@@ -1179,11 +1459,11 @@ TEMPLATE = r"""<!doctype html>
       __GAUGE__
     </section>
 
-    <!-- ═══ 05. F&G vs SPX chart ═══ -->
+    <!-- ═══ 06. F&G vs SPX chart ═══ -->
     <section class="card">
       <div class="card-head">
         <div class="card-title">
-          <span class="card-num">05</span>
+          <span class="card-num">06</span>
           <div>
             <h2>Mood against price</h2>
             <p class="lede">Sentiment on the left axis, S&amp;P 500 on the right. Bear phases bottom with fear readings below 25; tops tend to coincide with extreme-greed plateaus — not coincidence, but also not a tradable signal on its own.</p>
@@ -1204,11 +1484,26 @@ TEMPLATE = r"""<!doctype html>
       <div class="chart-wrap"><div id="mood-chart"></div></div>
     </section>
 
-    <!-- ═══ 06. Valuation: price, multiple, and yield gap ═══ -->
+    <!-- ═══ 07. F&G conditional forward returns ═══ -->
     <section class="card">
       <div class="card-head">
         <div class="card-title">
-          <span class="card-num">06</span>
+          <span class="card-num">07</span>
+          <div>
+            <h2>Has the mood meant anything?</h2>
+            <p class="lede">S&amp;P 500 price return (SPY, ex-dividends) 3, 6, and 12 months after each daily Fear &amp; Greed reading. <strong>Descriptive, not a strategy:</strong> windows overlap heavily, the sample starts in 2021 and spans a single cycle — one bear market, one long bull run.</p>
+          </div>
+        </div>
+        <div class="card-aside">Median · % positive</div>
+      </div>
+      __FG_STATS__
+    </section>
+
+    <!-- ═══ 08. Valuation: price, multiple, and yield gap ═══ -->
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="card-num">08</span>
           <div>
             <h2>Are we expensive?</h2>
             <p class="lede">Three stacked panels on one time axis. Top: the index. Middle: its forward P/E against the 20th–80th percentile band of the trailing five years, plus a 200-day moving average. Bottom: forward earnings yield (1 ÷ forward P/E) next to the 10-year Treasury yield, with bars showing the spread — bars near zero mean stocks no longer offer much premium over bonds.</p>
@@ -1262,19 +1557,55 @@ function prepareFamily(f) {
 prepareFamily(DATA.forward);
 prepareFamily(DATA.trailing);
 
-function makeTraces(family, outlierMax) {
-  return family.series.map(s => ({
-    x: s.points.map(p => p[0]),
-    y: s.points.map(p => p[1]),
-    type: "scattergl",
-    mode: "lines",
-    name: s.name,
-    line: { color: s.color, width: s.isIndex ? 2.6 : 1.4 },
-    opacity: s.isIndex ? 1 : 0.85,
-    hovertemplate: "<b>" + s.name + "</b>  %{y:.2f}<extra></extra>",
-    visible: true,
-    meta: s.id,
-  }));
+// Rolling 5y percentile of each point within its own trailing window,
+// mirroring compute_5y in build_html.py. Lazy — computed on first use of the
+// percentile view, then cached on the series object.
+function computePctSeries(s) {
+  if (s._pct) return s._pct;
+  const pts = s.points, ts = s._t;
+  const WINDOW = 1825 * 86400e3, MIN_SPAN = 365 * 86400e3;
+  const win = [];   // sorted window values
+  const idx = [];   // window point indices, oldest first
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const v = pts[i][1];
+    let lo = 0, hi = win.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (win[m] <= v) lo = m + 1; else hi = m; }
+    win.splice(lo, 0, v);
+    idx.push(i);
+    const cutoff = ts[i] - WINDOW;
+    while (ts[idx[0]] < cutoff) {
+      const ov = pts[idx.shift()][1];
+      let l = 0, h = win.length;
+      while (l < h) { const m = (l + h) >> 1; if (win[m] < ov) l = m + 1; else h = m; }
+      win.splice(l, 1);
+    }
+    if (ts[i] - ts[idx[0]] < MIN_SPAN) continue;
+    let le = 0, he = win.length;
+    while (le < he) { const m = (le + he) >> 1; if (win[m] <= v) le = m + 1; else he = m; }
+    out.push([pts[i][0], Math.round(le / win.length * 1000) / 10]);
+  }
+  s._pct = out;
+  return out;
+}
+
+function makeTraces(family) {
+  const pctView = chartView === "pct";
+  return family.series.map(s => {
+    const pts = pctView ? computePctSeries(s) : s.points;
+    return {
+      x: pts.map(p => p[0]),
+      y: pts.map(p => p[1]),
+      type: "scattergl",
+      mode: "lines",
+      name: s.name,
+      line: { color: s.color, width: s.isIndex ? 2.6 : 1.4 },
+      opacity: s.isIndex ? 1 : 0.85,
+      hovertemplate: "<b>" + s.name + "</b>  %{y:" + (pctView ? ".1f" : ".2f") + "}<extra></extra>",
+      visible: true,
+      meta: s.id,
+    };
+  });
 }
 
 const MONO = '"Spline Sans Mono", monospace';
@@ -1306,11 +1637,14 @@ const baseLayout = {
 
 const chartConfig = { displaylogo: false, responsive: true, modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"] };
 
-// ═══ Section 03 chart with lens switching ═══
+// ═══ Section 04 chart with lens / view switching ═══
 let currentLens = "forward";
 let currentRange = "5y";
+let chartView = "pe";   // "pe" | "pct"
+let soloId = null;
 
 function yRangeForWindow(startMs, endMs) {
+  if (chartView === "pct") return null;  // pct view keeps a fixed 0-100 axis
   const family = DATA[currentLens];
   if (!family) return null;
   const gd = document.getElementById("chart");
@@ -1354,14 +1688,76 @@ function applyRange(key) {
 
 function renderChart() {
   const family = DATA[currentLens];
-  if (!family) return;
+  if (!family) return Promise.resolve();
   const traces = makeTraces(family);
-  return Plotly.react("chart", traces, baseLayout, chartConfig).then(() => applyRange(currentRange));
+  const layout = JSON.parse(JSON.stringify(baseLayout));
+  if (chartView === "pct") {
+    layout.yaxis.title.text = "5y percentile";
+    layout.yaxis.range = [0, 102];
+    layout.yaxis.autorange = false;
+    layout.yaxis.tickvals = [0, 25, 50, 75, 100];
+    layout.shapes = [
+      { type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: 50, y1: 50,
+        line: { color: "rgba(255,255,255,0.18)", width: 1, dash: "dot" } },
+    ];
+  }
+  return Plotly.react("chart", traces, layout, chartConfig).then(() => applyRange(currentRange));
 }
 
-renderChart();
+function applySolo() {
+  if (soloId == null) return;
+  const family = DATA[currentLens];
+  if (!family) return;
+  const idx = family.series.findIndex(s => s.id === soloId);
+  if (idx < 0) { soloId = null; return; }
+  const vis = family.series.map((_, i) => i === idx ? true : "legendonly");
+  Plotly.restyle("chart", { visible: vis }).then(rescaleY);
+}
+
+// ═══ URL hash state: #lens=trailing&view=pct&range=3y&solo=20523 ═══
+const VALID_RANGES = ["all", "10y", "5y", "3y", "1y", "ytd"];
+function updateHash() {
+  const parts = [];
+  if (currentLens !== "forward") parts.push("lens=" + currentLens);
+  if (chartView !== "pe") parts.push("view=" + chartView);
+  if (currentRange !== "5y") parts.push("range=" + currentRange);
+  if (soloId != null) parts.push("solo=" + soloId);
+  history.replaceState(null, "", parts.length ? "#" + parts.join("&") : location.pathname + location.search);
+}
+(function initFromHash() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get("lens") === "trailing" && DATA.trailing) {
+    currentLens = "trailing";
+    document.body.setAttribute("data-lens", "trailing");
+    document.querySelectorAll(".lens button").forEach(b => b.classList.toggle("active", b.dataset.lens === "trailing"));
+  }
+  if (h.get("view") === "pct") {
+    chartView = "pct";
+    document.querySelectorAll("[data-view]").forEach(b => b.classList.toggle("active", b.dataset.view === "pct"));
+  }
+  const r = h.get("range");
+  if (r && VALID_RANGES.includes(r)) {
+    currentRange = r;
+    document.querySelectorAll("[data-range]").forEach(b => b.classList.toggle("active", b.dataset.range === r));
+  }
+  const solo = parseInt(h.get("solo") || "", 10);
+  if (!isNaN(solo)) soloId = solo;
+})();
+
+renderChart().then(applySolo);
+
+document.querySelectorAll("[data-view]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    if (btn.dataset.view === chartView) return;
+    chartView = btn.dataset.view;
+    document.querySelectorAll("[data-view]").forEach(b => b.classList.toggle("active", b === btn));
+    renderChart().then(applySolo);
+    updateHash();
+  });
+});
 
 function rescaleY() {
+  if (chartView === "pct") return;
   const gd = document.getElementById("chart");
   const xr = gd.layout.xaxis.range;
   if (!xr || xr.length !== 2) return;
@@ -1380,6 +1776,7 @@ document.querySelectorAll("[data-range]").forEach(btn => {
     document.querySelectorAll("[data-range]").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     applyRange(btn.dataset.range);
+    updateHash();
   });
 });
 
@@ -1389,9 +1786,9 @@ function setVisible(fn) {
   const vis = family.series.map(s => fn(s) ? true : "legendonly");
   Plotly.restyle("chart", { visible: vis }).then(rescaleY);
 }
-document.getElementById("only-index").addEventListener("click", () => setVisible(s => s.isIndex));
-document.getElementById("only-sectors").addEventListener("click", () => setVisible(s => !s.isIndex));
-document.getElementById("show-all").addEventListener("click", () => setVisible(() => true));
+document.getElementById("only-index").addEventListener("click", () => { soloId = null; updateHash(); setVisible(s => s.isIndex); });
+document.getElementById("only-sectors").addEventListener("click", () => { soloId = null; updateHash(); setVisible(s => !s.isIndex); });
+document.getElementById("show-all").addEventListener("click", () => { soloId = null; updateHash(); setVisible(() => true); });
 
 // ═══ Lens toggle ═══
 document.querySelectorAll(".lens button").forEach(btn => {
@@ -1402,8 +1799,9 @@ document.querySelectorAll(".lens button").forEach(btn => {
     currentLens = newLens;
     document.body.setAttribute("data-lens", newLens);
     document.querySelectorAll(".lens button").forEach(b => b.classList.toggle("active", b === btn));
-    renderChart();
+    renderChart().then(applySolo);
     wireSectorInteractions();
+    updateHash();
   });
 });
 
@@ -1419,6 +1817,12 @@ function wireSectorInteractions() {
   });
   // Row click
   document.querySelectorAll(".row:not(.rank-head)").forEach((row, i) => {
+    row.style.animationDelay = (0.1 + (i % 12) * 0.03) + "s";
+    const id = parseInt(row.dataset.id, 10);
+    row.onclick = () => stickSolo(id);
+  });
+  // Movers row click
+  document.querySelectorAll(".mv-row").forEach((row, i) => {
     row.style.animationDelay = (0.1 + (i % 12) * 0.03) + "s";
     const id = parseInt(row.dataset.id, 10);
     row.onclick = () => stickSolo(id);
@@ -1448,9 +1852,11 @@ function stickSolo(id) {
   if (!family) return;
   const idx = family.series.findIndex(s => s.id === id);
   if (idx < 0) return;
+  soloId = id;
   const vis = family.series.map((_, i) => i === idx ? true : "legendonly");
   Plotly.restyle("chart", { visible: vis, opacity: family.series.map(() => 1) }).then(rescaleY);
   document.getElementById("chart").scrollIntoView({ behavior: "smooth", block: "center" });
+  updateHash();
 }
 
 // ═══ Section 05: F&G vs SPX dual-axis chart ═══

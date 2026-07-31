@@ -64,6 +64,18 @@ forward-pe-viewer/
 └── .github/workflows/daily.yml
 ```
 
+## Alerts
+
+`alerts.py` runs in CI after each build and checks the freshly fetched data
+for threshold crossings vs the previous trading day:
+
+- Fear & Greed crossing **25** (extreme fear) or **75** (extreme greed)
+- Any sector's forward-P/E 5-year percentile crossing **95** (rich) or **5** (cheap)
+
+If the repo secrets `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set, the
+alert goes out as a Telegram message; otherwise the lines are just printed in
+the workflow log. Errors never fail the refresh run.
+
 ## Daily update in CI
 
 MacroMicro's Cloudflare blocks GitHub Actions datacenter IPs on sight, so
