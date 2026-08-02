@@ -7,6 +7,7 @@ import csv
 import json
 import statistics
 from datetime import date, datetime, timedelta
+from html import escape as html_escape
 from pathlib import Path
 
 from fetch import SERIES
@@ -525,6 +526,33 @@ def render_fg_stats(stats):
     )
 
 
+def render_commentary(latest_date_str: str) -> str:
+    """The generated daily read, written by commentary.py into
+    data/commentary.json. Absent file, unreadable file, or one describing an
+    older build all render nothing — the masthead simply loses a block rather
+    than showing yesterday's take under today's date."""
+    path = DATA / "commentary.json"
+    if not path.exists():
+        return ""
+    try:
+        c = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return ""
+    text = (c.get("text") or "").strip()
+    if not text or c.get("as_of") != latest_date_str:
+        return ""
+    model = (c.get("model") or "").split("/")[-1]
+    attr = f"Written from today's readings by {model}. Figures checked against the data." if model else ""
+    # Model output is untrusted text — escape before it reaches the page.
+    return (
+        '<div class="read">'
+        '<p class="read-kicker">Today\'s read</p>'
+        f'<p class="read-body">{html_escape(text)}</p>'
+        f'<p class="read-attr">{html_escape(attr)}</p>'
+        '</div>'
+    )
+
+
 def _round_series(pts, ndigits=4):
     return [[d, round(float(v), ndigits)] for d, v in pts if v is not None]
 
@@ -618,6 +646,7 @@ def build() -> Path:
         .replace("__MOVERS_FORWARD__", forward["movers_html"])
         .replace("__MOVERS_TRAILING__", trailing["movers_html"] if trailing else "")
         .replace("__FG_STATS__", render_fg_stats(fg_stats))
+        .replace("__COMMENTARY__", render_commentary(forward["latest_date"]))
         .replace("__GAUGE__", render_gauge(gauge)))
 
     out = ROOT / "index.html"
@@ -782,6 +811,29 @@ TEMPLATE = r"""<!doctype html>
   }
   .standfirst time { color: var(--dim); }
   .masthead-side { text-align: right; flex: 0 0 auto; }
+
+  /* ── Generated daily read. Deliberately unlike the authored standfirst
+        above it: rule, mono kicker, attribution. Machine-written text should
+        never be able to pass for editorial copy. ── */
+  .read {
+    margin: 18px 0 0;
+    padding: 2px 0 2px 16px;
+    border-left: 2px solid rgba(139,124,246,0.5);
+    max-width: 640px;
+    animation: rise .6s ease-out .45s both;
+  }
+  .read-kicker {
+    font-family: var(--font-mono);
+    font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--accent-hi);
+    margin: 0 0 6px;
+  }
+  .read-body { margin: 0; font-size: 15px; line-height: 1.55; color: var(--text-2); }
+  .read-attr {
+    margin: 8px 0 0;
+    font-family: var(--font-mono); font-size: 10px;
+    letter-spacing: 0.04em; color: var(--dimmer);
+  }
 
   /* ─────────────────── Lens toggle ─────────────────── */
   .lens {
@@ -1298,6 +1350,7 @@ TEMPLATE = r"""<!doctype html>
         <p class="kicker">AlphaLabX1 — Internal Research · Vol. II</p>
         <h1 class="wordmark">Valuation <em>&amp; Mood</em></h1>
         <p class="standfirst">The S&amp;P 500 and its eleven sectors, seen through two P/E lenses — and the market's mood, plotted against the price beneath it. <time>Updated __LATEST_LABEL__.</time></p>
+        __COMMENTARY__
       </div>
       <div class="masthead-side">
         <div class="lens" id="lens">

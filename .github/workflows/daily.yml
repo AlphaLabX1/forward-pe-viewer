@@ -42,6 +42,7 @@ jobs:
             echo "::warning::fetch.py (Koyfin) failed — skipping refresh this run."
             exit 0
           fi
+          python commentary.py || echo "::warning::commentary step failed — page falls back to static copy."
           python build_html.py
           python alerts.py
           git add -A data/ index.html
