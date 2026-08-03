@@ -1,0 +1,18 @@
+{
+  "findings": [
+    {
+      "title": "Health Care Estimates Near Historical Extreme",
+      "body": "Health Care ranks at percentile 97 on forward earnings but percentile 69 on trailing earnings. That disagreement means estimates are carrying the sector to a near-top-of-range valuation, supported by an implied 56 percent earnings-growth jump."
+    },
+    {
+      "title": "Materials Requires Dramatic Earnings Reset",
+      "body": "Materials ranks at percentile 25 on forward earnings but percentile 90 on trailing earnings. The market is treating today's expensive earnings base as temporary, and the implied 119 percent growth is the required reset behind that confidence."
+    },
+    {
+      "title": "Real Estate Lacks Growth Support",
+      "body": "Real Estate trades at 37.27x forward earnings despite implied next-12m earnings growth of 2 percent decline. The valuation is therefore being carried by a multiple rather than an earnings-growth case."
+    }
+  ],
+  "model": "openai/gpt-5.6-luna-pro",
+  "as_of": "2026-07-31"
+}

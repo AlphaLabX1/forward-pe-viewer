@@ -553,6 +553,133 @@ def render_commentary(latest_date_str: str) -> str:
     )
 
 
+def _families():
+    """Forward and trailing summaries keyed by series id, plus the build date."""
+    raw = json.loads((DATA / "raw.json").read_text())
+    out = {}
+    for lens in ("forward", "trailing"):
+        src = raw.get(lens, {})
+        pts = {sid: _round_series(src[str(sid)], 4) for sid in SERIES if str(sid) in src}
+        fam = build_family_payload(pts) if pts else None
+        out[lens] = fam
+    return out
+
+
+def table_brief() -> tuple[str, set[str], str]:
+    """Brief covering both lenses for the section-01 findings.
+
+    Every figure the model might reasonably cite — including derived ones like
+    the forward-vs-trailing percentile gap and the multiple compression — is
+    computed here and listed. The model is told to quote, never to calculate,
+    because a number it computes itself cannot be checked against the data.
+    """
+    fams = _families()
+    fwd, trl = fams["forward"], fams["trailing"]
+    if not fwd:
+        return "", set(), ""
+    trl_by_id = {r["id"]: r for r in (trl["summary"] if trl else [])}
+
+    allowed: set[str] = set()
+
+    def num(v, nd=0):
+        s = f"{v:.{nd}f}"
+        allowed.add(s.lstrip("+-"))
+        return s
+
+    lines = [
+        f"Date: {fwd['latest_date']}",
+        "",
+        "Per sector — forward lens (12-month analyst estimates) and trailing lens",
+        "(reported TTM earnings). Percentile = rank within that sector's own",
+        "trailing five years, 0 cheapest to 100 richest.",
+        "",
+    ]
+    for r in fwd["summary"]:
+        t = trl_by_id.get(r["id"])
+        tk = SECTOR_TICKERS[r["id"]]
+        seg = [
+            f"{r['name']} ({tk}):",
+            f"  forward P/E {num(r['latest'], 2)}, percentile {num(r['rank_5y'])}",
+        ]
+        if r.get("d1w") is not None:
+            seg.append(f"  forward percentile change: 1 week {num(abs(r['d1w']))} points "
+                       f"{'richer' if r['d1w'] > 0 else 'cheaper'}")
+        if r.get("d1m") is not None:
+            seg.append(f"  forward percentile change: 1 month {num(abs(r['d1m']))} points "
+                       f"{'richer' if r['d1m'] > 0 else 'cheaper'}")
+        if t:
+            seg.append(f"  trailing P/E {num(t['latest'], 2)}, percentile {num(t['rank_5y'])}")
+            gap = r["rank_5y"] - t["rank_5y"]
+            seg.append(f"  percentile gap between lenses: {num(abs(gap))} points "
+                       f"({'forward richer' if gap > 0 else 'trailing richer'})")
+            if t["latest"] and r["latest"]:
+                growth = (t["latest"] / r["latest"] - 1) * 100
+                seg.append(f"  implied next-12m earnings growth: {num(abs(growth))} percent"
+                           f"{'' if growth >= 0 else ' decline'}")
+                comp = (1 - r["latest"] / t["latest"]) * 100
+                if comp > 0:
+                    seg.append(f"  multiple compression forward vs trailing: {num(comp)} percent")
+        lines.append("\n".join(seg))
+
+    fg = _load_csv_points(DATA / "fear_greed.csv")
+    if fg:
+        lines += ["", f"Fear & Greed: {num(fg[-1][1])} ({_fg_word(fg[-1][1])})"]
+    return "\n".join(lines), allowed, fwd["latest_date"]
+
+
+def ask_chips(rows) -> tuple[str, str]:
+    """Suggested questions and the input placeholder. Two are evergreen; the
+    rest name whichever sectors are actually at the extremes today, so the
+    panel opens on something worth asking rather than a blank prompt."""
+    if not rows:
+        return "", "Ask about any sector in the table"
+    richest = rows[0]["name"]
+    cheapest = rows[-1]["name"]
+    qs = [
+        "What's the cleanest cheap-vs-expensive pair?",
+        "Where do the two lenses disagree most?",
+        f"What would change my mind on {richest}?",
+        f"Is {cheapest} cheap or just falling?",
+    ]
+    chips = "".join(
+        f'<button type="button" data-q="{html_escape(q, quote=True)}">{html_escape(q)}</button>'
+        for q in qs
+    )
+    placeholder = f"Why is {richest} at the {rows[0]['rank_5y']:.0f}th percentile?"
+    return chips, placeholder
+
+
+def render_insights(latest_date_str: str) -> str:
+    """Section 01's machine read — findings written at build time by
+    commentary.py. Same staleness contract as the masthead read: anything
+    missing, malformed, or dated to an older build renders nothing."""
+    path = DATA / "insights.json"
+    if not path.exists():
+        return ""
+    try:
+        d = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return ""
+    findings = d.get("findings") or []
+    if not findings or d.get("as_of") != latest_date_str:
+        return ""
+    model = (d.get("model") or "").split("/")[-1]
+    items = "".join(
+        f'<div class="finding">'
+        f'<h3>{html_escape(str(f.get("title", "")))}</h3>'
+        f'<p>{html_escape(str(f.get("body", "")))}</p>'
+        f'</div>'
+        for f in findings
+    )
+    attr = f"Written from both P/E tables by {model}. Figures are the page's own."
+    return (
+        '<div class="findings">'
+        f'{items}'
+        f'<p class="findings-attr">{html_escape(attr)}</p>'
+        '</div>'
+    )
+
+
 def _round_series(pts, ndigits=4):
     return [[d, round(float(v), ndigits)] for d, v in pts if v is not None]
 
@@ -620,7 +747,14 @@ def build() -> Path:
     dt = datetime.fromisoformat(latest_date_str)
     latest_label = dt.strftime("%B ") + str(dt.day) + dt.strftime(", %Y")
 
+    # The exact brief the build-time model read, handed to the browser so the
+    # "ask the table" panel is grounded in the same text — what the page shows
+    # and what the model sees can never drift apart.
+    brief_text, _, _ = table_brief()
+    chips_html, placeholder = ask_chips(forward["summary"])
+
     payload = json.dumps({
+        "brief": brief_text,
         "forward": {"series": forward["series"], "summary": forward["summary"]},
         "trailing": (
             {"series": trailing["series"], "summary": trailing["summary"]}
@@ -647,6 +781,9 @@ def build() -> Path:
         .replace("__MOVERS_TRAILING__", trailing["movers_html"] if trailing else "")
         .replace("__FG_STATS__", render_fg_stats(fg_stats))
         .replace("__COMMENTARY__", render_commentary(forward["latest_date"]))
+        .replace("__INSIGHTS__", render_insights(forward["latest_date"]))
+        .replace("__ASK_CHIPS__", chips_html)
+        .replace("__ASK_PLACEHOLDER__", html_escape(placeholder, quote=True))
         .replace("__GAUGE__", render_gauge(gauge)))
 
     out = ROOT / "index.html"
@@ -1142,6 +1279,142 @@ TEMPLATE = r"""<!doctype html>
   .pin-tip .tip-tk { font-size: 10px; }
   .pin-tip .tip-nm { font-size: 12px; }
 
+  /* ─────────────────── Section 01 AI block ─────────────────── */
+  .ai-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 30px;
+    margin-top: 26px; padding-top: 24px;
+    border-top: 1px solid var(--hair);
+  }
+  .ai-col { min-width: 0; display: flex; flex-direction: column; }
+  .ai-col-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 12px; margin-bottom: 16px; min-height: 20px;
+  }
+  .ai-label {
+    font-family: var(--font-mono);
+    font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--accent-hi);
+  }
+  .ai-note {
+    font-family: var(--font-mono); font-size: 10px;
+    color: var(--dimmer); letter-spacing: 0.04em;
+  }
+
+  .findings { display: flex; flex-direction: column; gap: 18px; }
+  .finding { padding-left: 14px; border-left: 2px solid rgba(139,124,246,0.5); }
+  .finding h3 {
+    margin: 0 0 6px; font-size: 14.5px; font-weight: 700;
+    letter-spacing: -0.005em; color: var(--text);
+  }
+  .finding p { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--soft); }
+  .findings-attr {
+    margin: 4px 0 0;
+    font-family: var(--font-mono); font-size: 10px;
+    letter-spacing: 0.04em; color: var(--dimmer);
+  }
+
+  /* Ask panel */
+  .ask {
+    background: var(--inset);
+    border: 1px solid var(--inset-border);
+    border-radius: 14px;
+    padding: 18px 20px 18px;
+  }
+  .ask-body {
+    flex: 1; min-height: 150px; max-height: 340px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 12px;
+    margin-bottom: 14px;
+  }
+  .ask-intro, .ask-answer, .ask-q {
+    font-size: 13.5px; line-height: 1.55;
+    border-radius: 12px; padding: 13px 15px;
+  }
+  .ask-intro {
+    color: var(--soft);
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .ask-q {
+    align-self: flex-end; max-width: 85%;
+    background: rgba(139,124,246,0.18);
+    border: 1px solid rgba(139,124,246,0.28);
+    color: var(--text);
+    font-weight: 500;
+  }
+  .ask-answer {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    color: var(--text-2);
+  }
+  .ask-answer.err { border-color: rgba(248,113,113,0.35); color: #F8A6A6; }
+  .ask-answer p { margin: 0 0 9px; }
+  .ask-answer p:last-child { margin-bottom: 0; }
+  .ask-thinking { display: inline-flex; gap: 4px; align-items: center; }
+  .ask-thinking i {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--accent); display: inline-block;
+    animation: askPulse 1.1s ease-in-out infinite;
+  }
+  .ask-thinking i:nth-child(2) { animation-delay: .16s; }
+  .ask-thinking i:nth-child(3) { animation-delay: .32s; }
+  @keyframes askPulse { 0%,100% { opacity: .25; } 50% { opacity: 1; } }
+
+  /* Opt-in web lookup: the fast answer is data-only, this goes to the web. */
+  .ask-why {
+    margin-top: 11px; padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.07);
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .ask-why button {
+    border: 1px solid rgba(139,124,246,0.4); background: transparent;
+    color: var(--accent-hi);
+    padding: 5px 11px; border-radius: 8px;
+    font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+    cursor: pointer; transition: background .12s, color .12s;
+  }
+  .ask-why button:hover { background: rgba(139,124,246,0.16); color: #FFF; }
+  .ask-why span { font-family: var(--font-mono); font-size: 10px; color: var(--dimmer); }
+  .ask-cites { margin: 10px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
+  .ask-cites li { font-size: 11.5px; line-height: 1.4; }
+  .ask-cites a { color: var(--accent-hi); }
+  .ask-src-label {
+    font-family: var(--font-mono); font-size: 9px;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--dimmer); margin: 12px 0 0;
+  }
+
+  .ask-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
+  .ask-chips button {
+    border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.02);
+    color: var(--lede);
+    padding: 6px 11px; border-radius: 8px;
+    font-family: var(--font-mono); font-size: 10.5px;
+    cursor: pointer; text-align: left;
+    transition: border-color .12s, color .12s;
+  }
+  .ask-chips button:hover { border-color: var(--accent); color: var(--text); }
+
+  .ask-form { display: flex; gap: 8px; }
+  .ask-form input {
+    flex: 1; min-width: 0;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 10px 13px;
+    color: var(--text);
+    font-family: var(--font-body); font-size: 13.5px;
+  }
+  .ask-form input::placeholder { color: var(--dimmer); }
+  .ask-form input:focus { outline: none; border-color: var(--accent); }
+  .ask-form button {
+    flex: 0 0 auto;
+    background: linear-gradient(120deg, #8B7CF6, #6C5CE7);
+    border: 0; border-radius: 10px;
+    color: #FFF; font-family: var(--font-body); font-size: 13px; font-weight: 700;
+    padding: 10px 20px; cursor: pointer;
+  }
+  .ask-form button:disabled { opacity: .5; cursor: default; }
+
   /* ─────────────────── Movers ─────────────────── */
   .mv-table { list-style: none; margin: 12px 0 0; padding: 0; }
   .mv-head, .mv-row {
@@ -1312,6 +1585,10 @@ TEMPLATE = r"""<!doctype html>
     .rank-head, .row { grid-template-columns: 26px 1.6fr 60px 1fr 40px; gap: 10px; }
     .rank-head > *:nth-child(4), .row > *:nth-child(4),
     .rank-head > *:nth-child(7), .row > *:nth-child(7) { display: none; }
+    .ai-grid { grid-template-columns: 1fr; gap: 24px; }
+    .ask { padding: 16px 14px; }
+    .ask-body { max-height: none; }
+    .ask-chips button { font-size: 10px; }
     .mv-head, .mv-row { grid-template-columns: 1.6fr 1fr 48px; gap: 10px; }
     .mv-head > *:nth-child(2), .mv-row > *:nth-child(2),
     .mv-head > *:nth-child(5), .mv-row > *:nth-child(5) { display: none; }
@@ -1385,6 +1662,35 @@ TEMPLATE = r"""<!doctype html>
         <div class="strip-frame" id="strip-trailing" data-family="trailing">
           <div class="strip-pins">__STRIP_TRAILING__</div>
           <div class="strip-labels"><span>Cheap vs own 5y</span><span>Median</span><span>Expensive vs own 5y</span></div>
+        </div>
+      </div>
+
+      <div class="ai-grid">
+        <div class="ai-col">
+          <div class="ai-col-head">
+            <span class="ai-label">Machine read · both lenses</span>
+          </div>
+          __INSIGHTS__
+        </div>
+
+        <div class="ai-col ask" id="ask">
+          <div class="ai-col-head">
+            <span class="ai-label">Ask the table</span>
+            <span class="ai-note">grounded in this page's data</span>
+          </div>
+          <div class="ask-body" id="ask-body">
+            <div class="ask-intro" id="ask-intro">
+              I've read both P/E tables — 12 sectors, current multiples, five-year
+              percentiles and one-week / one-month drift. Ask me anything about what's
+              rich, what's cheap, and where the two lenses disagree.
+            </div>
+          </div>
+          <div class="ask-chips" id="ask-chips">__ASK_CHIPS__</div>
+          <form class="ask-form" id="ask-form">
+            <input id="ask-input" type="text" autocomplete="off"
+                   placeholder="__ASK_PLACEHOLDER__" aria-label="Ask about the table">
+            <button type="submit" id="ask-send">Ask</button>
+          </form>
         </div>
       </div>
     </section>
@@ -1911,6 +2217,227 @@ function stickSolo(id) {
   document.getElementById("chart").scrollIntoView({ behavior: "smooth", block: "center" });
   updateHash();
 }
+
+// ═══ Section 01: ask the table ═══
+// Two stages by design. The default answer is written only from DATA.brief —
+// the same text the build-time model read — which is fast, costs ~$0.0002 and
+// cannot cite anything the page does not contain. A web lookup costs ~90x that
+// and pulls in claims this page cannot check, so it stays behind a click.
+(function askPanel() {
+  const form = document.getElementById("ask-form");
+  if (!form || !DATA.brief) return;
+  const input = document.getElementById("ask-input");
+  const send = document.getElementById("ask-send");
+  const body = document.getElementById("ask-body");
+  const intro = document.getElementById("ask-intro");
+  const chips = document.getElementById("ask-chips");
+
+  const ENDPOINT = "https://coreservices-proxy.ycczkl91.workers.dev/v1/chat/completions";
+  const MODELS = ["~deepseek/deepseek-v4-flash-latest", "openai/gpt-5.6-luna-pro"];
+  const MACHINE_ID = "forward-pe-viewer-web";
+
+  const GROUND_RULES =
+    "You answer questions about one specific table of S&P 500 sector valuations.\n\n" +
+    "The table below is your only source. Quote its figures exactly; never " +
+    "compute new ones. If the answer is not in the table, say so in one " +
+    "sentence and stop — do not guess and do not fall back on general " +
+    "knowledge about these companies.\n\n" +
+    "Two to four sentences. Dry and concrete. No hedging, no disclaimers, no " +
+    "advice, and never suggest buying or selling anything.\n\n" +
+    "THE TABLE:\n" + DATA.brief;
+
+  const WEB_RULES =
+    "You explain what actually happened in the market to produce a reading the " +
+    "reader is looking at.\n\n" +
+    "You MUST search the web and report what you find there. Do not restate " +
+    "the figures — the reader already has them on screen. Lead with the cause: " +
+    "earnings, guidance, policy, rates, a specific event. Name companies and " +
+    "dates where the reporting supports it.\n\n" +
+    "Three sentences at most. If the reporting is thin or contradictory, say " +
+    "that plainly instead of manufacturing a tidy story.\n\n" +
+    "No advice, no price targets, never suggest buying or selling.\n\n" +
+    "Reference only — the on-screen table:\n" + DATA.brief;
+
+  let busy = false;
+
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function scroll() { body.scrollTop = body.scrollHeight; }
+
+  // Models emit markdown even when told not to. Escape everything, then allow
+  // exactly one construct back in: **bold**. Nothing else survives as markup.
+  function inline(raw) {
+    const esc = raw
+      // Web answers trail each claim with ([domain](url)); the sources are
+      // listed under the answer, so drop them from the prose.
+      .replace(/\s*\(\[[^\]]*\]\([^)]*\)\)/g, "")
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return esc
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s.,;:)]|$)/g, "$1$2");
+  }
+
+  function paragraphs(node, text) {
+    const chunks = text.split(/\n{2,}/).map(c => c.trim()).filter(Boolean);
+    (chunks.length ? chunks : [text]).forEach(chunk => {
+      const p = document.createElement("p");
+      p.innerHTML = inline(chunk);
+      node.appendChild(p);
+    });
+  }
+
+  async function callModel(system, question, plugins) {
+    let lastErr;
+    for (const model of MODELS) {
+      const payload = {
+        model,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: question },
+        ],
+        max_tokens: 700,
+        temperature: 0.3,
+      };
+      if (plugins) payload.plugins = plugins;
+      let resp;
+      try {
+        resp = await fetch(ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Machine-ID": MACHINE_ID },
+          body: JSON.stringify(payload),
+        });
+      } catch (e) {
+        throw new Error("Could not reach the model service.");
+      }
+      if (resp.status === 429) throw new Error("QUOTA");
+      if (!resp.ok) {
+        // A model the proxy has not allow-listed 400s; try the next one.
+        lastErr = new Error("The model service returned " + resp.status + ".");
+        continue;
+      }
+      const data = await resp.json();
+      if (data.error) { lastErr = new Error(String(data.error)); continue; }
+      const msg = (data.choices && data.choices[0] && data.choices[0].message) || {};
+      return { text: (msg.content || "").trim(), annotations: msg.annotations || [] };
+    }
+    throw lastErr || new Error("No model available.");
+  }
+
+  function addWhy(answerNode, question, answerText) {
+    const wrap = el("div", "ask-why");
+    const btn = el("button", null, "Look up why →");
+    btn.type = "button";
+    const note = el("span", "searches the web · slower");
+    note.textContent = "searches the web · slower";
+    wrap.appendChild(btn);
+    wrap.appendChild(note);
+    answerNode.appendChild(wrap);
+
+    btn.addEventListener("click", async () => {
+      if (busy) return;
+      busy = true;
+      wrap.innerHTML = "";
+      const dots = el("div", "ask-thinking");
+      dots.innerHTML = "<i></i><i></i><i></i>";
+      wrap.appendChild(dots);
+      scroll();
+      try {
+        // Re-aim the question at the world. Forwarding the original wording
+        // gets the table restated, because that is what it asked for.
+        const webQuestion =
+          "A reader is looking at a sector-valuation dashboard and asked: \"" +
+          question + "\"\n\nThe on-screen answer was:\n" + answerText +
+          "\n\nSearch recent news and explain what actually drove this in the " +
+          "market over the past weeks or months.";
+        const r = await callModel(WEB_RULES, webQuestion, [{ id: "web", max_results: 4 }]);
+        wrap.innerHTML = "";
+        paragraphs(wrap, r.text || "Nothing conclusive turned up.");
+        const cites = (r.annotations || [])
+          .map(a => a && a.url_citation).filter(Boolean);
+        if (cites.length) {
+          wrap.appendChild(el("p", "ask-src-label", "Sources"));
+          const ul = el("ul", "ask-cites");
+          cites.slice(0, 4).forEach(c => {
+            const li = document.createElement("li");
+            const a = document.createElement("a");
+            a.href = c.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+            a.textContent = c.title || c.url;
+            li.appendChild(a);
+            ul.appendChild(li);
+          });
+          wrap.appendChild(ul);
+        } else {
+          // The web plugin does not always return annotations. Without them
+          // there is nothing for the reader to check, and saying so is the
+          // only honest option.
+          wrap.appendChild(el("p", "ask-src-label", "No sources returned — unverified"));
+        }
+      } catch (e) {
+        wrap.innerHTML = "";
+        wrap.appendChild(el("p", null,
+          e.message === "QUOTA"
+            ? "Daily lookup limit reached — the answer above still stands."
+            : "The lookup failed. The answer above still stands."));
+      } finally {
+        busy = false;
+        scroll();
+      }
+    });
+  }
+
+  async function ask(question) {
+    if (busy || !question.trim()) return;
+    busy = true;
+    send.disabled = true;
+    if (intro && intro.parentNode) intro.remove();
+    if (chips) chips.style.display = "none";
+
+    body.appendChild(el("div", "ask-q", question));
+    const answer = el("div", "ask-answer");
+    const dots = el("div", "ask-thinking");
+    dots.innerHTML = "<i></i><i></i><i></i>";
+    answer.appendChild(dots);
+    body.appendChild(answer);
+    scroll();
+
+    try {
+      const r = await callModel(GROUND_RULES, question);
+      answer.innerHTML = "";
+      const text = r.text || "No answer came back.";
+      paragraphs(answer, text);
+      addWhy(answer, question, text);
+    } catch (e) {
+      answer.innerHTML = "";
+      answer.classList.add("err");
+      answer.appendChild(el("p", null,
+        e.message === "QUOTA"
+          ? "This dashboard's shared monthly question limit is used up. The findings on the left are generated at build time and are unaffected."
+          : e.message));
+    } finally {
+      busy = false;
+      send.disabled = false;
+      scroll();
+    }
+  }
+
+  form.addEventListener("submit", e => {
+    e.preventDefault();
+    const q = input.value.trim();
+    if (!q) return;
+    input.value = "";
+    ask(q);
+  });
+  if (chips) {
+    chips.querySelectorAll("button").forEach(b => {
+      b.addEventListener("click", () => ask(b.dataset.q));
+    });
+  }
+})();
 
 // ═══ Section 05: F&G vs SPX dual-axis chart ═══
 (function renderMoodChart() {

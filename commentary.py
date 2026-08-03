@@ -32,16 +32,19 @@ from build_html import (
     _round_series,
     build_family_payload,
     compute_5y,
+    table_brief,
     _fg_word,
 )
 from fetch import SERIES
 
 ROOT = Path(__file__).parent
 OUT = DATA / "commentary.json"
+INSIGHTS_OUT = DATA / "insights.json"
 
 PROXY = "https://coreservices-proxy.ycczkl91.workers.dev/v1/chat/completions"
 MACHINE_ID = "forward-pe-viewer-ci"
-MODEL = "openai/gpt-5.6-luna-pro"   # free tier on the proxy
+MODEL = "~deepseek/deepseek-v4-flash-latest"   # free tier on the proxy
+MODEL_FALLBACK = "openai/gpt-5.6-luna-pro"     # if the proxy has not allowed the above yet
 TIMEOUT = 90
 
 SYSTEM = """You write the standfirst for a daily equity-valuation dashboard.
@@ -120,6 +123,99 @@ def build_brief() -> tuple[str, set[str]]:
     return "\n".join(lines), allowed
 
 
+INSIGHTS_SYSTEM = """You find what is worth noticing in a table of sector
+valuations, for readers who already know what a P/E is.
+
+Return a JSON array of exactly 3 objects, each {"title": ..., "body": ...}.
+Nothing else — no prose around it, no markdown fence.
+
+title: 4-7 words naming the specific finding. Not a category label.
+body: 2-3 sentences, at most 3 figures total.
+
+The point of a finding is the inference, not the figures. Cite the minimum
+number of figures needed to make the reader see it, then spend the rest of the
+body saying what it means — something the numbers do not literally state.
+
+GOOD — figures set up a claim about the world:
+  "Health Care trades at 19.63x forward but 30.71x trailing. That 36 percent
+   compression is analysts betting on sharp margin expansion, which is an
+   unusual thing to underwrite at the top of a five-year range."
+
+BAD — a sentence that only restates the brief:
+  "Health Care has a forward P/E of 19.63 at percentile 97 versus a trailing
+   P/E of 30.71 at percentile 69, a percentile gap of 28 points."
+
+Never write the pattern "has a forward P/E of X at percentile Y versus a
+trailing P/E of..." — that is reciting, not reporting.
+
+What makes a finding worth reporting, in order:
+- The two lenses disagree sharply about the same sector
+- A sector's valuation and its implied growth do not fit each other
+- A large percentile move that the multiple has not followed
+- A sector at an extreme of its own five-year range
+
+Hard rules:
+- Quote figures ONLY as they appear in the brief. Never add, subtract, divide,
+  or round them. Every derived figure you might want is already computed for
+  you; if one is missing, describe the relationship in words instead.
+- Each finding must be about a different sector.
+- Dry and declarative. No hedging, no advice, no predictions, no "investors
+  should". Never recommend buying or selling."""
+
+
+def generate_insights() -> None:
+    brief, allowed, as_of = table_brief()
+    if not brief:
+        print("no table data — skipping insights")
+        return
+    raw_out = call_model(
+        INSIGHTS_SYSTEM,
+        f"Today's table:\n\n{brief}\n\nReturn the 3 findings as JSON.",
+        max_tokens=1200,
+    )
+    if not raw_out:
+        print("no insights generated — leaving previous file untouched")
+        return
+
+    text = raw_out.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text).strip()
+    try:
+        items = json.loads(text)
+    except json.JSONDecodeError:
+        print(f"rejected insights — not JSON: {text[:200]}")
+        return
+    if not isinstance(items, list) or not items:
+        print(f"rejected insights — unexpected shape: {text[:200]}")
+        return
+
+    clean = []
+    for it in items[:3]:
+        if not isinstance(it, dict):
+            continue
+        title = " ".join(str(it.get("title", "")).split())
+        body = " ".join(str(it.get("body", "")).split())
+        if not title or not body:
+            continue
+        bad = unknown_numbers(f"{title} {body}", allowed)
+        if bad:
+            print(f"dropped finding — figures not in brief {bad}: {title}")
+            continue
+        clean.append({"title": title, "body": body})
+
+    if not clean:
+        print("rejected insights — nothing survived number checking")
+        return
+    INSIGHTS_OUT.write_text(json.dumps({
+        "findings": clean,
+        "model": USED_MODEL,
+        "as_of": as_of,
+    }, indent=2, ensure_ascii=False) + "\n")
+    print(f"wrote {INSIGHTS_OUT.name}: {len(clean)} finding(s)")
+    for c in clean:
+        print(f"  · {c['title']}")
+
+
 NUM_RE = re.compile(r"\d+(?:\.\d+)?")
 
 # Small integers read as ordinary prose ("two sectors", "the 500"), not as data.
@@ -155,14 +251,14 @@ def unknown_numbers(text: str, allowed: set[str]) -> list[str]:
     return bad
 
 
-def call_model(brief: str) -> str | None:
+def _post(model: str, system: str, user: str, max_tokens: int) -> str | None:
     payload = {
-        "model": MODEL,
+        "model": model,
         "messages": [
-            {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": f"Today's readings:\n\n{brief}\n\nWrite the standfirst."},
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
         ],
-        "max_tokens": 400,
+        "max_tokens": max_tokens,
         "temperature": 0.4,
     }
     req = urllib.request.Request(
@@ -178,14 +274,37 @@ def call_model(brief: str) -> str | None:
     with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
         body = json.loads(resp.read())
     if "error" in body:
-        print(f"proxy error: {body['error']}")
+        print(f"proxy error ({model}): {body['error']}")
         return None
     return (body["choices"][0]["message"]["content"] or "").strip()
 
 
-def main() -> None:
+USED_MODEL = MODEL   # whichever model actually produced the last response
+
+
+def call_model(system: str, user: str, max_tokens: int = 400) -> str | None:
+    """Preferred model, falling back if the proxy has not been redeployed with
+    it on the allow-list yet. Records which one answered, so the page credits
+    the model that actually wrote the text."""
+    global USED_MODEL
+    try:
+        out = _post(MODEL, system, user, max_tokens)
+        if out:
+            USED_MODEL = MODEL
+            return out
+    except urllib.error.HTTPError as exc:
+        if exc.code not in (400, 403):
+            raise
+        print(f"{MODEL} rejected by proxy ({exc.code}) — using {MODEL_FALLBACK}")
+    out = _post(MODEL_FALLBACK, system, user, max_tokens)
+    if out:
+        USED_MODEL = MODEL_FALLBACK
+    return out
+
+
+def generate_standfirst() -> None:
     brief, allowed = build_brief()
-    text = call_model(brief)
+    text = call_model(SYSTEM, f"Today's readings:\n\n{brief}\n\nWrite the standfirst.")
     if not text:
         print("no commentary generated — leaving previous file untouched")
         return
@@ -205,10 +324,15 @@ def main() -> None:
     latest = json.loads((DATA / "raw.json").read_text()).get("forward", {}).get("20052", [])
     OUT.write_text(json.dumps({
         "text": text,
-        "model": MODEL,
+        "model": USED_MODEL,
         "as_of": latest[-1][0] if latest else "",
     }, indent=2) + "\n")
     print(f"wrote {OUT.name}: {text}")
+
+
+def main() -> None:
+    generate_standfirst()
+    generate_insights()
 
 
 if __name__ == "__main__":
