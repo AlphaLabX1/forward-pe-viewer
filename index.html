@@ -787,7 +787,7 @@
         <p class="kicker">AlphaLabX1 — Internal Research · Vol. II</p>
         <h1 class="wordmark">Valuation <em>&amp; Mood</em></h1>
         <p class="standfirst">The S&amp;P 500 and its eleven sectors, seen through two P/E lenses — and the market's mood, plotted against the price beneath it. <time>Updated July 31, 2026.</time></p>
-        <div class="read"><p class="read-kicker">Today's read</p><p class="read-body">Health Care remains unusually rich at the 97th percentile, while Communication Services sits at the 10th percentile. Utilities and Real Estate were the week’s biggest repricings, falling 24 and 18 points cheaper as Consumer Discretionary rose 13 points richer, leaving valuation dispersion wide.</p><p class="read-attr">Written from today&#x27;s readings by gpt-5.6-luna-pro. Figures checked against the data.</p></div>
+        <div class="read"><p class="read-kicker">Today's read</p><p class="read-body">Health Care sits at its richest level in five years, with Industrials close behind, while Utilities and Real Estate have swung sharply cheaper this week. The S&amp;P 500 remains mid-range, and the Fear &amp; Greed index holds in fear territory.</p><p class="read-attr">Written from today&#x27;s readings by deepseek-v4-flash-latest. Figures checked against the data.</p></div>
       </div>
       <div class="masthead-side">
         <div class="lens" id="lens">
@@ -852,7 +852,7 @@
           <div class="ai-col-head">
             <span class="ai-label">Machine read · both lenses</span>
           </div>
-          <div class="findings"><div class="finding"><h3>Health Care Estimates Near Historical Extreme</h3><p>Health Care ranks at percentile 97 on forward earnings but percentile 69 on trailing earnings. That disagreement means estimates are carrying the sector to a near-top-of-range valuation, supported by an implied 56 percent earnings-growth jump.</p></div><div class="finding"><h3>Materials Requires Dramatic Earnings Reset</h3><p>Materials ranks at percentile 25 on forward earnings but percentile 90 on trailing earnings. The market is treating today&#x27;s expensive earnings base as temporary, and the implied 119 percent growth is the required reset behind that confidence.</p></div><div class="finding"><h3>Real Estate Lacks Growth Support</h3><p>Real Estate trades at 37.27x forward earnings despite implied next-12m earnings growth of 2 percent decline. The valuation is therefore being carried by a multiple rather than an earnings-growth case.</p></div><p class="findings-attr">Written from both P/E tables by gpt-5.6-luna-pro. Figures are the page&#x27;s own.</p></div>
+          <div class="findings"><div class="finding"><h3>Materials&#x27; 65-point lens gap signals earnings cliff</h3><p>Materials sits at the 25th percentile on forward earnings but the 90th on trailing, a 65-point split that implies 119 percent growth next year. The market is pricing a near-doubling of earnings, not a cyclical uptick — a bet that current margins are the anomaly, not the base.</p></div><div class="finding"><h3>Consumer Staples&#x27; rich trailing multiple looks stale</h3><p>Staples trades at the 93rd percentile on trailing earnings yet only the 47th on forward, a 45-point gap. The 52 percent implied growth is trying to justify a multiple that has already run — the forward lens is effectively discounting the sector&#x27;s defensive premium.</p></div><div class="finding"><h3>Information Technology&#x27;s forward cheapness is a growth wager</h3><p>IT&#x27;s forward multiple sits at the 14th percentile while trailing is at the 60th, a 46-point divergence. The 69 percent implied earnings growth is the market&#x27;s way of saying today&#x27;s earnings are depressed — but that&#x27;s a large assumption for a sector whose forward percentile has dropped nine points in a month.</p></div><p class="findings-attr">Written from both P/E tables by deepseek-v4-flash-latest. Figures are the page&#x27;s own.</p></div>
         </div>
 
         <div class="ai-col ask" id="ask">
@@ -2119,6 +2119,9 @@ function stickSolo(id) {
         max_tokens: 700,
         temperature: 0.3,
       };
+      // See commentary.py: this model's reasoning does not converge on these
+      // prompts and returns nothing at any budget unless it is switched off.
+      if (model.indexOf("~deepseek/") === 0) payload.reasoning = { enabled: false };
       if (plugins) payload.plugins = plugins;
       let resp;
       try {

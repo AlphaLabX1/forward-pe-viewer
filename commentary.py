@@ -171,7 +171,7 @@ def generate_insights() -> None:
     raw_out = call_model(
         INSIGHTS_SYSTEM,
         f"Today's table:\n\n{brief}\n\nReturn the 3 findings as JSON.",
-        max_tokens=1200,
+        max_tokens=2000,
     )
     if not raw_out:
         print("no insights generated — leaving previous file untouched")
@@ -251,6 +251,14 @@ def unknown_numbers(text: str, allowed: set[str]) -> list[str]:
     return bad
 
 
+# deepseek-v4-flash thinks before it writes, and on the structured findings
+# prompt the thinking does not converge: given 4,500 tokens it spends 4,506,
+# given 6,500 it spends 6,559, and never reaches the answer. Capping the
+# reasoning budget does not help — only switching it off does, after which the
+# model answers immediately. Raising max_tokens alone is not a fix here.
+REASONING_MODELS = ("~deepseek/",)
+
+
 def _post(model: str, system: str, user: str, max_tokens: int) -> str | None:
     payload = {
         "model": model,
@@ -261,6 +269,8 @@ def _post(model: str, system: str, user: str, max_tokens: int) -> str | None:
         "max_tokens": max_tokens,
         "temperature": 0.4,
     }
+    if model.startswith(REASONING_MODELS):
+        payload["reasoning"] = {"enabled": False}
     req = urllib.request.Request(
         PROXY,
         data=json.dumps(payload).encode(),

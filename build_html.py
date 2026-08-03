@@ -2303,6 +2303,9 @@ function stickSolo(id) {
         max_tokens: 700,
         temperature: 0.3,
       };
+      // See commentary.py: this model's reasoning does not converge on these
+      // prompts and returns nothing at any budget unless it is switched off.
+      if (model.indexOf("~deepseek/") === 0) payload.reasoning = { enabled: false };
       if (plugins) payload.plugins = plugins;
       let resp;
       try {

@@ -1,5 +1,5 @@
 {
-  "text": "Health Care remains unusually rich at the 97th percentile, while Communication Services sits at the 10th percentile. Utilities and Real Estate were the week\u2019s biggest repricings, falling 24 and 18 points cheaper as Consumer Discretionary rose 13 points richer, leaving valuation dispersion wide.",
-  "model": "openai/gpt-5.6-luna-pro",
+  "text": "Health Care sits at its richest level in five years, with Industrials close behind, while Utilities and Real Estate have swung sharply cheaper this week. The S&P 500 remains mid-range, and the Fear & Greed index holds in fear territory.",
+  "model": "~deepseek/deepseek-v4-flash-latest",
   "as_of": "2026-07-31"
 }
