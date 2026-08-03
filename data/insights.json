@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 65-point lens gap signals earnings cliff",
-      "body": "Materials sits at the 25th percentile on forward earnings but the 90th on trailing, a 65-point split that implies 119 percent growth next year. The market is pricing a near-doubling of earnings, not a cyclical uptick — a bet that current margins are the anomaly, not the base."
+      "title": "Materials' 66-point lens gap signals earnings cliff",
+      "body": "Materials trades at 16.28x forward but 35.88x trailing, a 66-point percentile gap between the two lenses. The market is underwriting 120 percent earnings growth, which would be the steepest margin recovery in the sector's recent history."
     },
     {
-      "title": "Consumer Staples' rich trailing multiple looks stale",
-      "body": "Staples trades at the 93rd percentile on trailing earnings yet only the 47th on forward, a 45-point gap. The 52 percent implied growth is trying to justify a multiple that has already run — the forward lens is effectively discounting the sector's defensive premium."
+      "title": "Consumer Staples' forward multiple collapses despite rich history",
+      "body": "Consumer Staples' forward P/E sits at the 45th percentile while its trailing multiple remains at the 93rd, a 48-point disconnect. The 35 percent compression implies analysts expect a 53 percent earnings surge, a bet that staples can suddenly grow like cyclicals."
     },
     {
-      "title": "Information Technology's forward cheapness is a growth wager",
-      "body": "IT's forward multiple sits at the 14th percentile while trailing is at the 60th, a 46-point divergence. The 69 percent implied earnings growth is the market's way of saying today's earnings are depressed — but that's a large assumption for a sector whose forward percentile has dropped nine points in a month."
+      "title": "Energy's forward multiple jumps while trailing stays rich",
+      "body": "Energy's forward percentile rose 18 points in a month to 51, yet its trailing P/E still sits at the 83rd percentile. The 32-point gap between lenses means the market is pricing in 58 percent earnings growth, but the sector's own history suggests such optimism has been fleeting."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-07-31"
+  "as_of": "2026-08-03"
 }

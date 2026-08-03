@@ -1,5 +1,5 @@
 {
-  "text": "Health Care sits at its richest level in five years, with Industrials close behind, while Utilities and Real Estate have swung sharply cheaper this week. The S&P 500 remains mid-range, and the Fear & Greed index holds in fear territory.",
+  "text": "Health Care trades at its richest level in five years despite a weekly de-rating, while Utilities and Real Estate saw the largest percentile swings lower. The S&P 500 sits at the 40th percentile, with breadth split between expensive defensives and cheap tech.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-07-31"
+  "as_of": "2026-08-03"
 }
