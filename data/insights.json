@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 66-point lens gap signals earnings cliff",
-      "body": "Materials trades at 16.28x forward but 35.88x trailing, a 66-point percentile gap between the two lenses. The market is underwriting 120 percent earnings growth, which would be the steepest margin recovery in the sector's recent history."
+      "title": "Materials' 67-point lens gap signals earnings cliff",
+      "body": "Materials trades at a 67-point percentile gap between trailing (89) and forward (23) valuations, the widest in the table. The market is pricing 118 percent earnings growth that would cut the forward multiple to 16.23x — a bet on a profit rebound so steep it looks like a cyclical trough call."
     },
     {
-      "title": "Consumer Staples' forward multiple collapses despite rich history",
-      "body": "Consumer Staples' forward P/E sits at the 45th percentile while its trailing multiple remains at the 93rd, a 48-point disconnect. The 35 percent compression implies analysts expect a 53 percent earnings surge, a bet that staples can suddenly grow like cyclicals."
+      "title": "Consumer Staples' 50-point gap after 29-point weekly drop",
+      "body": "Consumer Staples' forward percentile fell 29 points in one week to 42, while trailing sits at 92 — a 50-point split. That collapse is not a valuation story but a re-rating: analysts now expect 53 percent earnings growth, and the market is refusing to pay up for it."
     },
     {
-      "title": "Energy's forward multiple jumps while trailing stays rich",
-      "body": "Energy's forward percentile rose 18 points in a month to 51, yet its trailing P/E still sits at the 83rd percentile. The 32-point gap between lenses means the market is pricing in 58 percent earnings growth, but the sector's own history suggests such optimism has been fleeting."
+      "title": "Energy's forward discount despite 56 percent growth",
+      "body": "Energy's forward P/E of 12.06 sits at percentile 47 while trailing is at 82, a 34-point gap favoring the trailing lens. The market is underwriting 56 percent earnings growth yet still prices the sector below its five-year median forward multiple — a skepticism that growth will actually materialize."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-03"
+  "as_of": "2026-08-04"
 }

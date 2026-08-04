@@ -1,5 +1,5 @@
 {
-  "text": "Health Care trades at its richest level in five years despite a weekly de-rating, while Utilities and Real Estate saw the largest percentile swings lower. The S&P 500 sits at the 40th percentile, with breadth split between expensive defensives and cheap tech.",
+  "text": "Industrials sit at the 91st percentile of valuation, the richest sector, while Communication Services trades at the 3rd percentile. Staples, Utilities, and Real Estate all moved sharply cheaper this week, and the Fear & Greed gauge climbed from 38 to 58.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-03"
+  "as_of": "2026-08-04"
 }
