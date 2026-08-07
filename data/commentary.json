@@ -1,5 +1,5 @@
 {
-  "text": "Industrials trade at their richest level in five years, with a forward P/E of 26.0, while Communication Services sit at the 2nd percentile of valuation. Health Care and Utilities cheapened sharply this week, and the Fear & Greed index rose from 41 to 60.",
+  "text": "Industrials sit at the 90th percentile of valuation while Communication Services sit at the 2nd. Health Care and Utilities cheapened sharply this week, and Materials richened.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-06"
+  "as_of": "2026-08-07"
 }

@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 142% earnings hope is extreme",
-      "body": "Materials sits at the 37th percentile on forward earnings but the 95th on trailing, a 58-point gap that implies 142 percent growth. That is the market underwriting a near-tripling of profits, a bet that has no precedent in the sector's own five-year history."
+      "title": "Materials' 129% earnings bet is extreme",
+      "body": "Materials trades at 17.04x forward versus 38.95x trailing, a 56 percent compression that implies 129 percent earnings growth. That is the market underwriting a doubling of profits, a bet that looks thin given the sector's forward percentile sits at just 37."
     },
     {
-      "title": "Health Care's 30-point weekly de-rating",
-      "body": "Health Care's forward percentile collapsed 29 points in a week and 30 in a month, yet the trailing lens barely moved. The market is rapidly repricing expectations for a sector whose reported earnings still look rich, suggesting the selloff is about forward estimates, not current results."
+      "title": "Consumer Staples' percentile gap is stark",
+      "body": "Consumer Staples' trailing P/E sits at the 88th percentile of its five-year range while the forward multiple is at the 40th, a 48-point gap. Analysts are pricing in 48 percent earnings growth, which would be a dramatic reversal for a defensive sector typically valued for stability."
     },
     {
-      "title": "Utilities' percentile collapse outruns multiple",
-      "body": "Utilities dropped 16 percentile points in a week and 28 in a month on forward valuation, landing at the 28th percentile, while its forward P/E of 17.76 is only 10 percent below trailing. The percentile swing is far larger than the multiple change, meaning the de-rating is mostly relative, not absolute."
+      "title": "Health Care's week-long de-rating is abrupt",
+      "body": "Health Care's forward percentile fell 26 points in one week, landing at 71, even though its trailing percentile is 76. The 46 percent multiple compression implies 86 percent earnings growth, a forecast that clashes with the sector's sudden loss of favor."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-06"
+  "as_of": "2026-08-07"
 }
