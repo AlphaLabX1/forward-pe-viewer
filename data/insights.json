@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 124 percent growth bet",
-      "body": "Materials sits at the 29th percentile forward but the 91st percentile trailing, a 62-point gap that is the widest in the table. The market is underwriting 124 percent earnings growth, which would be a historic re-rating for a sector that has not yet shown it can deliver."
+      "title": "Materials' 142% earnings hope is extreme",
+      "body": "Materials sits at the 37th percentile on forward earnings but the 95th on trailing, a 58-point gap that implies 142 percent growth. That is the market underwriting a near-tripling of profits, a bet that has no precedent in the sector's own five-year history."
     },
     {
-      "title": "Health Care's one-week valuation collapse",
-      "body": "Health Care's forward percentile dropped 34 points in a single week, the largest weekly move anywhere, yet its trailing percentile only fell to 73. The forward multiple now implies 77 percent earnings growth, a bet that margins expand dramatically from a level the trailing lens still prices as rich."
+      "title": "Health Care's 30-point weekly de-rating",
+      "body": "Health Care's forward percentile collapsed 29 points in a week and 30 in a month, yet the trailing lens barely moved. The market is rapidly repricing expectations for a sector whose reported earnings still look rich, suggesting the selloff is about forward estimates, not current results."
     },
     {
-      "title": "Consumer Staples' extreme lens divergence",
-      "body": "Consumer Staples trades at the 46th percentile forward but the 90th percentile trailing, a 45-point gap that rivals Materials'. The market is pricing 51 percent earnings growth, yet the trailing multiple remains near a five-year high, suggesting the compression is a forecast, not a fact."
+      "title": "Utilities' percentile collapse outruns multiple",
+      "body": "Utilities dropped 16 percentile points in a week and 28 in a month on forward valuation, landing at the 28th percentile, while its forward P/E of 17.76 is only 10 percent below trailing. The percentile swing is far larger than the multiple change, meaning the de-rating is mostly relative, not absolute."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-05"
+  "as_of": "2026-08-06"
 }
