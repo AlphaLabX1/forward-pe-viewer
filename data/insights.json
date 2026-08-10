@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 129% earnings bet is extreme",
-      "body": "Materials trades at 17.04x forward versus 38.95x trailing, a 56 percent compression that implies 129 percent earnings growth. That is the market underwriting a doubling of profits, a bet that looks thin given the sector's forward percentile sits at just 37."
+      "title": "Materials' 128% earnings bet is extreme",
+      "body": "Materials trades at 17.31x forward but 39.47x trailing, a 56 percent compression that implies 128 percent earnings growth. That is the market underwriting a doubling of profits, a bet that looks stretched for a sector whose forward percentile sits at just 40."
     },
     {
-      "title": "Consumer Staples' percentile gap is stark",
-      "body": "Consumer Staples' trailing P/E sits at the 88th percentile of its five-year range while the forward multiple is at the 40th, a 48-point gap. Analysts are pricing in 48 percent earnings growth, which would be a dramatic reversal for a defensive sector typically valued for stability."
+      "title": "Health Care's 86% growth is a stretch",
+      "body": "Health Care's forward multiple is only 3 percentile points below its trailing one, yet the implied earnings growth is 86 percent. The market is pricing in a massive earnings surge without much valuation discount, which is an aggressive assumption for a sector that just saw its forward percentile drop 26 points in a month."
     },
     {
-      "title": "Health Care's week-long de-rating is abrupt",
-      "body": "Health Care's forward percentile fell 26 points in one week, landing at 71, even though its trailing percentile is 76. The 46 percent multiple compression implies 86 percent earnings growth, a forecast that clashes with the sector's sudden loss of favor."
+      "title": "Communication Services' cheapness is a trap",
+      "body": "Communication Services sits at the 2nd percentile on forward P/E, yet its trailing percentile is 29, a 26-point gap that implies 57 percent earnings growth. The market is paying up for a recovery that has not shown up in reported earnings, and the forward percentile fell 18 points in a single week, suggesting fading confidence."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-07"
+  "as_of": "2026-08-10"
 }
