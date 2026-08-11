@@ -1,5 +1,5 @@
 {
-  "text": "Industrials trade at the 90th percentile of five-year valuations, the richest major sector, while Communication Services sit at the 2nd percentile. Health Care and Communication Services both fell 18-19 percentile points this week, versus a 15-point rise in Materials.",
+  "text": "Industrials sit at the 90th percentile of five-year valuations, the richest sector in the dashboard. Materials and Energy moved sharply richer this week, while Real Estate fell twelve percentile points cheaper.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-10"
+  "as_of": "2026-08-11"
 }

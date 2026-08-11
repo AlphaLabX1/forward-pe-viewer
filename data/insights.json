@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 128% earnings bet is extreme",
-      "body": "Materials trades at 17.31x forward but 39.47x trailing, a 56 percent compression that implies 128 percent earnings growth. That is the market underwriting a doubling of profits, a bet that looks stretched for a sector whose forward percentile sits at just 40."
+      "title": "Health Care's 86% earnings bet",
+      "body": "Health Care's forward multiple sits at the same percentile as its trailing one, yet the forward P/E is 46 percent lower. That compression implies analysts expect 86 percent earnings growth, a bet that looks aggressive for a sector whose valuation has not moved."
     },
     {
-      "title": "Health Care's 86% growth is a stretch",
-      "body": "Health Care's forward multiple is only 3 percentile points below its trailing one, yet the implied earnings growth is 86 percent. The market is pricing in a massive earnings surge without much valuation discount, which is an aggressive assumption for a sector that just saw its forward percentile drop 26 points in a month."
+      "title": "Materials' extreme lens divergence",
+      "body": "Materials' trailing P/E sits at the 94th percentile while its forward multiple is at the 42nd, a 53-point gap. The market is pricing in 128 percent earnings growth, which would be a dramatic turnaround from the reported earnings that currently look so expensive."
     },
     {
-      "title": "Communication Services' cheapness is a trap",
-      "body": "Communication Services sits at the 2nd percentile on forward P/E, yet its trailing percentile is 29, a 26-point gap that implies 57 percent earnings growth. The market is paying up for a recovery that has not shown up in reported earnings, and the forward percentile fell 18 points in a single week, suggesting fading confidence."
+      "title": "Utilities' month-long valuation collapse",
+      "body": "Utilities' forward percentile dropped 32 points in one month, landing at the 23rd percentile, while its trailing percentile sits at just 8. The sector has become cheap on both lenses, but the forward multiple still implies 12 percent earnings growth, suggesting the selloff reflects more than just earnings expectations."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-10"
+  "as_of": "2026-08-11"
 }
