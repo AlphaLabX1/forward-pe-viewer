@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 53-point lens gap signals earnings collapse",
-      "body": "Materials trades at 17.40x forward but 39.73x trailing, a 56 percent compression that analysts justify with 128 percent implied earnings growth. That is a bet on a dramatic profit recovery, yet the trailing multiple sits at the 94th percentile of its five-year range—the market is pricing in a rebound from an already expensive base."
+      "title": "Materials' 53-point lens gap defies its percentile",
+      "body": "Materials sits at the 40th percentile on forward earnings yet its trailing multiple is at the 93rd percentile, a 53-point split that is the widest in the table. Analysts are underwriting 124 percent earnings growth, which would be a historic reversal for a sector whose trailing earnings have already been bid up to near-five-year highs."
     },
     {
-      "title": "Consumer Staples' forward cheapness masks rich trailing",
-      "body": "Consumer Staples' forward P/E of 19.73 sits at the 35th percentile while its trailing multiple of 29.26 is at the 87th percentile, a 52-point gap. The market is underwriting 48 percent earnings growth, but the trailing valuation suggests investors are paying a premium for defensive stability that the forward lens says will evaporate."
+      "title": "Health Care's 86 percent growth is priced in",
+      "body": "Health Care's forward and trailing multiples are nearly identical in percentile terms, yet the forward lens implies 86 percent earnings growth. That compression of 46 percent between the two lenses means the market is fully paying for a margin expansion that would be extraordinary for a defensive sector."
     },
     {
-      "title": "Utilities' month-long slide hits extreme cheapness",
-      "body": "Utilities' forward percentile dropped 32 points in one month to the 25th percentile, while its trailing multiple sits at the 11th percentile. The sector now trades at 17.59x forward with only 12 percent implied growth, a rare combination of low valuation and modest expectations that has not been this cheap in five years."
+      "title": "Communication Services' forward percentile collapses",
+      "body": "Communication Services trades at the 2nd percentile on forward earnings, down 18 points in a month, while its trailing multiple sits at the 27th percentile. The 25-point gap between lenses implies 54 percent growth, but the market is pricing in a deterioration so severe that the forward multiple has fallen to a five-year low."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-12"
+  "as_of": "2026-08-13"
 }
