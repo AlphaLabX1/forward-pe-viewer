@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 53-point lens gap defies its percentile",
-      "body": "Materials sits at the 40th percentile on forward earnings yet its trailing multiple is at the 93rd percentile, a 53-point split that is the widest in the table. Analysts are underwriting 124 percent earnings growth, which would be a historic reversal for a sector whose trailing earnings have already been bid up to near-five-year highs."
+      "title": "Materials' 54-point lens gap is extreme",
+      "body": "Materials trades at 17.18x forward but 38.23x trailing, a 54-point percentile gap — the widest in the table. Analysts are underwriting 123 percent earnings growth, which would be a dramatic reversal from the reported earnings that put the trailing multiple at the 93rd percentile."
     },
     {
-      "title": "Health Care's 86 percent growth is priced in",
-      "body": "Health Care's forward and trailing multiples are nearly identical in percentile terms, yet the forward lens implies 86 percent earnings growth. That compression of 46 percent between the two lenses means the market is fully paying for a margin expansion that would be extraordinary for a defensive sector."
+      "title": "Consumer Staples' cheap forward hides rich trailing",
+      "body": "Consumer Staples sits at the 50th percentile on forward P/E but the 89th on trailing, a 39-point gap. The 48 percent implied earnings growth is the second-highest in the table, yet the sector's forward multiple is only at its five-year median — a combination that suggests the market is not fully pricing in that expected expansion."
     },
     {
-      "title": "Communication Services' forward percentile collapses",
-      "body": "Communication Services trades at the 2nd percentile on forward earnings, down 18 points in a month, while its trailing multiple sits at the 27th percentile. The 25-point gap between lenses implies 54 percent growth, but the market is pricing in a deterioration so severe that the forward multiple has fallen to a five-year low."
+      "title": "Health Care's 86 percent growth is unbacked",
+      "body": "Health Care's forward P/E is 18.76 at the 78th percentile, while its trailing multiple is 34.87 at the 77th — the lenses agree on valuation despite a 46 percent compression. That gap implies 86 percent earnings growth, an aggressive assumption for a sector whose forward percentile dropped 13 points in a month, signaling fading confidence in that forecast."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-13"
+  "as_of": "2026-08-14"
 }

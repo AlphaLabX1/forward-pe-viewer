@@ -1,5 +1,5 @@
 {
-  "text": "Industrials trade at their richest level in five years, while Communication Services sit at their cheapest. Energy and Health Care moved sharply richer this week, and Real Estate fell eight percentile points.",
+  "text": "Industrials lead sector valuations at a 91st-percentile P/E, while Communication Services sit near a record low. Energy\u2019s 15-point weekly jump marks the sharpest shift, though the broad market stays mid-range.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-13"
+  "as_of": "2026-08-14"
 }
