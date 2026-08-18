@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 53-point lens gap signals peak-cycle earnings",
-      "body": "Materials trades at 17.26x forward versus 38.38x trailing, a 53-point percentile gap between the two lenses. That is the market pricing a 122 percent earnings rebound while trailing earnings sit at the 93rd percentile of five years, an unusual combination that suggests analysts expect current margins to be a cyclical high."
+      "title": "Materials' 54-point lens gap is a bet on a turnaround",
+      "body": "Materials sits at the 92nd percentile on trailing earnings but the 38th on forward estimates, a 54-point spread. The market is underwriting 123 percent earnings growth, which would be a historic reversal for a sector whose trailing multiple is near its five-year ceiling."
     },
     {
-      "title": "Consumer Staples' cheap forward hides rich trailing",
-      "body": "Consumer Staples' forward P/E sits at the 51st percentile while its trailing multiple is at the 89th, a 38-point gap. The 33 percent multiple compression implies a 48 percent earnings jump, but that is a heavy bet on margin recovery for a sector whose trailing valuation has rarely been this expensive."
+      "title": "Health Care's one-month slide erased its forward premium",
+      "body": "Health Care's forward percentile dropped 22 points in a month, from near the top of its range to the 75th percentile, while its trailing percentile barely moved. The 46 percent multiple compression implies analysts expect 86 percent earnings growth, a level of optimism that now looks priced at a discount to the sector's own history."
     },
     {
-      "title": "Information Technology's forward percentile lags trailing",
-      "body": "Information Technology's trailing P/E is at the 70th percentile but its forward multiple is at the 24th, a 46-point gap. The 42 percent compression assumes 71 percent earnings growth, yet the forward percentile is near a five-year low, meaning the market is already discounting a steep profit surge that has not materialized."
+      "title": "Communication Services is the cheapest forward but not cheap on trailing",
+      "body": "Communication Services trades at the 2nd percentile on forward earnings, yet its trailing multiple is at the 29th percentile, a 26-point gap. The market is pricing in 57 percent earnings growth, but the trailing lens says the sector has not delivered anything close to that recently, so the cheapness is entirely an expectation, not a record."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-17"
+  "as_of": "2026-08-18"
 }

@@ -1,5 +1,5 @@
 {
-  "text": "Industrials trade at the 92nd percentile of five-year valuations, the richest sector, while Communication Services sits at the 4th percentile. Staples and Real Estate jumped 16 and 12 percentile points this week, pushing defensive groups toward the middle of their ranges.",
+  "text": "Industrials sit at their 91st percentile while Communication Services trade at their 2nd, the widest spread in the dashboard. Real Estate richened nine points this week, the largest move, as Consumer Discretionary cheapened by the same amount.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-17"
+  "as_of": "2026-08-18"
 }
