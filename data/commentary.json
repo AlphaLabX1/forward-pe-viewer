@@ -1,5 +1,5 @@
 {
-  "text": "Industrials sit at their 91st percentile while Communication Services trade at their 2nd, the widest spread in the dashboard. Real Estate richened nine points this week, the largest move, as Consumer Discretionary cheapened by the same amount.",
+  "text": "Industrials sit at the 88th percentile of valuation, the richest sector, while Communication Services trade at the 2nd percentile. Real Estate jumped 18 points richer this week, the largest move, and the Fear & Greed index slipped from 63 to 58.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-18"
+  "as_of": "2026-08-19"
 }

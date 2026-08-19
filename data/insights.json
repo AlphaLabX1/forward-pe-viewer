@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 54-point lens gap is a bet on a turnaround",
-      "body": "Materials sits at the 92nd percentile on trailing earnings but the 38th on forward estimates, a 54-point spread. The market is underwriting 123 percent earnings growth, which would be a historic reversal for a sector whose trailing multiple is near its five-year ceiling."
+      "title": "Materials' 123% earnings bet is a mirage",
+      "body": "The market is pricing in a 123 percent earnings surge, yet the forward P/E sits at the 36th percentile while trailing sits at the 91st. This is a sector where analysts are betting on a massive re-rating, not a cyclical uptick. The 55 percent compression is the market's way of saying current earnings are the anomaly, not the future."
     },
     {
-      "title": "Health Care's one-month slide erased its forward premium",
-      "body": "Health Care's forward percentile dropped 22 points in a month, from near the top of its range to the 75th percentile, while its trailing percentile barely moved. The 46 percent multiple compression implies analysts expect 86 percent earnings growth, a level of optimism that now looks priced at a discount to the sector's own history."
+      "title": "Health Care's 86% growth is a red flag",
+      "body": "A 2-point percentile gap between forward and trailing valuations is remarkably tight, yet it masks an 86 percent implied earnings surge. The market is not rewarding this sector for its past; it's pricing in a future that looks increasingly like a one-off. This is a sector where the multiple is being held hostage by a single, aggressive assumption."
     },
     {
-      "title": "Communication Services is the cheapest forward but not cheap on trailing",
-      "body": "Communication Services trades at the 2nd percentile on forward earnings, yet its trailing multiple is at the 29th percentile, a 26-point gap. The market is pricing in 57 percent earnings growth, but the trailing lens says the sector has not delivered anything close to that recently, so the cheapness is entirely an expectation, not a record."
+      "title": "Communication Services is a value trap at the 2nd percentile",
+      "body": "At the 2nd percentile, the forward P/E is as cheap as it gets, but the trailing multiple is at the 29th percentile, showing a 26-point gap. The market is not just pricing in a recovery; it's pricing in a 57 percent earnings explosion. This is a classic value trap where the market is saying the current earnings power is not the base case."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-18"
+  "as_of": "2026-08-19"
 }
