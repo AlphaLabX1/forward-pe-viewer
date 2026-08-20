@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 123% earnings bet is a mirage",
-      "body": "The market is pricing in a 123 percent earnings surge, yet the forward P/E sits at the 36th percentile while trailing sits at the 91st. This is a sector where analysts are betting on a massive re-rating, not a cyclical uptick. The 55 percent compression is the market's way of saying current earnings are the anomaly, not the future."
+      "title": "Materials' 123% growth bet is extreme",
+      "body": "Materials trades at 17.22x forward against 38.35x trailing, a 55 percent compression that implies 123 percent earnings growth. That is the market pricing a doubling of profits, a far more aggressive assumption than any other sector's implied growth."
     },
     {
-      "title": "Health Care's 86% growth is a red flag",
-      "body": "A 2-point percentile gap between forward and trailing valuations is remarkably tight, yet it masks an 86 percent implied earnings surge. The market is not rewarding this sector for its past; it's pricing in a future that looks increasingly like a one-off. This is a sector where the multiple is being held hostage by a single, aggressive assumption."
+      "title": "Consumer Staples' forward multiple is a lie",
+      "body": "Consumer Staples' forward P/E sits at the 50th percentile of its five-year range while its trailing multiple is at the 86th. The 37-point gap between lenses is the widest of any sector, signaling analysts expect a sharp earnings rebound that the market is not yet paying for."
     },
     {
-      "title": "Communication Services is a value trap at the 2nd percentile",
-      "body": "At the 2nd percentile, the forward P/E is as cheap as it gets, but the trailing multiple is at the 29th percentile, showing a 26-point gap. The market is not just pricing in a recovery; it's pricing in a 57 percent earnings explosion. This is a classic value trap where the market is saying the current earnings power is not the base case."
+      "title": "Real Estate's valuation collapse is accelerating",
+      "body": "Real Estate's forward percentile has dropped 32 points in a month and 25 points in a week, landing at the 25th percentile. The forward P/E of 35.69 is still the highest of any sector, so the de-rating is happening from an extreme level that still leaves it expensive."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-19"
+  "as_of": "2026-08-20"
 }

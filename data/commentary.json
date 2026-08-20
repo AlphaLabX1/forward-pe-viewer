@@ -1,5 +1,5 @@
 {
-  "text": "Industrials sit at the 88th percentile of valuation, the richest sector, while Communication Services trade at the 2nd percentile. Real Estate jumped 18 points richer this week, the largest move, and the Fear & Greed index slipped from 63 to 58.",
+  "text": "Health Care trades at a 96th-percentile valuation after a weekly swing of 18 points richer, while Real Estate fell 25 points cheaper to a 25th percentile. The S&P 500 sits at a 44th percentile with a P/E of 20.8, and the Fear & Greed index cooled from 67 to 55.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-19"
+  "as_of": "2026-08-20"
 }
