@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 123% growth bet is extreme",
-      "body": "Materials trades at 17.22x forward against 38.35x trailing, a 55 percent compression that implies 123 percent earnings growth. That is the market pricing a doubling of profits, a far more aggressive assumption than any other sector's implied growth."
+      "title": "Materials' 54-point lens gap signals earnings cliff",
+      "body": "Materials trades at 17.21x forward but 38.28x trailing, a 55 percent compression that implies 122 percent earnings growth next year. The market is pricing a near-doubling of profits that would be unprecedented for a cyclical sector, and the trailing percentile at 92 shows how far the multiple has already run."
     },
     {
-      "title": "Consumer Staples' forward multiple is a lie",
-      "body": "Consumer Staples' forward P/E sits at the 50th percentile of its five-year range while its trailing multiple is at the 86th. The 37-point gap between lenses is the widest of any sector, signaling analysts expect a sharp earnings rebound that the market is not yet paying for."
+      "title": "Real Estate's 34-point weekly percentile collapse",
+      "body": "Real Estate's forward percentile dropped 34 points in a single week, the sharpest move in the table, yet its forward multiple of 34.96 remains rich at the 16th percentile. The market is repricing the sector's growth outlook far faster than the earnings estimates themselves, suggesting the forward number is about to be revised down."
     },
     {
-      "title": "Real Estate's valuation collapse is accelerating",
-      "body": "Real Estate's forward percentile has dropped 32 points in a month and 25 points in a week, landing at the 25th percentile. The forward P/E of 35.69 is still the highest of any sector, so the de-rating is happening from an extreme level that still leaves it expensive."
+      "title": "Utilities' month-long de-rating hits five-year low",
+      "body": "Utilities' forward percentile fell 35 points in one month to the 26th percentile, while its trailing percentile sits at just 11. The forward multiple of 17.62 is now near the bottom of its five-year range, and the 14-point gap between lenses shows analysts still expect some earnings growth that the market is no longer willing to pay for."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-20"
+  "as_of": "2026-08-21"
 }

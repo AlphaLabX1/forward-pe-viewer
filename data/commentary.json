@@ -1,5 +1,5 @@
 {
-  "text": "Health Care trades at a 96th-percentile valuation after a weekly swing of 18 points richer, while Real Estate fell 25 points cheaper to a 25th percentile. The S&P 500 sits at a 44th percentile with a P/E of 20.8, and the Fear & Greed index cooled from 67 to 55.",
+  "text": "Health Care is the only sector trading richer than its five-year norm, at the 86th percentile, while Communication Services sits at the 1st percentile. Real Estate fell 34 points in valuation percentile this week, and the Fear & Greed index slipped from 64 to 56.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-20"
+  "as_of": "2026-08-21"
 }
