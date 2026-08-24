@@ -1,5 +1,5 @@
 {
-  "text": "Health Care is the only sector trading richer than its five-year norm, at the 86th percentile, while Communication Services sits at the 1st percentile. Real Estate fell 34 points in valuation percentile this week, and the Fear & Greed index slipped from 64 to 56.",
+  "text": "Health Care trades at its richest level in five years, with its percentile jumping 19 points in a week. Real Estate fell 20 points to a 23rd-percentile valuation, the sharpest cheapening of any sector.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-21"
+  "as_of": "2026-08-24"
 }
