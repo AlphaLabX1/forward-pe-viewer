@@ -1,18 +1,14 @@
 {
   "findings": [
     {
-      "title": "Materials' 123% earnings bet is extreme",
-      "body": "Materials trades at 17.56x forward versus 39.09x trailing, a 55 percent compression that implies 123 percent earnings growth. That is the market underwriting a near-tripling of profits, a far more aggressive assumption than any other sector's implied growth."
+      "title": "Materials' 51-point lens gap is a margin bet",
+      "body": "Materials sits at the 94th percentile on trailing earnings but only the 43rd on forward estimates, a 51-point gap that is the widest in the table. The market is underwriting 123 percent earnings growth, which would require a margin expansion that has no precedent in the sector's recent history."
     },
     {
-      "title": "Consumer Staples' 41-point lens gap",
-      "body": "Consumer Staples sits at the 45th percentile on forward earnings but the 86th on trailing, a 41-point gap that is the widest among sectors. The market is pricing a 46 percent earnings jump, yet the sector's forward multiple is only mid-range, suggesting analysts expect a sharp rebound rather than sustained strength."
-    },
-    {
-      "title": "Real Estate's month-long valuation collapse",
-      "body": "Real Estate's forward percentile fell 44 points in a month to the 23rd, while its forward P/E of 35.52 remains the highest in the table. The multiple has barely moved, so the drop is almost entirely about earnings estimates rising, not about the sector getting cheaper."
+      "title": "Real Estate's forward premium is unearned",
+      "body": "Real Estate trades at a 19-point forward-rich gap despite an implied 4 percent earnings decline, the only sector where analysts expect profits to fall. The forward multiple of 37.66 is being paid for growth that is projected to be negative, which makes the premium a bet on a forecast reversal rather than on fundamentals."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-24"
+  "as_of": "2026-08-25"
 }
