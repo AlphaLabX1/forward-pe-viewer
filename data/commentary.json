@@ -1,5 +1,5 @@
 {
-  "text": "Health Care trades at its richest percentile in five years, with a forward P/E of 19.5. Consumer Staples and Real Estate also moved sharply richer this week, while the S&P 500 sits near its five-year median.",
+  "text": "Health Care trades at the 91st percentile of its five-year valuation range, the richest sector today, while Communication Services sits at the 2nd percentile. Real Estate saw the largest weekly shift, climbing 36 points in valuation percentile.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-25"
+  "as_of": "2026-08-26"
 }

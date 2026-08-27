@@ -1,14 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 51-point lens gap is a margin bet",
-      "body": "Materials sits at the 94th percentile on trailing earnings but only the 43rd on forward estimates, a 51-point gap that is the widest in the table. The market is underwriting 123 percent earnings growth, which would require a margin expansion that has no precedent in the sector's recent history."
+      "title": "Health Care's 46% multiple compression signals margin bets",
+      "body": "Health Care's forward P/E sits at the 91st percentile while trailing is at the 81st, a 10-point gap. The 46% compression between trailing and forward earnings implies analysts expect a sharp profit rebound."
     },
     {
-      "title": "Real Estate's forward premium is unearned",
-      "body": "Real Estate trades at a 19-point forward-rich gap despite an implied 4 percent earnings decline, the only sector where analysts expect profits to fall. The forward multiple of 37.66 is being paid for growth that is projected to be negative, which makes the premium a bet on a forecast reversal rather than on fundamentals."
+      "title": "Materials' 50-point percentile gap is extreme",
+      "body": "Materials' trailing P/E is at the 93rd percentile but forward drops to the 44th, a 50-point gap. This implies the market prices in a dramatic earnings surge, with implied growth of 122%."
+    },
+    {
+      "title": "Utilities' forward percentile plunges despite modest P/E",
+      "body": "Utilities' forward P/E percentile fell 32 points in a month to the 25th, while trailing sits at the 10th. The 15-point gap between lenses suggests expectations of steady, but not explosive, earnings growth."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-25"
+  "as_of": "2026-08-26"
 }
