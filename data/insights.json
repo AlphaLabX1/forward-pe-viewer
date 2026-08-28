@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Health Care's 46% multiple compression signals margin bets",
-      "body": "Health Care's forward P/E sits at the 91st percentile while trailing is at the 81st, a 10-point gap. The 46% compression between trailing and forward earnings implies analysts expect a sharp profit rebound."
+      "title": "Health Care's forward P/E sits at 85th percentile",
+      "body": "At 19.15, the sector's forward multiple is near its five-year high despite a 4-point one-week drop. Trailing earnings imply 86% growth, yet the 6-point gap favoring forward estimates suggests optimism is already priced in."
     },
     {
-      "title": "Materials' 50-point percentile gap is extreme",
-      "body": "Materials' trailing P/E is at the 93rd percentile but forward drops to the 44th, a 50-point gap. This implies the market prices in a dramatic earnings surge, with implied growth of 122%."
+      "title": "Materials' trailing P/E at 93rd percentile",
+      "body": "With a trailing multiple of 38.93, Materials is the most expensive on reported earnings, while its forward P/E of 17.71 sits at the 44th percentile. The 49-point gap indicates the market expects a 120% earnings surge, a steep bet on future profitability."
     },
     {
-      "title": "Utilities' forward percentile plunges despite modest P/E",
-      "body": "Utilities' forward P/E percentile fell 32 points in a month to the 25th, while trailing sits at the 10th. The 15-point gap between lenses suggests expectations of steady, but not explosive, earnings growth."
+      "title": "Energy's forward P/E jumps 20 points in a month",
+      "body": "Energy's forward multiple rose from cheaper levels to the 59th percentile, now at 12.60. Despite a 14-point gap favoring trailing estimates, the one-month shift suggests improving sentiment, though implied growth of 37% remains below the sector's historical peak."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-26"
+  "as_of": "2026-08-27"
 }

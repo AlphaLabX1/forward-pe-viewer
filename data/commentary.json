@@ -1,5 +1,5 @@
 {
-  "text": "Health Care trades at the 91st percentile of its five-year valuation range, the richest sector today, while Communication Services sits at the 2nd percentile. Real Estate saw the largest weekly shift, climbing 36 points in valuation percentile.",
+  "text": "Health Care trades at the 85th percentile of its five-year valuation range, the richest major sector, while Communication Services sits at the 1st percentile. Real Estate and Financials moved sharply richer this week, and Consumer Discretionary fell seven points cheaper.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-26"
+  "as_of": "2026-08-27"
 }
