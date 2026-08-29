@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Health Care's forward P/E sits at 85th percentile",
-      "body": "At 19.15, the sector's forward multiple is near its five-year high despite a 4-point one-week drop. Trailing earnings imply 86% growth, yet the 6-point gap favoring forward estimates suggests optimism is already priced in."
+      "title": "Materials' 119% earnings hope is a 54% multiple bet",
+      "body": "Materials' trailing P/E sits at the 93rd percentile of its five-year range, yet the forward multiple is only at the 44th. The market is underwriting 119 percent earnings growth, a bet that the current earnings trough is temporary and that the 54 percent compression is justified."
     },
     {
-      "title": "Materials' trailing P/E at 93rd percentile",
-      "body": "With a trailing multiple of 38.93, Materials is the most expensive on reported earnings, while its forward P/E of 17.71 sits at the 44th percentile. The 49-point gap indicates the market expects a 120% earnings surge, a steep bet on future profitability."
+      "title": "Consumer Staples' one-month slide breaks its rich streak",
+      "body": "Consumer Staples' forward percentile dropped 33 points in a month, even as the trailing multiple remains at the 84th percentile. That 47-point gap between lenses suggests the market is rapidly repricing expectations for earnings growth, not just a valuation reset."
     },
     {
-      "title": "Energy's forward P/E jumps 20 points in a month",
-      "body": "Energy's forward multiple rose from cheaper levels to the 59th percentile, now at 12.60. Despite a 14-point gap favoring trailing estimates, the one-month shift suggests improving sentiment, though implied growth of 37% remains below the sector's historical peak."
+      "title": "Utilities' cheapness is a five-year anomaly",
+      "body": "Utilities' forward P/E percentile fell 28 points in a month to the 19th, with the trailing multiple at the 6th percentile. This is a sector at the bottom of its own valuation range, a position that has historically been rare for a defensive group."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-27"
+  "as_of": "2026-08-28"
 }
