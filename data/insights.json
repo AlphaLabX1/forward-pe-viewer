@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 119% earnings hope is a 54% multiple bet",
-      "body": "Materials' trailing P/E sits at the 93rd percentile of its five-year range, yet the forward multiple is only at the 44th. The market is underwriting 119 percent earnings growth, a bet that the current earnings trough is temporary and that the 54 percent compression is justified."
+      "title": "Health Care's steep valuation gap",
+      "body": "Health Care trades at a 46% discount on forward earnings versus trailing, the widest gap among sectors. This implies the market expects 86% earnings growth, a bold bet that may already be priced in."
     },
     {
-      "title": "Consumer Staples' one-month slide breaks its rich streak",
-      "body": "Consumer Staples' forward percentile dropped 33 points in a month, even as the trailing multiple remains at the 84th percentile. That 47-point gap between lenses suggests the market is rapidly repricing expectations for earnings growth, not just a valuation reset."
+      "title": "Materials' extreme percentile divergence",
+      "body": "Materials' forward P/E sits at the 44th percentile while trailing is at the 93rd, a 49-point spread. The 119% expected earnings growth underpins this, but the gap suggests high optimism versus recent reality."
     },
     {
-      "title": "Utilities' cheapness is a five-year anomaly",
-      "body": "Utilities' forward P/E percentile fell 28 points in a month to the 19th, with the trailing multiple at the 6th percentile. This is a sector at the bottom of its own valuation range, a position that has historically been rare for a defensive group."
+      "title": "Consumer Staples' rare cheapness",
+      "body": "Consumer Staples' forward P/E percentile dropped 23 points in a week, the largest move among sectors. Despite a 48-point gap favoring forward valuations, the sector now sits at its cheapest level in five years."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-08-28"
+  "as_of": "2026-08-31"
 }
