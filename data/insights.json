@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 50-point lens gap signals earnings bet",
-      "body": "Materials trades at a 50-point percentile gap between its trailing and forward lenses, the widest in the table. The market is underwriting 119 percent earnings growth, a bet that reported earnings are a poor guide to the next twelve months."
+      "title": "Materials' 119% earnings hope looks stretched",
+      "body": "Materials trades at 17.32x forward but 38.01x trailing, a 51-point percentile gap between the two lenses. The forward multiple is priced for 119 percent earnings growth, yet the sector sits at only the 40th percentile of its own five-year range — the market is not treating that growth as a sure thing."
     },
     {
-      "title": "Consumer Staples' forward plunge versus rich trailing",
-      "body": "Consumer Staples' forward percentile has dropped 18 points in a week while its trailing percentile sits at 84. The forward lens is pricing in a 44 percent earnings surge, but the speed of the de-rating suggests the market is losing faith in that forecast."
+      "title": "Consumer Staples' forward discount is a bet",
+      "body": "Consumer Staples' forward P/E of 19.72 sits at the 35th percentile while its trailing multiple of 28.38 is at the 84th. That 49-point percentile gap implies analysts expect 44 percent earnings growth to rescue a sector that has been richly valued on reported earnings — a sharp re-rating that is far from guaranteed."
     },
     {
-      "title": "Real Estate's week-long valuation collapse",
-      "body": "Real Estate's forward percentile fell 31 points in a single week, the largest weekly move in the table. That drop, against a modest 5 percent implied earnings decline, points to a repricing of the sector's risk rather than a change in its fundamentals."
+      "title": "Information Technology's percentile gap signals caution",
+      "body": "Information Technology's forward P/E of 21.80 is at the 12th percentile, but its trailing P/E of 37.09 sits at the 56th. The 44-point gap means the market is paying up for 70 percent expected earnings growth, yet the forward multiple's low percentile suggests buyers are not confident enough to push it higher — a disconnect between hope and conviction."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-01"
+  "as_of": "2026-09-02"
 }
