@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 119% earnings hope looks stretched",
-      "body": "Materials trades at 17.32x forward but 38.01x trailing, a 51-point percentile gap between the two lenses. The forward multiple is priced for 119 percent earnings growth, yet the sector sits at only the 40th percentile of its own five-year range — the market is not treating that growth as a sure thing."
+      "title": "Materials' 54% multiple compression is a bet on a 120% earnings surge",
+      "body": "Materials trades at 17.68x forward versus 38.81x trailing, a 54 percent compression that implies analysts expect next-12m earnings to grow 120 percent. That is an extraordinary underwriting of margin recovery, especially when the forward multiple sits at only the 44th percentile of its five-year range while the trailing multiple is at the 93rd."
     },
     {
-      "title": "Consumer Staples' forward discount is a bet",
-      "body": "Consumer Staples' forward P/E of 19.72 sits at the 35th percentile while its trailing multiple of 28.38 is at the 84th. That 49-point percentile gap implies analysts expect 44 percent earnings growth to rescue a sector that has been richly valued on reported earnings — a sharp re-rating that is far from guaranteed."
+      "title": "Information Technology's forward multiple is historically cheap despite rich trailing",
+      "body": "IT's forward P/E of 21.66 sits at the 11th percentile of its five-year range, yet its trailing P/E of 36.70 is at the 52nd. The 41-point gap between lenses reflects a 69 percent expected earnings jump, but the market is pricing that growth at a level rarely seen in the last five years."
     },
     {
-      "title": "Information Technology's percentile gap signals caution",
-      "body": "Information Technology's forward P/E of 21.80 is at the 12th percentile, but its trailing P/E of 37.09 sits at the 56th. The 44-point gap means the market is paying up for 70 percent expected earnings growth, yet the forward multiple's low percentile suggests buyers are not confident enough to push it higher — a disconnect between hope and conviction."
+      "title": "Real Estate's forward multiple collapsed while trailing stayed flat",
+      "body": "Real Estate's forward P/E fell 15 percentile points in a week and 16 in a month, landing at 36.39x with a 36th-percentile rank, while its trailing multiple of 34.76x sits at the 30th percentile. The forward lens now implies a 4 percent earnings decline, a sharp reversal from the optimism that had been embedded just weeks ago."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-02"
+  "as_of": "2026-09-03"
 }
