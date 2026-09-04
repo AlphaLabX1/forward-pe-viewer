@@ -1,5 +1,5 @@
 {
-  "text": "Health Care trades at its richest level in five years while Real Estate plunged 15 percentile points this week, the largest sector swing. The S&P 500 sits at the 37th percentile, with Communication Services near its cheapest reading ever.",
+  "text": "Health Care trades at its richest valuation in five years, with a forward P/E of 19.3. Real Estate fell ten percentile points this week, the steepest drop of any sector.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-03"
+  "as_of": "2026-09-04"
 }

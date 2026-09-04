@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 54% multiple compression is a bet on a 120% earnings surge",
-      "body": "Materials trades at 17.68x forward versus 38.81x trailing, a 54 percent compression that implies analysts expect next-12m earnings to grow 120 percent. That is an extraordinary underwriting of margin recovery, especially when the forward multiple sits at only the 44th percentile of its five-year range while the trailing multiple is at the 93rd."
+      "title": "Materials' 50-point lens gap signals earnings cliff",
+      "body": "Materials trades at 17.52x forward but 38.39x trailing, a 54 percent compression that implies 119 percent earnings growth. The trailing multiple sits at the 92nd percentile while the forward multiple is near mid-range, meaning the market is pricing a dramatic normalization that has not yet shown up in reported results."
     },
     {
-      "title": "Information Technology's forward multiple is historically cheap despite rich trailing",
-      "body": "IT's forward P/E of 21.66 sits at the 11th percentile of its five-year range, yet its trailing P/E of 36.70 is at the 52nd. The 41-point gap between lenses reflects a 69 percent expected earnings jump, but the market is pricing that growth at a level rarely seen in the last five years."
+      "title": "Consumer Staples' forward price ignores trailing richness",
+      "body": "Consumer Staples' trailing P/E is at the 84th percentile, yet its forward multiple sits at the 36th percentile, a 48-point gap. Analysts are underwriting 44 percent earnings growth, a bold assumption for a defensive sector that typically delivers single-digit expansion."
     },
     {
-      "title": "Real Estate's forward multiple collapsed while trailing stayed flat",
-      "body": "Real Estate's forward P/E fell 15 percentile points in a week and 16 in a month, landing at 36.39x with a 36th-percentile rank, while its trailing multiple of 34.76x sits at the 30th percentile. The forward lens now implies a 4 percent earnings decline, a sharp reversal from the optimism that had been embedded just weeks ago."
+      "title": "Energy's month-long surge hits a valuation ceiling",
+      "body": "Energy's forward percentile jumped 23 points in a month to 63, while its trailing percentile holds at 79. The 28 percent multiple compression implies 39 percent earnings growth, but the forward multiple is now richer than its five-year midpoint, leaving little room for further re-rating without earnings delivery."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-03"
+  "as_of": "2026-09-04"
 }
