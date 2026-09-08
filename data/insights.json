@@ -1,16 +1,16 @@
 {
   "findings": [
     {
-      "title": "Materials' 50-point lens gap signals earnings cliff",
-      "body": "Materials trades at 17.52x forward but 38.39x trailing, a 54 percent compression that implies 119 percent earnings growth. The trailing multiple sits at the 92nd percentile while the forward multiple is near mid-range, meaning the market is pricing a dramatic normalization that has not yet shown up in reported results."
+      "title": "Materials' 50-point lens gap is a margin-recovery bet",
+      "body": "Materials sits at the 41st percentile forward but 91st trailing, with 119 percent implied earnings growth. The market is pricing a full earnings recovery that has not yet shown up in reported results."
     },
     {
-      "title": "Consumer Staples' forward price ignores trailing richness",
-      "body": "Consumer Staples' trailing P/E is at the 84th percentile, yet its forward multiple sits at the 36th percentile, a 48-point gap. Analysts are underwriting 44 percent earnings growth, a bold assumption for a defensive sector that typically delivers single-digit expansion."
+      "title": "Consumer Staples' percentile collapse hides a rich trailing multiple",
+      "body": "Staples fell 15 points in forward percentile over the month to the 28th, yet its trailing P/E is at the 84th percentile. The forward lens is discounting a 44 percent earnings jump that the trailing numbers have not confirmed."
     },
     {
-      "title": "Energy's month-long surge hits a valuation ceiling",
-      "body": "Energy's forward percentile jumped 23 points in a month to 63, while its trailing percentile holds at 79. The 28 percent multiple compression implies 39 percent earnings growth, but the forward multiple is now richer than its five-year midpoint, leaving little room for further re-rating without earnings delivery."
+      "title": "Communication Services is the cheapest it has been in five years",
+      "body": "At the 1st forward percentile, Communication Services is at the very bottom of its five-year range, with a 25-point gap toward trailing richness. The market is underwriting 55 percent earnings growth, a steep bet that has not yet materialized."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",

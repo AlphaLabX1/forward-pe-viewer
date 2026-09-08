@@ -1,5 +1,5 @@
 {
-  "text": "Health Care trades at its richest valuation in five years, with a forward P/E of 19.3. Real Estate fell ten percentile points this week, the steepest drop of any sector.",
+  "text": "Health Care trades at the 84th percentile of its five-year valuation range, the richest sector today. Real Estate fell 14 percentile points this week, the largest move, while the Fear & Greed index dropped to 42.",
   "model": "~deepseek/deepseek-v4-flash-latest",
   "as_of": "2026-09-04"
 }
