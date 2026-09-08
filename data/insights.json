@@ -2,17 +2,17 @@
   "findings": [
     {
       "title": "Materials' 50-point lens gap is a margin-recovery bet",
-      "body": "Materials sits at the 41st percentile forward but 91st trailing, with 119 percent implied earnings growth. The market is pricing a full earnings recovery that has not yet shown up in reported results."
+      "body": "Materials trades at 17.40x forward but 38.13x trailing, a 54 percent compression that implies 119 percent earnings growth. The market is underwriting a full earnings recovery from a depressed base, not a structural re-rating."
     },
     {
-      "title": "Consumer Staples' percentile collapse hides a rich trailing multiple",
-      "body": "Staples fell 15 points in forward percentile over the month to the 28th, yet its trailing P/E is at the 84th percentile. The forward lens is discounting a 44 percent earnings jump that the trailing numbers have not confirmed."
+      "title": "Consumer Staples' forward percentile collapses while trailing stays rich",
+      "body": "Staples' forward multiple sits at percentile 28 after a 14-point monthly cheapening, yet its trailing P/E remains at percentile 84. Analysts are pricing in 44 percent earnings growth that would justify the compression, but the market is already discounting that optimism."
     },
     {
-      "title": "Communication Services is the cheapest it has been in five years",
-      "body": "At the 1st forward percentile, Communication Services is at the very bottom of its five-year range, with a 25-point gap toward trailing richness. The market is underwriting 55 percent earnings growth, a steep bet that has not yet materialized."
+      "title": "Communication Services sits at a five-year forward low",
+      "body": "At a forward P/E of 13.84 and percentile 1, Communication Services is the cheapest it has been in five years on forward earnings, despite a trailing percentile of 27. The 35 percent multiple compression implies 55 percent growth, a steep hurdle that the market is not yet rewarding."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-04"
+  "as_of": "2026-09-08"
 }
