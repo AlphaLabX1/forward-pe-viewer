@@ -1,5 +1,5 @@
 {
-  "text": "Health Care trades at its richest level in five years, while Communication Services sits at its cheapest. The tape is split between defensive crowding and a sharp rotation into Financials and Consumer Discretionary.",
+  "text": "Industrials and health care trade at their 75th percentile, while communication services sit at the 1st. Consumer staples fell 14 points this week, the sharpest drop among sectors.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-08"
+  "as_of": "2026-09-09"
 }

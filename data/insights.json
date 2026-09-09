@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 50-point lens gap is a margin-recovery bet",
-      "body": "Materials trades at 17.40x forward but 38.13x trailing, a 54 percent compression that implies 119 percent earnings growth. The market is underwriting a full earnings recovery from a depressed base, not a structural re-rating."
+      "title": "Materials' 120% growth bet is extreme",
+      "body": "Materials trades at 17.24x forward but 37.86x trailing, a 54 percent compression that assumes earnings nearly double. That puts the trailing multiple at the 91st percentile while the forward multiple sits at the 38th, a 52-point gap — the widest in the table and a bet on a margin recovery that has not yet shown up."
     },
     {
-      "title": "Consumer Staples' forward percentile collapses while trailing stays rich",
-      "body": "Staples' forward multiple sits at percentile 28 after a 14-point monthly cheapening, yet its trailing P/E remains at percentile 84. Analysts are pricing in 44 percent earnings growth that would justify the compression, but the market is already discounting that optimism."
+      "title": "Health Care's 84% growth is priced in",
+      "body": "Health Care's forward and trailing multiples both sit at the 75th percentile, yet the forward lens is 46 percent cheaper. That compression implies 84 percent earnings growth next year, an unusually aggressive assumption for a sector whose valuation has not moved lower in five years."
     },
     {
-      "title": "Communication Services sits at a five-year forward low",
-      "body": "At a forward P/E of 13.84 and percentile 1, Communication Services is the cheapest it has been in five years on forward earnings, despite a trailing percentile of 27. The 35 percent multiple compression implies 55 percent growth, a steep hurdle that the market is not yet rewarding."
+      "title": "Consumer Staples' percentile gap signals distress",
+      "body": "Consumer Staples' trailing P/E is at the 82nd percentile while the forward multiple is at the 24th, a 58-point gap. The 30 percent compression implies 44 percent earnings growth, but the one-week 14-point drop in forward percentile suggests analysts are rapidly losing confidence in that recovery."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-08"
+  "as_of": "2026-09-09"
 }
