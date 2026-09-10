@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 120% growth bet is extreme",
-      "body": "Materials trades at 17.24x forward but 37.86x trailing, a 54 percent compression that assumes earnings nearly double. That puts the trailing multiple at the 91st percentile while the forward multiple sits at the 38th, a 52-point gap — the widest in the table and a bet on a margin recovery that has not yet shown up."
+      "title": "Materials' 54-point lens gap signals earnings collapse bet",
+      "body": "Materials trades at 17.09x forward versus 37.46x trailing, a 54 percent compression that ranks its trailing multiple at the 90th percentile. Analysts are underwriting 119 percent earnings growth, an extraordinary bet that reported earnings are about to be left in the dust."
     },
     {
-      "title": "Health Care's 84% growth is priced in",
-      "body": "Health Care's forward and trailing multiples both sit at the 75th percentile, yet the forward lens is 46 percent cheaper. That compression implies 84 percent earnings growth next year, an unusually aggressive assumption for a sector whose valuation has not moved lower in five years."
+      "title": "Consumer Staples' percentile gap hides a valuation crash",
+      "body": "Consumer Staples' forward multiple sits at the 15th percentile while its trailing multiple ranks at the 79th, a 63-point gap. The 30 percent compression implies analysts expect a 44 percent earnings surge, yet the forward percentile has fallen 20 points in a month — the market is pricing in a recovery that keeps getting pushed out."
     },
     {
-      "title": "Consumer Staples' percentile gap signals distress",
-      "body": "Consumer Staples' trailing P/E is at the 82nd percentile while the forward multiple is at the 24th, a 58-point gap. The 30 percent compression implies 44 percent earnings growth, but the one-week 14-point drop in forward percentile suggests analysts are rapidly losing confidence in that recovery."
+      "title": "Communication Services' forward multiple is historically cheap",
+      "body": "Communication Services trades at 13.65x forward, the 1st percentile of its five-year range, while its trailing multiple sits at the 27th percentile. The 36 percent compression and 55 percent implied growth suggest the market is pricing in a dramatic earnings rebound from a deeply depressed base."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-09"
+  "as_of": "2026-09-10"
 }
