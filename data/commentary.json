@@ -1,5 +1,5 @@
 {
-  "text": "Health Care and Consumer Staples slid the most in valuation percentile this week, while Communication Services sits at its cheapest level in five years. The S&P 500 trades near its mid-range, with the Fear & Greed index at 36.",
+  "text": "Health Care and Industrials sit at the 73rd and 72nd percentiles, the richest sectors, while Communication Services is at the 1st percentile. The Fear & Greed index fell from 45 to 34, with Consumer Discretionary dropping 16 percentile points.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-10"
+  "as_of": "2026-09-11"
 }

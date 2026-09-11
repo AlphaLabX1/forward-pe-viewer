@@ -1,18 +1,14 @@
 {
   "findings": [
     {
-      "title": "Materials' 54-point lens gap signals earnings collapse bet",
-      "body": "Materials trades at 17.09x forward versus 37.46x trailing, a 54 percent compression that ranks its trailing multiple at the 90th percentile. Analysts are underwriting 119 percent earnings growth, an extraordinary bet that reported earnings are about to be left in the dust."
+      "title": "Consumer Staples: Trailing Rich, Forward Cheap",
+      "body": "Consumer Staples trades at its 16th percentile forward but at the 79th percentile trailing, a 63-point divergence that implies analysts expect a 44 percent earnings jump. The market is pricing in a fundamental shift in profitability for a sector that has historically been a slow, steady compounder."
     },
     {
-      "title": "Consumer Staples' percentile gap hides a valuation crash",
-      "body": "Consumer Staples' forward multiple sits at the 15th percentile while its trailing multiple ranks at the 79th, a 63-point gap. The 30 percent compression implies analysts expect a 44 percent earnings surge, yet the forward percentile has fallen 20 points in a month — the market is pricing in a recovery that keeps getting pushed out."
-    },
-    {
-      "title": "Communication Services' forward multiple is historically cheap",
-      "body": "Communication Services trades at 13.65x forward, the 1st percentile of its five-year range, while its trailing multiple sits at the 27th percentile. The 36 percent compression and 55 percent implied growth suggest the market is pricing in a dramatic earnings rebound from a deeply depressed base."
+      "title": "Real Estate: Lenses Agree, Yet Cheapest",
+      "body": "Real Estate is the only sector where the forward and trailing percentiles match at 27, yet it is still the cheapest it has been in five years. With a 4 percent earnings decline expected and a week-over-week drop of 12 percentile points, investors have decisively repriced the sector lower without any debate about earnings quality."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-10"
+  "as_of": "2026-09-11"
 }
