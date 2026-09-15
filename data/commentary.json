@@ -1,5 +1,5 @@
 {
-  "text": "Health Care and Industrials sit at the 73rd and 72nd percentiles, the richest sectors, while Communication Services is at the 1st percentile. The Fear & Greed index fell from 45 to 34, with Consumer Discretionary dropping 16 percentile points.",
+  "text": "Industrials and health care sit in the top quartile of their five-year valuation ranges, while communication services trades at its cheapest percentile on record. The S&P 500 is below its historical midpoint, with fear readings up from a month ago.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-11"
+  "as_of": "2026-09-14"
 }

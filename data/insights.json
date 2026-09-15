@@ -1,14 +1,18 @@
 {
   "findings": [
     {
-      "title": "Consumer Staples: Trailing Rich, Forward Cheap",
-      "body": "Consumer Staples trades at its 16th percentile forward but at the 79th percentile trailing, a 63-point divergence that implies analysts expect a 44 percent earnings jump. The market is pricing in a fundamental shift in profitability for a sector that has historically been a slow, steady compounder."
+      "title": "Staples' forward multiple collapses while trailing stays rich",
+      "body": "Consumer Staples' forward P/E sits at the 18th percentile of its five-year range even as its trailing multiple remains at the 80th, a 61-point gap that is the widest in the table. The market is pricing a 44 percent earnings jump that has not yet materialized, so the cheapness is a bet on a recovery, not a reflection of current profitability."
     },
     {
-      "title": "Real Estate: Lenses Agree, Yet Cheapest",
-      "body": "Real Estate is the only sector where the forward and trailing percentiles match at 27, yet it is still the cheapest it has been in five years. With a 4 percent earnings decline expected and a week-over-week drop of 12 percentile points, investors have decisively repriced the sector lower without any debate about earnings quality."
+      "title": "Materials' extreme gap signals an earnings cliff",
+      "body": "Materials trades at a 56-point percentile gap between its trailing and forward lenses, with a forward P/E at the 33rd percentile versus trailing at the 89th. That implies a 121 percent earnings surge is expected to rescue the multiple, an unusually aggressive assumption that leaves little room for disappointment."
+    },
+    {
+      "title": "Communication Services is historically cheap on forward earnings",
+      "body": "Communication Services' forward P/E sits at the 1st percentile of its five-year range, the cheapest any sector gets in this table, while its trailing multiple is only at the 28th. The 57 percent implied earnings growth is already discounted, meaning the market is paying almost nothing for the forward stream and pricing in a steep rebound that must arrive quickly."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-11"
+  "as_of": "2026-09-14"
 }
