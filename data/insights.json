@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Staples' forward multiple collapses while trailing stays rich",
-      "body": "Consumer Staples' forward P/E sits at the 18th percentile of its five-year range even as its trailing multiple remains at the 80th, a 61-point gap that is the widest in the table. The market is pricing a 44 percent earnings jump that has not yet materialized, so the cheapness is a bet on a recovery, not a reflection of current profitability."
+      "title": "Materials' 60-point lens gap signals earnings bet",
+      "body": "Materials trades at 16.62x forward versus 36.79x trailing, a 60-point percentile gap between the two lenses. That is the market pricing in a 121 percent earnings surge, an aggressive assumption for a sector sitting at the 29th percentile of its own five-year range."
     },
     {
-      "title": "Materials' extreme gap signals an earnings cliff",
-      "body": "Materials trades at a 56-point percentile gap between its trailing and forward lenses, with a forward P/E at the 33rd percentile versus trailing at the 89th. That implies a 121 percent earnings surge is expected to rescue the multiple, an unusually aggressive assumption that leaves little room for disappointment."
+      "title": "Consumer Staples' forward price ignores trailing reality",
+      "body": "Consumer Staples' forward P/E sits at the 27th percentile while its trailing multiple is at the 83rd, a 56-point gap. The market is paying a premium for future earnings growth that has not materialized yet, leaving the sector's valuation vulnerable if those estimates are revised down."
     },
     {
-      "title": "Communication Services is historically cheap on forward earnings",
-      "body": "Communication Services' forward P/E sits at the 1st percentile of its five-year range, the cheapest any sector gets in this table, while its trailing multiple is only at the 28th. The 57 percent implied earnings growth is already discounted, meaning the market is paying almost nothing for the forward stream and pricing in a steep rebound that must arrive quickly."
+      "title": "Information Technology's percentile collapse outpaces multiple",
+      "body": "Information Technology's forward percentile dropped 13 points in a month to the 11th, yet its forward P/E of 21.67 remains above the S&P 500's 20.07. The sector is being repriced as if growth is slowing, but the multiple still commands a premium over the broad market, suggesting the de-rating has further to run."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-14"
+  "as_of": "2026-09-15"
 }
