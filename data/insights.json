@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 54-point lens gap signals earnings cliff",
-      "body": "Materials trades at 16.93x forward versus 36.30x trailing, a 54-point percentile gap — the widest in the table. The market is pricing a 114 percent earnings surge that would be the steepest in the S&P 500, an aggressive bet for a sector at the 34th percentile of its own history."
+      "title": "Materials' 55-point lens gap signals collapse",
+      "body": "Materials' trailing P/E sits at the 88th percentile while its forward P/E is at the 32nd, a 55-point divergence. That gap implies analysts expect 114 percent earnings growth, a bet on a profit explosion that would be extraordinary even for a cyclical at the bottom of its cycle."
     },
     {
-      "title": "Staples' cheap forward hides rich trailing reality",
-      "body": "Consumer Staples sits at the 21st percentile on forward earnings but the 80th on trailing, a 60-point divergence. That gap implies analysts expect 43 percent profit growth, which would be a sharp reversal for a defensive sector whose trailing multiple is still historically elevated."
+      "title": "Staples' forward cheapness hides earnings risk",
+      "body": "Consumer Staples' forward P/E has fallen 27 percentile points in a month to the 17th, yet its trailing P/E remains at the 79th percentile. The market is pricing in 43 percent earnings growth, but the speed of the de-rating suggests doubts about whether that growth is achievable."
     },
     {
-      "title": "Tech's forward percentile collapse outpaces multiple drop",
-      "body": "Information Technology's forward percentile fell 14 points in a month to the 11th, yet its forward P/E of 21.61 is only modestly below the market's 19.99. The percentile slide reflects a sector-wide de-rating, but the absolute multiple still demands 69 percent earnings growth — a disconnect between relative and absolute valuation."
+      "title": "Communication Services is historically cheap",
+      "body": "Communication Services trades at a forward P/E of 13.68, the 1st percentile of its five-year range, while its trailing multiple is at the 27th. The 26-point gap reflects an expectation of 56 percent earnings growth, but the valuation is already pricing in a severe earnings disappointment."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-16"
+  "as_of": "2026-09-17"
 }
