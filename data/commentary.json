@@ -1,5 +1,5 @@
 {
-  "text": "Health Care trades at the 76th percentile of its five-year valuation range, the richest of any sector, while Communication Services sits at the 1st percentile. Energy, Financials, and Consumer Discretionary all cheapened sharply this week, as the Fear & Greed index fell to 30.",
+  "text": "Health Care is the only sector to move richer this week, climbing to the 79th percentile of its five-year valuation range. Financials fell 11 percentile points, leaving the broad market at the 36th percentile with the Fear & Greed index at 28.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-17"
+  "as_of": "2026-09-18"
 }

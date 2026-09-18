@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 55-point lens gap signals collapse",
-      "body": "Materials' trailing P/E sits at the 88th percentile while its forward P/E is at the 32nd, a 55-point divergence. That gap implies analysts expect 114 percent earnings growth, a bet on a profit explosion that would be extraordinary even for a cyclical at the bottom of its cycle."
+      "title": "Materials' 54-point lens gap signals earnings hope",
+      "body": "Materials trades at 16.96x forward versus 36.21x trailing, a 53 percent compression that ranks at the 88th percentile on trailing earnings. The market is underwriting 113 percent earnings growth, an aggressive bet that the sector's reported profits are about to inflect sharply."
     },
     {
-      "title": "Staples' forward cheapness hides earnings risk",
-      "body": "Consumer Staples' forward P/E has fallen 27 percentile points in a month to the 17th, yet its trailing P/E remains at the 79th percentile. The market is pricing in 43 percent earnings growth, but the speed of the de-rating suggests doubts about whether that growth is achievable."
+      "title": "Consumer Staples' forward multiple collapses to 19th percentile",
+      "body": "Consumer Staples' forward P/E fell 35 percentile points in a month to 19.30, while its trailing multiple sits at the 79th percentile. That 60-point gap between lenses implies analysts expect 43 percent earnings growth, yet the market is pricing the forward view as if that growth is already failing."
     },
     {
-      "title": "Communication Services is historically cheap",
-      "body": "Communication Services trades at a forward P/E of 13.68, the 1st percentile of its five-year range, while its trailing multiple is at the 27th. The 26-point gap reflects an expectation of 56 percent earnings growth, but the valuation is already pricing in a severe earnings disappointment."
+      "title": "Communication Services' forward multiple at one-year low",
+      "body": "Communication Services trades at 13.66x forward, the 1st percentile of its five-year range, while trailing earnings sit at the 28th percentile. The 27-point gap and 36 percent compression imply the market is pricing in a 57 percent earnings surge, but the extreme forward discount suggests skepticism that it will arrive."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-17"
+  "as_of": "2026-09-18"
 }
