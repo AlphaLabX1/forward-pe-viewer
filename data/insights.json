@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 54-point lens gap signals earnings hope",
-      "body": "Materials trades at 16.96x forward versus 36.21x trailing, a 53 percent compression that ranks at the 88th percentile on trailing earnings. The market is underwriting 113 percent earnings growth, an aggressive bet that the sector's reported profits are about to inflect sharply."
+      "title": "Materials' 59-Point Lens Gap Signals Distress",
+      "body": "Materials' trailing P/E sits at the 91st percentile while its forward multiple is only at the 32nd, a 59-point spread that is the widest in the table. This implies the market expects a 126 percent earnings surge, a bet that looks overly optimistic given the sector's current valuation extremes."
     },
     {
-      "title": "Consumer Staples' forward multiple collapses to 19th percentile",
-      "body": "Consumer Staples' forward P/E fell 35 percentile points in a month to 19.30, while its trailing multiple sits at the 79th percentile. That 60-point gap between lenses implies analysts expect 43 percent earnings growth, yet the market is pricing the forward view as if that growth is already failing."
+      "title": "Consumer Staples' Forward Cheapness Masks Rich History",
+      "body": "Consumer Staples' forward P/E has plunged 31 percentile points in a month to the 13th percentile, yet its trailing multiple remains at the 77th percentile. This 64-point gap between lenses suggests the market is pricing in a dramatic earnings rebound, but the sector's historical valuation still looks stretched."
     },
     {
-      "title": "Communication Services' forward multiple at one-year low",
-      "body": "Communication Services trades at 13.66x forward, the 1st percentile of its five-year range, while trailing earnings sit at the 28th percentile. The 27-point gap and 36 percent compression imply the market is pricing in a 57 percent earnings surge, but the extreme forward discount suggests skepticism that it will arrive."
+      "title": "Utilities' Zero Percentile Hides Steep De-Rating",
+      "body": "Utilities now trades at its cheapest forward multiple in five years, with a 15-point weekly drop pushing it to the 0th percentile. The 33 percent compression between trailing and forward earnings implies a 48 percent profit recovery, yet the sector's defensive appeal may be fading as rate expectations shift."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-18"
+  "as_of": "2026-09-21"
 }

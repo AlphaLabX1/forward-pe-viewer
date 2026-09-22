@@ -1,5 +1,5 @@
 {
-  "text": "Health Care is the only sector to move richer this week, climbing to the 79th percentile of its five-year valuation range. Financials fell 11 percentile points, leaving the broad market at the 36th percentile with the Fear & Greed index at 28.",
+  "text": "Health Care trades at its richest level in five years relative to its own history, while Utilities sit at their cheapest. The week's selling concentrated in defensive sectors, leaving the S&P 500 near the middle of its valuation range.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-18"
+  "as_of": "2026-09-21"
 }
