@@ -1,5 +1,5 @@
 {
-  "text": "Health Care trades at its richest level in five years relative to its own history, while Utilities sit at their cheapest. The week's selling concentrated in defensive sectors, leaving the S&P 500 near the middle of its valuation range.",
+  "text": "Health Care trades at its richest level in five years while Real Estate fell 13 percentile points this week, the sharpest drop of any sector. Communication Services and Information Technology both moved richer, though the S&P 500 sits near the middle of its valuation range.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-21"
+  "as_of": "2026-09-22"
 }

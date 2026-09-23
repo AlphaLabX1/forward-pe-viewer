@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 59-Point Lens Gap Signals Distress",
-      "body": "Materials' trailing P/E sits at the 91st percentile while its forward multiple is only at the 32nd, a 59-point spread that is the widest in the table. This implies the market expects a 126 percent earnings surge, a bet that looks overly optimistic given the sector's current valuation extremes."
+      "title": "Huge gap between what analysts and history say about Materials",
+      "body": "Materials sits at its 30th percentile on forward earnings but 93rd on trailing, a 63-point split that is the widest in the table. Analysts are pricing a 133 percent earnings surge plausible enough to slash the multiple in half; the market is not yet paying for it."
     },
     {
-      "title": "Consumer Staples' Forward Cheapness Masks Rich History",
-      "body": "Consumer Staples' forward P/E has plunged 31 percentile points in a month to the 13th percentile, yet its trailing multiple remains at the 77th percentile. This 64-point gap between lenses suggests the market is pricing in a dramatic earnings rebound, but the sector's historical valuation still looks stretched."
+      "title": "Health Care's optimism overrides a rich trailing multiple",
+      "body": "Both lenses show Health Care above its five-year midpoint, yet the street expects 85 percent earnings growth that would compress the forward multiple 46 percent below trailing. That is the market underwriting dramatic margin expansion at a time when the sector's own history suggests valuations are already full."
     },
     {
-      "title": "Utilities' Zero Percentile Hides Steep De-Rating",
-      "body": "Utilities now trades at its cheapest forward multiple in five years, with a 15-point weekly drop pushing it to the 0th percentile. The 33 percent compression between trailing and forward earnings implies a 48 percent profit recovery, yet the sector's defensive appeal may be fading as rate expectations shift."
+      "title": "Energy's forward value is a bad bet on margins",
+      "body": "Energy's forward P/E of 12.20 looks cheap at the 51st percentile, but its trailing multiple is in the 77th percentile with a 31 percent compression gap. The cheapness assumes a 46 percent earnings jump, and the one-month slide of 12 percentile points shows investors are not convinced that earnings will arrive."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-21"
+  "as_of": "2026-09-22"
 }
