@@ -1,5 +1,5 @@
 {
-  "text": "Health Care trades at its richest level in five years while Real Estate fell 13 percentile points this week, the sharpest drop of any sector. Communication Services and Information Technology both moved richer, though the S&P 500 sits near the middle of its valuation range.",
+  "text": "Health Care and Industrials trade at their richest levels in five years, while Information Technology and Communication Services surged 17 and 11 percentile points this week. The S&P 500 sits near mid-valuation with a Fear reading of 36.",
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-22"
+  "as_of": "2026-09-23"
 }

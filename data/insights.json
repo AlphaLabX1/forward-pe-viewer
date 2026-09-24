@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Huge gap between what analysts and history say about Materials",
-      "body": "Materials sits at its 30th percentile on forward earnings but 93rd on trailing, a 63-point split that is the widest in the table. Analysts are pricing a 133 percent earnings surge plausible enough to slash the multiple in half; the market is not yet paying for it."
+      "title": "Materials' 60-point lens gap signals extreme earnings hope",
+      "body": "Materials shows a 60-point percentile gap between its trailing (94th) and forward (34th) valuations, the widest in the table. That spread implies the market expects 133 percent earnings growth, a bet that current depressed earnings are about to inflect sharply upward."
     },
     {
-      "title": "Health Care's optimism overrides a rich trailing multiple",
-      "body": "Both lenses show Health Care above its five-year midpoint, yet the street expects 85 percent earnings growth that would compress the forward multiple 46 percent below trailing. That is the market underwriting dramatic margin expansion at a time when the sector's own history suggests valuations are already full."
+      "title": "Consumer Staples' month-long slide contradicts its rich trailing multiple",
+      "body": "Consumer Staples' forward percentile dropped 38 points in a month, the steepest decline among all sectors, yet its trailing P/E sits at the 59th percentile. This divergence suggests the market is rapidly repricing defensive earnings power lower, even though reported results haven't yet validated that pessimism."
     },
     {
-      "title": "Energy's forward value is a bad bet on margins",
-      "body": "Energy's forward P/E of 12.20 looks cheap at the 51st percentile, but its trailing multiple is in the 77th percentile with a 31 percent compression gap. The cheapness assumes a 46 percent earnings jump, and the one-month slide of 12 percentile points shows investors are not convinced that earnings will arrive."
+      "title": "Real Estate's forward multiple belies its earnings decline",
+      "body": "Real Estate trades at a 34.97 forward P/E despite an implied 4 percent earnings decline, a combination that only makes sense if analysts expect a sharp reversal. Its forward percentile of 17 is near the bottom of its five-year range, yet the multiple itself remains high in absolute terms—an unusual pairing of cheapness and stagnation."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-22"
+  "as_of": "2026-09-23"
 }
