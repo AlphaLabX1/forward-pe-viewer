@@ -1,14 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 61-point lens gap signals earnings cliff",
-      "body": "Materials sits at the 94th percentile on trailing earnings but only the 33rd on forward estimates, the widest split in the table. The market is pricing a 133 percent earnings surge that would have to materialize within twelve months to justify the gap."
+      "title": "Materials' forward P/E hides a 127% earnings bet",
+      "body": "Materials trades at 16.36x forward but 37.15x trailing, a 65-point percentile gap between the two lenses. The market is underwriting a 127 percent earnings surge that would be the steepest in the table, yet the forward multiple sits at percentile 23 — cheap only if that growth actually arrives."
     },
     {
-      "title": "Consumer Staples' forward percentile collapses despite stable multiple",
-      "body": "Consumer Staples' forward percentile fell 32 points in a month to the 19th, yet its forward P/E of 19.31 is only modestly below typical levels. The percentile drop is mostly a shift in the sector's own historical distribution, not a dramatic change in the multiple itself."
+      "title": "Real Estate's collapse is a de-rating, not an earnings story",
+      "body": "Real Estate's forward percentile fell 63 points in a month to 8, while its forward P/E of 34.25 remains the highest of any sector. The multiple barely moved relative to that percentile plunge, meaning the selloff is compressing the earnings base itself — implied growth is a 4 percent decline, so investors are paying a premium for shrinking profits."
+    },
+    {
+      "title": "Consumer Staples' cheapness is a month-old panic",
+      "body": "Consumer Staples' forward percentile dropped 39 points in a month to 12, yet its trailing percentile sits at 59 — a 47-point gap. That divergence says the market is pricing in a 39 percent earnings rebound, but the speed of the de-rating looks like a sentiment shock rather than a fundamental repricing."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-24"
+  "as_of": "2026-09-25"
 }

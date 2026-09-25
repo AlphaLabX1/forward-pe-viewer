@@ -1,15 +1,15 @@
 {
-  "generated_at": "2026-09-25T09:33:33+00:00",
+  "generated_at": "2026-09-25T19:45:37+00:00",
   "sources": {
     "koyfin_pe": {
       "ok": true,
-      "as_of": "2026-09-24",
+      "as_of": "2026-09-25",
       "prior_as_of": "2026-09-24",
       "error": null
     },
     "koyfin_prices": {
       "ok": true,
-      "as_of": "2026-09-24",
+      "as_of": "2026-09-25",
       "prior_as_of": "2026-09-24",
       "error": null
     },
@@ -20,14 +20,17 @@
       "error": null
     },
     "fear_greed": {
-      "ok": true,
+      "ok": false,
       "as_of": "2026-09-25",
       "prior_as_of": "2026-09-25",
-      "error": null
+      "error": "HTTP 423: {\"detail\":\"Our browser was detected by target site. Retry the request or try adjusting proxy country, proxy type and browser rendering settings. Our documentation: https://docs.scrapingant.com/ and su",
+      "missing": [
+        "fear_greed"
+      ]
     },
     "breadth": {
       "ok": true,
-      "as_of": "2026-09-24",
+      "as_of": "2026-09-25",
       "prior_as_of": "2026-09-24",
       "error": null
     }
