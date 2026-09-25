@@ -19,6 +19,7 @@ from fetch import (
     SERIES,
     SPX_PRICE_CSV,
     US10Y_CSV,
+    load_status,
     pe_csv,
 )
 
@@ -709,6 +710,71 @@ def render_insights(latest_date_str: str) -> str:
     )
 
 
+SOURCE_LABELS = {
+    "koyfin_pe": "P/E",
+    "koyfin_prices": "SPY/QQQ prices",
+    "us10y": "10Y yield",
+    "fear_greed": "Fear & Greed",
+    "breadth": "Breadth",
+}
+
+CARD_SOURCES = {
+    "01": ("koyfin_pe",),
+    "02": ("koyfin_pe",),
+    "03": ("koyfin_pe",),
+    "04": ("koyfin_pe",),
+    "05": ("fear_greed",),
+    "06": ("fear_greed", "koyfin_prices"),
+    "07": ("fear_greed", "koyfin_prices"),
+    "08": ("koyfin_prices", "us10y"),
+    "09": ("breadth", "koyfin_prices"),
+}
+
+
+def _series_label(name: str) -> str:
+    lens, _, sid = name.partition("/")
+    return f"{SERIES[int(sid)]} {lens}" if sid.isdigit() else name
+
+
+def freshness(status: dict, page_date: str) -> dict[str, dict]:
+    """Per source: as_of, whether it trails the page, and a short reason."""
+    out = {}
+    for source, entry in status["sources"].items():
+        as_of = entry.get("as_of")
+        missing = entry.get("missing") or []
+        if not entry.get("ok") and missing and as_of and as_of >= page_date:
+            why = "missing " + ", ".join(_series_label(m) for m in missing)
+        elif not entry.get("ok"):
+            why = "fetch failed"
+        elif not as_of or as_of < page_date:
+            why = "no new data"
+        else:
+            why = ""
+        out[source] = {"as_of": as_of, "stale": bool(why), "why": why}
+    return out
+
+
+def render_asof(card: str, fresh: dict[str, dict]) -> str:
+    entries = [fresh[s] for s in CARD_SOURCES[card] if s in fresh]
+    if not entries:
+        return ""
+    as_of = min((e["as_of"] for e in entries if e["as_of"]), default="unknown")
+    stale = [e for e in entries if e["stale"]]
+    cls = " stale" if stale else ""
+    suffix = " · stale" if stale else ""
+    return f'<span class="asof{cls}">as of {as_of}{suffix}</span>'
+
+
+def render_stale_note(fresh: dict[str, dict]) -> str:
+    items = [
+        f"{SOURCE_LABELS.get(src, src)} ({f['why']}, last {f['as_of'] or 'never'})"
+        for src, f in fresh.items() if f["stale"]
+    ]
+    if not items:
+        return ""
+    return f'<p class="stale-note">Not current: {html_escape("; ".join(items))}.</p>'
+
+
 def _round_series(pts, ndigits=4):
     return [[d, round(float(v), ndigits)] for d, v in pts if v is not None]
 
@@ -741,13 +807,9 @@ def build() -> Path:
     valuation_spy = valuation_payload(spx_forward_pe, us10y_points)
     valuation_qqq = valuation_payload(qqq_pe, us10y_points)
 
-    # Overall page date = max across families.
-    latest_candidates = [forward["latest_date"]]
-    if trailing:
-        latest_candidates.append(trailing["latest_date"])
-    if fg_points:
-        latest_candidates.append(fg_points[-1][0])
-    latest_date_str = max(latest_candidates)
+    # The page is dated by its P/E data; every other source is judged against it.
+    latest_date_str = forward["latest_date"]
+    fresh = freshness(load_status(), latest_date_str)
     dt = datetime.fromisoformat(latest_date_str)
     latest_label = dt.strftime("%B ") + str(dt.day) + dt.strftime(", %Y")
 
@@ -789,7 +851,10 @@ def build() -> Path:
         .replace("__INSIGHTS__", render_insights(forward["latest_date"]))
         .replace("__ASK_CHIPS__", chips_html)
         .replace("__ASK_PLACEHOLDER__", html_escape(placeholder, quote=True))
-        .replace("__GAUGE__", render_gauge(gauge)))
+        .replace("__GAUGE__", render_gauge(gauge))
+        .replace("__STALE_NOTE__", render_stale_note(fresh)))
+    for card in CARD_SOURCES:
+        html = html.replace(f"__ASOF_{card}__", render_asof(card, fresh))
 
     out = ROOT / "index.html"
     out.write_text(html)
@@ -828,11 +893,11 @@ def render_gauge(g):
 <div class="gauge">
   <div class="gauge-big">
     <div class="gauge-num">{cur:.0f}</div>
-    <div class="gauge-word mono">Today · {_fg_word(cur)}</div>
+    <div class="gauge-word mono">{g["current"]["date"]} · {_fg_word(cur)}</div>
   </div>
   <div class="gauge-right">
     <div class="gauge-bar">
-      <span class="gauge-pointer" style="left:{pointer_pos:.2f}%" title="today · {g["current"]["date"]}"></span>
+      <span class="gauge-pointer" style="left:{pointer_pos:.2f}%" title="{g["current"]["date"]}"></span>
     </div>
     <div class="gauge-scale mono">
       <span>Extreme fear</span><span>Fear</span><span>Neutral</span><span>Greed</span><span>Extreme greed</span>
@@ -952,6 +1017,16 @@ TEMPLATE = r"""<!doctype html>
     max-width: 640px;
   }
   .standfirst time { color: var(--dim); }
+  .stale-note {
+    margin: 10px 0 0; font-family: var(--font-mono); font-size: 11.5px;
+    letter-spacing: 0.02em; color: var(--hot); max-width: 640px;
+  }
+  .stale-banner {
+    margin: 0; padding: 10px 14px; border-radius: 12px;
+    border: 1px solid rgba(248,113,113,0.35); background: rgba(248,113,113,0.08);
+    color: var(--hot); font-size: 13px; font-weight: 600;
+  }
+  .stale-banner[hidden] { display: none; }
   .masthead-side { text-align: right; flex: 0 0 auto; }
 
   /* ── Generated daily read. Deliberately unlike the authored standfirst
@@ -1036,6 +1111,8 @@ TEMPLATE = r"""<!doctype html>
     font-family: var(--font-mono); font-size: 11px; color: var(--dim);
     white-space: nowrap; padding-top: 4px;
   }
+  .asof { display: block; margin-top: 4px; color: var(--dimmer); }
+  .asof.stale { color: var(--hot); }
   .lens-echo {
     display: inline-block;
     padding: 4px 10px;
@@ -1627,12 +1704,14 @@ TEMPLATE = r"""<!doctype html>
   </div>
 
   <div class="inner">
+    <p class="stale-banner" id="stale-banner" hidden></p>
     <!-- ═══ Masthead ═══ -->
     <header class="masthead">
       <div>
         <p class="kicker">AlphaLabX1 — Internal Research · Vol. II</p>
         <h1 class="wordmark">Valuation <em>&amp; Mood</em></h1>
         <p class="standfirst">The S&amp;P 500 and its eleven sectors, seen through two P/E lenses — and the market's mood, plotted against the price beneath it. <time>Updated __LATEST_LABEL__.</time></p>
+        __STALE_NOTE__
         __COMMENTARY__
       </div>
       <div class="masthead-side">
@@ -1654,7 +1733,7 @@ TEMPLATE = r"""<!doctype html>
             <p class="lede">Each dot is a sector's current P/E placed as a percentile of its own trailing five years. <strong>Right is expensive.</strong> A reading of 50 sits on the sector's own five-year median.</p>
           </div>
         </div>
-        <div class="card-aside"><span class="lens-echo"></span></div>
+        <div class="card-aside"><span class="lens-echo"></span>__ASOF_01__</div>
       </div>
 
       <div class="view-forward">
@@ -1711,7 +1790,7 @@ TEMPLATE = r"""<!doctype html>
             <p class="lede">Sectors ordered richest → cheapest against their own history. <strong>Click any row</strong> to isolate it on the chart below.</p>
           </div>
         </div>
-        <div class="card-aside"><span class="lens-echo"></span></div>
+        <div class="card-aside"><span class="lens-echo"></span>__ASOF_02__</div>
       </div>
 
       <div class="view-forward">
@@ -1749,7 +1828,7 @@ TEMPLATE = r"""<!doctype html>
             <p class="lede">Each sector's five-year percentile against where it stood one week and one month ago, biggest richward drift first. <strong>Red grows right — getting richer;</strong> green grows left — getting cheaper.</p>
           </div>
         </div>
-        <div class="card-aside"><span class="lens-echo"></span></div>
+        <div class="card-aside"><span class="lens-echo"></span>__ASOF_03__</div>
       </div>
 
       <div class="view-forward">
@@ -1783,7 +1862,7 @@ TEMPLATE = r"""<!doctype html>
             <p class="lede">Forward view shows 12-month analyst estimates; trailing view uses reported TTM earnings — both daily since 2003 (Real Estate 2016, Communication Services 2018; forward Financials from 2016, since the source is broken before). The percentile view replots every series as its rolling five-year rank, 0–100. The Y axis auto-scales to whichever window and series are visible.</p>
           </div>
         </div>
-        <div class="card-aside"><span class="lens-echo"></span></div>
+        <div class="card-aside"><span class="lens-echo"></span>__ASOF_04__</div>
       </div>
       <div class="chart-controls">
         <div class="ctrl-group">
@@ -1819,7 +1898,7 @@ TEMPLATE = r"""<!doctype html>
             <p class="lede">MacroMicro's Fear &amp; Greed composite reduces the market's mood to a single 0–100 reading. Under 25 is panicked fear; over 75 is euphoric greed.</p>
           </div>
         </div>
-        <div class="card-aside">Composite · 0–100</div>
+        <div class="card-aside">Composite · 0–100__ASOF_05__</div>
       </div>
       __GAUGE__
     </section>
@@ -1834,7 +1913,7 @@ TEMPLATE = r"""<!doctype html>
             <p class="lede">Sentiment on the left axis, S&amp;P 500 on the right. Bear phases bottom with fear readings below 25; tops tend to coincide with extreme-greed plateaus — not coincidence, but also not a tradable signal on its own.</p>
           </div>
         </div>
-        <div class="card-aside">Dual axis · shared X</div>
+        <div class="card-aside">Dual axis · shared X__ASOF_06__</div>
       </div>
       <div class="chart-controls">
         <div class="seg">
@@ -1859,7 +1938,7 @@ TEMPLATE = r"""<!doctype html>
             <p class="lede">S&amp;P 500 price return (SPY, ex-dividends) 3, 6, and 12 months after each daily Fear &amp; Greed reading. <strong>Descriptive, not a strategy:</strong> windows overlap heavily, the sample starts in 2021 and spans a single cycle — one bear market, one long bull run.</p>
           </div>
         </div>
-        <div class="card-aside">Median · % positive</div>
+        <div class="card-aside">Median · % positive__ASOF_07__</div>
       </div>
       __FG_STATS__
     </section>
@@ -1874,7 +1953,7 @@ TEMPLATE = r"""<!doctype html>
             <p class="lede">Three stacked panels on one time axis. Top: the index. Middle: its forward P/E against the 20th–80th percentile band of the trailing five years, plus a 200-day moving average. Bottom: forward earnings yield (1 ÷ forward P/E) next to the 10-year Treasury yield, with bars showing the spread — bars near zero mean stocks no longer offer much premium over bonds.</p>
           </div>
         </div>
-        <div class="card-aside">3 panels · shared X</div>
+        <div class="card-aside">3 panels · shared X__ASOF_08__</div>
       </div>
       <div class="chart-controls">
         <div class="ctrl-group">
@@ -1905,7 +1984,7 @@ TEMPLATE = r"""<!doctype html>
             <p class="lede">Top: SPY and QQQ, each rebased to 100 at the start of the visible window. Bottom: the share of S&amp;P 500 stocks trading above their 50-day and 200-day moving averages. Watch for divergence. An index pushing to new highs while fewer of its stocks join in means a handful of large names carry the move.</p>
           </div>
         </div>
-        <div class="card-aside">2 panels · shared X</div>
+        <div class="card-aside">2 panels · shared X__ASOF_09__</div>
       </div>
       <div class="chart-controls">
         <div class="seg">
@@ -1937,6 +2016,15 @@ TEMPLATE = r"""<!doctype html>
 <script>
 const DATA = __DATA__;
 const LATEST = "__LATEST_ISO__";
+
+(function staleBanner() {
+  const t = new Date();
+  const days = (Date.UTC(t.getFullYear(), t.getMonth(), t.getDate()) - Date.parse(LATEST)) / 864e5;
+  if (days <= 4) return;
+  const el = document.getElementById("stale-banner");
+  el.textContent = `Data not refreshed since __LATEST_LABEL__.`;
+  el.hidden = false;
+})();
 
 // ═══ Shared utilities ═══
 function prepareFamily(f) {

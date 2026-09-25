@@ -90,6 +90,7 @@ QQQ_PRICE_CSV = DATA_DIR / "qqq_price.csv"
 US10Y_CSV = DATA_DIR / "us10y.csv"
 FEAR_GREED_CSV = DATA_DIR / "fear_greed.csv"
 BREADTH_CSV = DATA_DIR / "sp500_breadth.csv"
+STATUS_JSON = DATA_DIR / "status.json"
 
 
 def pe_csv(lens: str, sid: int) -> Path:
@@ -448,9 +449,51 @@ SOURCES: dict[str, dict[str, Callable[[], list[list]]]] = {
 }
 
 
+def stored_as_of(source: str) -> str | None:
+    """Latest date any of the source's stored series reaches."""
+    dates = [rows[-1][0] for name in SOURCES[source] if (rows := read_rows(CATALOG[name].path))]
+    return max(dates, default=None)
+
+
+def run_status(failures: dict[str, dict[str, str]], prior_as_of: dict[str, str | None]) -> dict:
+    """The committed record of this run, data/status.json:
+
+    {"generated_at": ISO-8601 UTC,
+     "sources": {source: {"ok": bool, "as_of": "YYYY-MM-DD" | None,
+                          "prior_as_of": as_of before this run,
+                          "error": str | None,
+                          "missing": [series names], only when something failed}}}
+    """
+    sources = {}
+    for source in SOURCES:
+        failed = failures.get(source, {})
+        entry = {
+            "ok": not failed,
+            "as_of": stored_as_of(source),
+            "prior_as_of": prior_as_of[source],
+            "error": "; ".join(failed.values()) or None,
+        }
+        if failed:
+            entry["missing"] = sorted(failed)
+        sources[source] = entry
+    return {
+        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+        "sources": sources,
+    }
+
+
+def load_status() -> dict:
+    """status.json, or an all-ok status read off the CSVs when it is absent."""
+    if STATUS_JSON.exists():
+        return json.loads(STATUS_JSON.read_text())
+    as_of = {source: stored_as_of(source) for source in SOURCES}
+    return run_status({}, as_of)
+
+
 def main() -> None:
     for d in LENS_DIRS.values():
         d.mkdir(parents=True, exist_ok=True)
+    prior_as_of = {source: stored_as_of(source) for source in SOURCES}
     failures: dict[str, dict[str, str]] = {}
     for source, fetchers in SOURCES.items():
         print(f"[{source}]")
@@ -458,11 +501,14 @@ def main() -> None:
             try:
                 rows = store(name, fetch_fn())
             except Exception as e:
-                failures.setdefault(source, {})[name] = str(e)
+                failures.setdefault(source, {})[name] = str(e)[:300]
                 print(f"  {name:<16} FAILED, keeping prior CSV: {e}", file=sys.stderr)
                 continue
             print(f"  {name:<16} {len(rows):>6} rows, last {rows[-1][0]}")
-    print(f"\nfailed: {failures or 'none'}")
+    status = run_status(failures, prior_as_of)
+    STATUS_JSON.write_text(json.dumps(status, indent=2) + "\n")
+    for source, entry in status["sources"].items():
+        print(f"{source:<14} ok={entry['ok']!s:<5} as_of={entry['as_of']} error={entry['error']}")
 
 
 if __name__ == "__main__":
