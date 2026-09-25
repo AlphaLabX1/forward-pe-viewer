@@ -549,29 +549,50 @@ def render_fg_stats(stats):
     )
 
 
-def render_commentary(latest_date_str: str) -> str:
-    """The generated daily read, written by commentary.py into
-    data/commentary.json. Absent file, unreadable file, or one describing an
-    older build all render nothing — the masthead simply loses a block rather
-    than showing yesterday's take under today's date."""
-    path = DATA / "commentary.json"
-    if not path.exists():
+def _ordinal(n: int) -> str:
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def standfirst(rows: list[dict], fg: tuple[str, float] | None) -> str:
+    """Today's read from the forward summary rows: the richest and cheapest
+    sector against their own five years, the biggest one-week percentile
+    move, and Fear & Greed. "Richest/cheapest in five years" is claimed only
+    at the 95th / 5th percentile or beyond."""
+    sectors = sorted((r for r in rows if not r["isIndex"]), key=lambda r: -r["rank_5y"])
+    if not sectors:
         return ""
-    try:
-        c = json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError):
+    rich, cheap = sectors[0], sectors[-1]
+    rich_pct, cheap_pct = round(rich["rank_5y"]), round(cheap["rank_5y"])
+    if rich_pct >= 95:
+        rich_s = f"{rich['name']} trades at its richest in five years, at the {_ordinal(rich_pct)} percentile"
+    else:
+        rich_s = (f"{rich['name']} is the richest sector against its own five years, "
+                  f"at the {_ordinal(rich_pct)} percentile")
+    parts = [f"{rich_s} and {rich['latest']:.1f} times forward earnings."]
+    if cheap_pct <= 5:
+        parts.append(f"{cheap['name']} trades at its cheapest in five years, "
+                     f"at the {_ordinal(cheap_pct)} percentile.")
+    else:
+        parts.append(f"{cheap['name']} is the cheapest, at the {_ordinal(cheap_pct)} percentile.")
+    movers = [r for r in rows if r.get("d1w") is not None and round(r["d1w"]) != 0]
+    if movers:
+        m = max(movers, key=lambda r: abs(r["d1w"]))
+        points = round(abs(m["d1w"]))
+        parts.append(f"{m['name']} moved most this week, {points} percentile "
+                     f"point{'s' if points != 1 else ''} {'richer' if m['d1w'] > 0 else 'cheaper'}.")
+    if fg:
+        parts.append(f"Fear & Greed reads {fg[1]:.0f}, {_fg_word(fg[1]).lower()}.")
+    return " ".join(parts)
+
+
+def render_standfirst(text: str) -> str:
+    if not text:
         return ""
-    text = (c.get("text") or "").strip()
-    if not text or c.get("as_of") != latest_date_str:
-        return ""
-    model = (c.get("model") or "").split("/")[-1]
-    attr = f"Written from today's readings by {model}. Figures checked against the data." if model else ""
-    # Model output is untrusted text — escape before it reaches the page.
     return (
         '<div class="read">'
         '<p class="read-kicker">Today\'s read</p>'
         f'<p class="read-body">{html_escape(text)}</p>'
-        f'<p class="read-attr">{html_escape(attr)}</p>'
         '</div>'
     )
 
@@ -701,7 +722,8 @@ def render_insights(latest_date_str: str) -> str:
         f'</div>'
         for f in findings
     )
-    attr = f"Written from both P/E tables by {model}. Figures are the page's own."
+    attr = (f"Written by {model}. Every figure is checked against the P/E tables; "
+            "the reading of them is the model's and is not checked.")
     return (
         '<div class="findings">'
         f'{items}'
@@ -847,7 +869,7 @@ def build() -> Path:
         .replace("__MOVERS_FORWARD__", forward["movers_html"])
         .replace("__MOVERS_TRAILING__", trailing["movers_html"] if trailing else "")
         .replace("__FG_STATS__", render_fg_stats(fg_stats))
-        .replace("__COMMENTARY__", render_commentary(forward["latest_date"]))
+        .replace("__STANDFIRST__", render_standfirst(standfirst(forward["summary"], fg_points[-1] if fg_points else None)))
         .replace("__INSIGHTS__", render_insights(forward["latest_date"]))
         .replace("__ASK_CHIPS__", chips_html)
         .replace("__ASK_PLACEHOLDER__", html_escape(placeholder, quote=True))
@@ -1029,9 +1051,7 @@ TEMPLATE = r"""<!doctype html>
   .stale-banner[hidden] { display: none; }
   .masthead-side { text-align: right; flex: 0 0 auto; }
 
-  /* ── Generated daily read. Deliberately unlike the authored standfirst
-        above it: rule, mono kicker, attribution. Machine-written text should
-        never be able to pass for editorial copy. ── */
+  /* ── Today's read, templated from the day's numbers. ── */
   .read {
     margin: 18px 0 0;
     padding: 2px 0 2px 16px;
@@ -1046,11 +1066,6 @@ TEMPLATE = r"""<!doctype html>
     margin: 0 0 6px;
   }
   .read-body { margin: 0; font-size: 15px; line-height: 1.55; color: var(--text-2); }
-  .read-attr {
-    margin: 8px 0 0;
-    font-family: var(--font-mono); font-size: 10px;
-    letter-spacing: 0.04em; color: var(--dimmer);
-  }
 
   /* ─────────────────── Lens toggle ─────────────────── */
   .lens {
@@ -1712,7 +1727,7 @@ TEMPLATE = r"""<!doctype html>
         <h1 class="wordmark">Valuation <em>&amp; Mood</em></h1>
         <p class="standfirst">The S&amp;P 500 and its eleven sectors, seen through two P/E lenses — and the market's mood, plotted against the price beneath it. <time>Updated __LATEST_LABEL__.</time></p>
         __STALE_NOTE__
-        __COMMENTARY__
+        __STANDFIRST__
       </div>
       <div class="masthead-side">
         <div class="lens" id="lens">

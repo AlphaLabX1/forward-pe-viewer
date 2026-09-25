@@ -1,19 +1,19 @@
-"""Generate the dashboard's daily standfirst — the two-sentence read at the top
-of the masthead — from the numbers the build already computed.
+"""Generate section 01's machine read: three findings about the P/E tables,
+written by a model at build time.
 
-Run between fetch.py and build_html.py. Writes data/commentary.json, which
-build_html.py renders if present and silently skips if not. The file is
-committed, so every day's wording lands in git history and the page still
-builds when this script is skipped or the API is down.
+Run between fetch.py and build_html.py. Writes data/insights.json, which
+build_html.py renders if present and dated to the current build, and
+silently skips otherwise. The file is committed, so every day's wording
+lands in git history and the page still builds when this script is skipped
+or the API is down.
 
 Model access goes through the CoreServices Worker (an OpenRouter proxy) on its
-free tier, identified by a fixed machine ID — no API key involved, so nothing
-secret is needed in CI.
+free tier, identified by a fixed machine ID. No API key is involved, so
+nothing secret is needed in CI.
 
-The model is given a compact brief of today's readings and asked for prose.
-Every number it writes back is checked against that brief; a single unfamiliar
-figure rejects the whole response and the page falls back to static copy.
-Sentences about numbers are worth generating — the numbers themselves are not.
+Every number the model writes is checked against the brief; a finding with an
+unfamiliar figure is dropped. The interpretation around the numbers is not
+checked, and the page says so.
 """
 
 from __future__ import annotations
@@ -22,23 +22,9 @@ import json
 import re
 import urllib.error
 import urllib.request
-from datetime import date, timedelta
-from pathlib import Path
 
-from build_html import (
-    DATA,
-    FEAR_GREED_CSV,
-    SECTOR_TICKERS,
-    _load_csv_points,
-    build_family_payload,
-    compute_5y,
-    load_pe,
-    table_brief,
-    _fg_word,
-)
+from build_html import DATA, table_brief
 
-ROOT = Path(__file__).parent
-OUT = DATA / "commentary.json"
 INSIGHTS_OUT = DATA / "insights.json"
 
 PROXY = "https://coreservices-proxy.ycczkl91.workers.dev/v1/chat/completions"
@@ -46,75 +32,6 @@ MACHINE_ID = "forward-pe-viewer-ci"
 MODEL = "~deepseek/deepseek-v4-flash-latest"   # free tier on the proxy
 MODEL_FALLBACK = "openai/gpt-5.6-luna-pro"     # if the proxy has not allowed the above yet
 TIMEOUT = 90
-
-SYSTEM = """You write the standfirst for a daily equity-valuation dashboard.
-
-House voice: dry, concrete, declarative. The publication already sounds like
-"Right is expensive" and "Descriptive, not a strategy". Match that.
-
-Hard rules:
-- Exactly two sentences. Under 55 words total.
-- Say what is unusual today and what it means. No hedging, no throat-clearing,
-  no "it's important to note", no advice, no predictions.
-- Use ONLY figures that appear in the brief. Never compute, round, or invent a
-  number. If you are unsure of a figure, describe it in words instead.
-- No greeting, no headline, no markdown, no quotes around the output.
-- Never tell the reader to buy, sell, or wait."""
-
-
-def _pct_asof(points, asof: date):
-    asof_str = asof.isoformat()
-    for i in range(len(points) - 1, -1, -1):
-        if points[i][0] <= asof_str:
-            five = compute_5y(points[: i + 1])
-            return five["rank"] if five else None
-    return None
-
-
-def build_brief() -> tuple[str, set[str]]:
-    """Return (brief text for the model, set of number tokens it may use)."""
-    fam = build_family_payload(load_pe("forward"))
-    rows = fam["summary"]
-
-    fg = _load_csv_points(FEAR_GREED_CSV)
-    allowed: set[str] = set()
-
-    def num(v, nd=0):
-        """Format a number and register it as quotable."""
-        s = f"{v:.{nd}f}"
-        allowed.add(s.lstrip("+-"))
-        return s
-
-    lines = [f"Date: {fam['latest_date']}", "", "Sector forward P/E, 5-year percentile (0=cheapest, 100=richest):"]
-    for r in rows:
-        d1w = f", 1w change {r['d1w']:+.0f}" if r.get("d1w") is not None else ""
-        if r.get("d1w") is not None:
-            allowed.add(f"{abs(r['d1w']):.0f}")
-        lines.append(
-            f"  {r['name']} ({SECTOR_TICKERS[r['id']]}): "
-            f"percentile {num(r['rank_5y'])}, P/E {num(r['latest'], 1)}{d1w}"
-        )
-
-    if fg:
-        cur_d, cur_v = fg[-1]
-        lines += ["", f"Fear & Greed: {num(cur_v)} ({_fg_word(cur_v)}) on {cur_d}"]
-        cur_date = date.fromisoformat(cur_d)
-        for label, days in (("1 week ago", 7), ("1 month ago", 30)):
-            hit = next((v for d, v in reversed(fg) if d <= (cur_date - timedelta(days=days)).isoformat()), None)
-            if hit is not None:
-                lines.append(f"  {label}: {num(hit)}")
-
-    # Percentile-space movers give the model something to actually say.
-    movers = [r for r in rows if r.get("d1w") is not None]
-    if movers:
-        movers.sort(key=lambda r: -abs(r["d1w"]))
-        lines += ["", "Biggest percentile moves this week:"]
-        for r in movers[:3]:
-            direction = "richer" if r["d1w"] > 0 else "cheaper"
-            lines.append(f"  {r['name']}: {r['d1w']:+.0f} points {direction}")
-
-    return "\n".join(lines), allowed
-
 
 INSIGHTS_SYSTEM = """You find what is worth noticing in a table of sector
 valuations, for readers who already know what a P/E is.
@@ -305,36 +222,7 @@ def call_model(system: str, user: str, max_tokens: int = 400) -> str | None:
     return out
 
 
-def generate_standfirst() -> None:
-    brief, allowed = build_brief()
-    text = call_model(SYSTEM, f"Today's readings:\n\n{brief}\n\nWrite the standfirst.")
-    if not text:
-        print("no commentary generated — leaving previous file untouched")
-        return
-
-    text = " ".join(text.split())
-    if text.startswith('"') and text.endswith('"'):
-        text = text[1:-1].strip()
-
-    bad = unknown_numbers(text, allowed)
-    if bad:
-        print(f"rejected — figures not in brief: {bad}\n  text: {text}")
-        return
-    if len(text.split()) > 75:
-        print(f"rejected — too long ({len(text.split())} words): {text}")
-        return
-
-    latest = load_pe("forward").get(20052, [])
-    OUT.write_text(json.dumps({
-        "text": text,
-        "model": USED_MODEL,
-        "as_of": latest[-1][0] if latest else "",
-    }, indent=2) + "\n")
-    print(f"wrote {OUT.name}: {text}")
-
-
 def main() -> None:
-    generate_standfirst()
     generate_insights()
 
 

@@ -119,9 +119,7 @@
   .stale-banner[hidden] { display: none; }
   .masthead-side { text-align: right; flex: 0 0 auto; }
 
-  /* ── Generated daily read. Deliberately unlike the authored standfirst
-        above it: rule, mono kicker, attribution. Machine-written text should
-        never be able to pass for editorial copy. ── */
+  /* ── Today's read, templated from the day's numbers. ── */
   .read {
     margin: 18px 0 0;
     padding: 2px 0 2px 16px;
@@ -136,11 +134,6 @@
     margin: 0 0 6px;
   }
   .read-body { margin: 0; font-size: 15px; line-height: 1.55; color: var(--text-2); }
-  .read-attr {
-    margin: 8px 0 0;
-    font-family: var(--font-mono); font-size: 10px;
-    letter-spacing: 0.04em; color: var(--dimmer);
-  }
 
   /* ─────────────────── Lens toggle ─────────────────── */
   .lens {
@@ -802,7 +795,7 @@
         <h1 class="wordmark">Valuation <em>&amp; Mood</em></h1>
         <p class="standfirst">The S&amp;P 500 and its eleven sectors, seen through two P/E lenses — and the market's mood, plotted against the price beneath it. <time>Updated September 24, 2026.</time></p>
         
-        <div class="read"><p class="read-kicker">Today's read</p><p class="read-body">Health Care and Industrials trade at their richest levels in five years, with Health Care at the 82nd percentile and a P/E of 19.0. Real Estate fell 13 percentile points to its cheapest reading, while Communication Services rose 9 points.</p><p class="read-attr">Written from today&#x27;s readings by deepseek-v4-flash-latest. Figures checked against the data.</p></div>
+        <div class="read"><p class="read-kicker">Today's read</p><p class="read-body">Health Care is the richest sector against its own five years, at the 82nd percentile and 19.0 times forward earnings. Utilities is the cheapest, at the 10th percentile. Real Estate moved most this week, 13 percentile points cheaper. Fear &amp; Greed reads 36, fear.</p></div>
       </div>
       <div class="masthead-side">
         <div class="lens" id="lens">
@@ -867,7 +860,7 @@
           <div class="ai-col-head">
             <span class="ai-label">Machine read · both lenses</span>
           </div>
-          <div class="findings"><div class="finding"><h3>Materials&#x27; 61-point lens gap signals earnings cliff</h3><p>Materials sits at the 94th percentile on trailing earnings but only the 33rd on forward estimates, the widest split in the table. The market is pricing a 133 percent earnings surge that would have to materialize within twelve months to justify the gap.</p></div><div class="finding"><h3>Consumer Staples&#x27; forward percentile collapses despite stable multiple</h3><p>Consumer Staples&#x27; forward percentile fell 32 points in a month to the 19th, yet its forward P/E of 19.31 is only modestly below typical levels. The percentile drop is mostly a shift in the sector&#x27;s own historical distribution, not a dramatic change in the multiple itself.</p></div><p class="findings-attr">Written from both P/E tables by deepseek-v4-flash-latest. Figures are the page&#x27;s own.</p></div>
+          <div class="findings"><div class="finding"><h3>Materials&#x27; 61-point lens gap signals earnings cliff</h3><p>Materials sits at the 94th percentile on trailing earnings but only the 33rd on forward estimates, the widest split in the table. The market is pricing a 133 percent earnings surge that would have to materialize within twelve months to justify the gap.</p></div><div class="finding"><h3>Consumer Staples&#x27; forward percentile collapses despite stable multiple</h3><p>Consumer Staples&#x27; forward percentile fell 32 points in a month to the 19th, yet its forward P/E of 19.31 is only modestly below typical levels. The percentile drop is mostly a shift in the sector&#x27;s own historical distribution, not a dramatic change in the multiple itself.</p></div><p class="findings-attr">Written by deepseek-v4-flash-latest. Every figure is checked against the P/E tables; the reading of them is the model&#x27;s and is not checked.</p></div>
         </div>
 
         <div class="ai-col ask" id="ask">
