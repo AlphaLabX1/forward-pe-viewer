@@ -27,15 +27,15 @@ from pathlib import Path
 
 from build_html import (
     DATA,
+    FEAR_GREED_CSV,
     SECTOR_TICKERS,
     _load_csv_points,
-    _round_series,
     build_family_payload,
     compute_5y,
+    load_pe,
     table_brief,
     _fg_word,
 )
-from fetch import SERIES
 
 ROOT = Path(__file__).parent
 OUT = DATA / "commentary.json"
@@ -73,17 +73,10 @@ def _pct_asof(points, asof: date):
 
 def build_brief() -> tuple[str, set[str]]:
     """Return (brief text for the model, set of number tokens it may use)."""
-    raw = json.loads((DATA / "raw.json").read_text())
-    fwd_raw = raw.get("forward", {})
-    forward_points = {
-        sid: _round_series(fwd_raw[str(sid)], 4)
-        for sid in SERIES
-        if str(sid) in fwd_raw
-    }
-    fam = build_family_payload(forward_points)
+    fam = build_family_payload(load_pe("forward"))
     rows = fam["summary"]
 
-    fg = _load_csv_points(DATA / "fear_greed.csv")
+    fg = _load_csv_points(FEAR_GREED_CSV)
     allowed: set[str] = set()
 
     def num(v, nd=0):
@@ -331,7 +324,7 @@ def generate_standfirst() -> None:
         print(f"rejected — too long ({len(text.split())} words): {text}")
         return
 
-    latest = json.loads((DATA / "raw.json").read_text()).get("forward", {}).get("20052", [])
+    latest = load_pe("forward").get(20052, [])
     OUT.write_text(json.dumps({
         "text": text,
         "model": USED_MODEL,

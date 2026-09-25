@@ -11,13 +11,11 @@ error — alerting must never fail the data-refresh workflow.
 
 from __future__ import annotations
 
-import json
 import os
 import urllib.parse
 import urllib.request
 
-from build_html import DATA, SECTOR_TICKERS, _load_csv_points, compute_5y
-from fetch import SERIES
+from build_html import FEAR_GREED_CSV, SECTOR_TICKERS, _load_csv_points, compute_5y, load_pe
 
 FG_THRESHOLDS = (25, 75)
 PCT_THRESHOLDS = (5, 95)
@@ -30,7 +28,7 @@ def _crossed(prev: float, cur: float, thr: float) -> bool:
 def collect_alerts() -> list[str]:
     lines: list[str] = []
 
-    fg = _load_csv_points(DATA / "fear_greed.csv")
+    fg = _load_csv_points(FEAR_GREED_CSV)
     if len(fg) >= 2:
         (_, prev), (d, cur) = fg[-2], fg[-1]
         for thr in FG_THRESHOLDS:
@@ -38,9 +36,7 @@ def collect_alerts() -> list[str]:
                 arrow = "fell below" if cur < thr else "rose above"
                 lines.append(f"Fear & Greed {arrow} {thr}: {prev:.0f} → {cur:.0f} ({d})")
 
-    fwd = json.loads((DATA / "raw.json").read_text()).get("forward", {})
-    for sid in SERIES:
-        pts = fwd.get(str(sid)) or []
+    for sid, pts in load_pe("forward").items():
         if len(pts) < 2:
             continue
         cur5, prev5 = compute_5y(pts), compute_5y(pts[:-1])

@@ -17,7 +17,9 @@ Outputs:
   data/us10y.csv                  — US 10-year Treasury yield (%)
   data/fear_greed.csv             — CNN Fear & Greed Index
   data/sp500_breadth.csv          — % of S&P 500 above 50d / 200d MA
-  data/raw.json                   — combined raw points, used by build_html.py
+  data/qqq_forward_pe.csv, data/qqq_price.csv — QQQ valuation + price
+
+build_html.py reads only these committed CSVs, through the paths defined here.
 """
 
 from __future__ import annotations
@@ -77,12 +79,19 @@ KOYFIN_SPX_KID = "et-n5kqqt"    # SPY ETF — proxy for S&P 500 index price
 KOYFIN_QQQ_KID = "et-gpvivq"    # QQQ ETF — proxy for NDX (Nasdaq-100)
 KOYFIN_US10Y_KID = "bn-dm6gok"  # US 10Y Treasury (close = yield in %)
 
-# Output filenames for non-PE series.
-EXTRA_FILES = {
-    2: ("spx_price", "price"),
-    46974: ("fear_greed", "value"),
-    354: ("us10y", "yield"),
-}
+DATA_DIR = Path(__file__).parent / "data"
+LENS_DIRS = {"forward": DATA_DIR, "trailing": DATA_DIR / "trailing"}
+SPX_PRICE_CSV = DATA_DIR / "spx_price.csv"
+QQQ_PE_CSV = DATA_DIR / "qqq_forward_pe.csv"
+QQQ_PRICE_CSV = DATA_DIR / "qqq_price.csv"
+US10Y_CSV = DATA_DIR / "us10y.csv"
+FEAR_GREED_CSV = DATA_DIR / "fear_greed.csv"
+BREADTH_CSV = DATA_DIR / "sp500_breadth.csv"
+
+
+def pe_csv(lens: str, sid: int) -> Path:
+    slug = SERIES[sid].lower().replace("&", "and").replace(" ", "_")
+    return LENS_DIRS[lens] / f"{sid}_{slug}.csv"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Koyfin client
@@ -338,19 +347,8 @@ def write_breadth_csv(path: Path, breadth: dict[str, list[list]]) -> list[list]:
     return out
 
 
-def write_pe_csv(out_dir: Path, sid: int, name: str, pts: list[list], header_col: str):
-    slug = name.lower().replace("&", "and").replace(" ", "_")
-    path = out_dir / f"{sid}_{slug}.csv"
-    with path.open("w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["date", header_col])
-        w.writerows(pts)
-
-
-def write_extra_csv(out_dir: Path, stem: str, col: str, pts: list[list], merge: bool):
-    """Write an extras CSV. If merge=True, preserves any prior history beyond
-    what Koyfin/MacroMicro returns (e.g. SPX pre-1993 from the legacy source)."""
-    path = out_dir / f"{stem}.csv"
+def write_csv(path: Path, col: str, pts: list[list], merge: bool = False) -> int:
+    """Write a two-column CSV. merge=True keeps prior dates the reply lacks."""
     rows = _merge_with_existing_csv(path, pts) if merge else pts
     with path.open("w", newline="") as f:
         w = csv.writer(f)
@@ -364,63 +362,52 @@ def write_extra_csv(out_dir: Path, stem: str, col: str, pts: list[list], merge: 
 # ──────────────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    root = Path(__file__).parent
-    out_dir = root / "data"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    trailing_dir = out_dir / "trailing"
-    trailing_dir.mkdir(parents=True, exist_ok=True)
+    for d in LENS_DIRS.values():
+        d.mkdir(parents=True, exist_ok=True)
 
-    forward_points: dict[int, list] = {}
-    trailing_points: dict[int, list] = {}
-
-    print(f"[1/5] Koyfin forward + trailing P/E ({len(KOYFIN_PE_KIDS)} series) ...")
+    print(f"[1/4] Koyfin forward + trailing P/E ({len(KOYFIN_PE_KIDS)} series) ...")
+    n_ok = 0
     for sid in SERIES:
         kid, tk = KOYFIN_PE_KIDS[sid]
         try:
             fwd = koy_fundamental(kid, "f_pe")
             trl = koy_fundamental(kid, "f_peltm")
         except Exception as e:
-            print(f"  s:{sid:<6} {tk:<5} FAILED: {e}", file=sys.stderr)
+            print(f"  s:{sid:<6} {tk:<5} FAILED: {e} — keeping prior CSVs", file=sys.stderr)
             continue
-        forward_points[sid] = fwd
-        trailing_points[sid] = trl
-        write_pe_csv(out_dir, sid, SERIES[sid], fwd, "forward_pe")
-        write_pe_csv(trailing_dir, sid, SERIES[sid], trl, "trailing_pe")
+        write_csv(pe_csv("forward", sid), "forward_pe", fwd)
+        write_csv(pe_csv("trailing", sid), "trailing_pe", trl)
+        n_ok += 1
         print(f"  s:{sid:<6} {tk:<5} fwd={len(fwd):>5}  trail={len(trl):>5}")
 
-    print(f"[2/5] Koyfin SPX price + QQQ + 10Y yield ...")
-    extras: dict[int, list] = {}
+    print(f"[2/4] Koyfin SPX price + QQQ + 10Y yield ...")
     spx = koy_price(KOYFIN_SPX_KID)
-    extras[2] = spx
-    n_spx = write_extra_csv(out_dir, "spx_price", "price", spx, merge=True)
+    n_spx = write_csv(SPX_PRICE_CSV, "price", spx, merge=True)
     print(f"  spx_price  Koyfin {len(spx):>5} pts; merged → {n_spx} pts")
 
     qqq_pe = koy_fundamental(KOYFIN_QQQ_KID, "f_pe")
     qqq_price = koy_price(KOYFIN_QQQ_KID)
-    n_qqq_pe = write_extra_csv(out_dir, "qqq_forward_pe", "forward_pe", qqq_pe, merge=False)
-    n_qqq_p = write_extra_csv(out_dir, "qqq_price", "price", qqq_price, merge=True)
+    n_qqq_pe = write_csv(QQQ_PE_CSV, "forward_pe", qqq_pe)
+    n_qqq_p = write_csv(QQQ_PRICE_CSV, "price", qqq_price, merge=True)
     print(f"  qqq_fwd_pe Koyfin {len(qqq_pe):>5} pts → {n_qqq_pe} pts")
     print(f"  qqq_price  Koyfin {len(qqq_price):>5} pts; merged → {n_qqq_p} pts")
 
     us10y = koy_price(KOYFIN_US10Y_KID)
-    extras[354] = us10y
-    n_10y = write_extra_csv(out_dir, "us10y", "yield", us10y, merge=True)
+    n_10y = write_csv(US10Y_CSV, "yield", us10y, merge=True)
     print(f"  us10y      Koyfin {len(us10y):>5} pts; merged → {n_10y} pts")
 
-    print(f"[3/5] MacroMicro CNN F&G (chart {MM_FG_CHART_ID}) ...")
+    print(f"[3/4] MacroMicro CNN F&G (chart {MM_FG_CHART_ID}) ...")
     try:
         fg = fetch_fear_greed()
-        extras[46974] = fg
-        n_fg = write_extra_csv(out_dir, "fear_greed", "value", fg, merge=False)
+        n_fg = write_csv(FEAR_GREED_CSV, "value", fg)
         print(f"  fear_greed {n_fg:>5} pts (CNN, replace)")
     except Exception as e:
         print(f"  fear_greed FAILED: {e} — keeping prior CSV", file=sys.stderr)
 
-    print(f"[4/5] MacroMicro S&P 500 breadth (chart {MM_BREADTH_CHART_ID}) ...")
-    breadth: dict[str, list[list]] = {}
+    print(f"[4/4] MacroMicro S&P 500 breadth (chart {MM_BREADTH_CHART_ID}) ...")
     try:
         breadth = fetch_sp500_breadth()
-        rows = write_breadth_csv(out_dir / "sp500_breadth.csv", breadth)
+        rows = write_breadth_csv(BREADTH_CSV, breadth)
         print(
             f"  breadth    ma50 {len(breadth['ma50']):>5} / ma200 {len(breadth['ma200']):>5} pts;"
             f" merged → {len(rows)} rows"
@@ -428,27 +415,7 @@ def main() -> None:
     except Exception as e:
         print(f"  breadth FAILED: {e} — keeping prior CSV", file=sys.stderr)
 
-    print(f"[5/5] writing raw.json ...")
-    raw = {
-        "forward": {str(sid): pts for sid, pts in forward_points.items()},
-        "trailing": {str(sid): pts for sid, pts in trailing_points.items()},
-        "spx": extras.get(2, []),
-        "qqq_pe": qqq_pe,
-        "qqq_price": qqq_price,
-        "us10y": extras.get(354, []),
-        "fg": extras.get(46974, []),
-        "breadth": breadth,
-    }
-    (out_dir / "raw.json").write_text(json.dumps(raw, indent=2))
-
-    print(f"\nSummary:")
-    print(f"  forward P/E   : {len(forward_points)}/{len(SERIES)} series")
-    print(f"  trailing P/E  : {len(trailing_points)}/{len(SERIES)} series")
-    print(f"  SPX price     : {len(extras.get(2, []))} new daily pts")
-    print(f"  10Y yield     : {len(extras.get(354, []))} new daily pts")
-    print(f"  CNN F&G       : {len(extras.get(46974, []))} pts")
-    print(f"  S&P breadth   : {len(breadth.get('ma50', []))} / {len(breadth.get('ma200', []))} pts")
-    print(f"output: {out_dir}")
+    print(f"\nP/E refreshed for {n_ok}/{len(SERIES)} series. output: {DATA_DIR}")
 
 
 if __name__ == "__main__":
