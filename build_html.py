@@ -25,6 +25,9 @@ from fetch import (
 
 ROOT = Path(__file__).parent
 
+# Forward P/E starts in 2003, so no price view reaches back further.
+PRICE_VIEW_FROM = "2003-01-01"
+
 SECTOR_COLORS = {
     20052: "#E9E3D4",  # S&P 500 - ivory (benchmark, reads white on dark)
     20517: "#3B6FB0",  # Information Technology - slate blue
@@ -294,7 +297,7 @@ def load_breadth(path: Path) -> dict[str, list[list]]:
         for row in r:
             for key, cell in zip(("ma50", "ma200"), row[1:3]):
                 if cell:
-                    out[key].append([row[0], round(float(cell), 2)])
+                    out[key].append([row[0], round(float(cell), 1)])
     return out
 
 
@@ -319,7 +322,7 @@ def build_family_payload(points_by_sid: dict[int, list[tuple[str, float]]]):
             "name": name,
             "ticker": SECTOR_TICKERS[sid],
             "color": SECTOR_COLORS[sid],
-            "points": points,
+            "points": _round_series(points, 2),
             "isIndex": sid == 20052,
         })
         summary_rows.append({
@@ -360,14 +363,10 @@ def _nearest_on_or_before(points: list[tuple[str, float]], target: date):
 
 
 def valuation_payload(spx_fwd_pe: list, us10y: list):
-    """Build payload for the SPX valuation chart (section 06):
-      - forward P/E with 5Y rolling 20th/50th/80th percentile bands
-      - forward earnings yield (1/PE × 100) and 10Y treasury yield
-      - their spread (EY - 10Y), an equity-vs-bonds risk-premium proxy.
-
-    Monthly forward PE drives the cadence: each spread / EY point is dated
-    to the forward PE's month; the 10Y yield is the value on (or nearest
-    prior to) that month-end date.
+    """Derived series for the section 08 valuation chart, one per forward P/E
+    date: the rolling 5Y P20/P80 band, a 200-point SMA, and the spread of
+    forward earnings yield (100 / P/E) over the 10Y yield on or before that
+    date. The page already has the P/E and 10Y series and draws them itself.
     """
     if not spx_fwd_pe or not us10y:
         return None
@@ -413,8 +412,7 @@ def valuation_payload(spx_fwd_pe: list, us10y: list):
         band_p20.append([d, pct(0.20)])
         band_p80.append([d, pct(0.80)])
 
-    # 200-point trailing simple moving average. Daily input → ~10-month SMA;
-    # monthly input → 200 months (not meaningful, but harmless — gates on len).
+    # 200-point trailing simple moving average (~10 months of trading days).
     sma200 = []
     running_sum_sma = 0.0
     SMA_WINDOW = 200
@@ -425,8 +423,7 @@ def valuation_payload(spx_fwd_pe: list, us10y: list):
         if i >= SMA_WINDOW - 1:
             sma200.append([d, running_sum_sma / SMA_WINDOW])
 
-    # Build a date -> 10Y yield lookup, then for each EY point find the nearest
-    # prior (or same-day) yield observation. 10Y is daily; PE is monthly.
+    # 10Y yield on or before each P/E date.
     yield_by_date = {d: float(v) for d, v in us10y if v}
     yield_dates_sorted = sorted(yield_by_date.keys())
 
@@ -445,13 +442,10 @@ def valuation_payload(spx_fwd_pe: list, us10y: list):
             spread_pts.append([d, ey - y10])
 
     return {
-        "pe": [[d, round(v, 4)] for d, v in pe_pts],
-        "ey": [[d, round(v, 4)] for d, v in ey_pts],
-        "us10y": [[d, round(v, 3)] for d, v in us10y],
-        "spread": [[d, round(v, 4)] for d, v in spread_pts],
-        "band_p20": [[d, round(v, 4)] for d, v in band_p20],
-        "band_p80": [[d, round(v, 4)] for d, v in band_p80],
-        "sma200": [[d, round(v, 4)] for d, v in sma200],
+        "spread": _round_series(spread_pts, 2),
+        "band_p20": _round_series(band_p20, 2),
+        "band_p80": _round_series(band_p80, 2),
+        "sma200": _round_series(sma200, 2),
     }
 
 
@@ -822,7 +816,7 @@ def build() -> Path:
     gauge = gauge_payload(fg_points)
     fg_stats = fg_stats_payload(fg_points, spx_points)
 
-    # Valuation panel (section 06) — built per index, switchable in the UI.
+    # Valuation panel (section 08), built per index, switchable in the UI.
     qqq_pe = _round_series(_load_csv_points(QQQ_PE_CSV), 4)
     qqq_price = _round_series(_load_csv_points(QQQ_PRICE_CSV), 2)
     breadth = load_breadth(BREADTH_CSV)
@@ -841,22 +835,18 @@ def build() -> Path:
     brief_text, _, _ = table_brief(fams)
     chips_html, placeholder = ask_chips(forward["summary"])
 
+    since = lambda pts: [p for p in pts if p[0] >= PRICE_VIEW_FROM]
     payload = json.dumps({
         "brief": brief_text,
-        "forward": {"series": forward["series"], "summary": forward["summary"]},
-        "trailing": (
-            {"series": trailing["series"], "summary": trailing["summary"]}
-            if trailing else None
-        ),
-        "fg": {
-            "points": fg_points,
-            "gauge": gauge,
-        },
-        "spx": {"points": spx_points},
-        "qqq": {"price": qqq_price},
+        "forward": {"series": forward["series"]},
+        "trailing": {"series": trailing["series"]} if trailing else None,
+        "fg": {"points": _round_series(fg_points, 1)},
+        "spx": {"points": since(spx_points)},
+        "qqq": {"price": since(qqq_price), "pe": _round_series(qqq_pe, 2)},
+        "us10y": _round_series(since(us10y_points), 2),
         "valuation": {"spy": valuation_spy, "qqq": valuation_qqq},
         "breadth": breadth,
-    })
+    }, separators=(",", ":"))
 
     html = (TEMPLATE
         .replace("__DATA__", payload)
@@ -942,7 +932,7 @@ TEMPLATE = r"""<!doctype html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script defer src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
   :root {
     --bg:           #060608;
@@ -1910,7 +1900,7 @@ TEMPLATE = r"""<!doctype html>
           <span class="card-num">05</span>
           <div>
             <h2>Sentiment, at a glance</h2>
-            <p class="lede">MacroMicro's Fear &amp; Greed composite reduces the market's mood to a single 0–100 reading. Under 25 is panicked fear; over 75 is euphoric greed.</p>
+            <p class="lede">CNN's Fear &amp; Greed index, read off MacroMicro, reduces the market's mood to a single 0–100 reading. Under 25 is panicked fear; over 75 is euphoric greed.</p>
           </div>
         </div>
         <div class="card-aside">Composite · 0–100__ASOF_05__</div>
@@ -1918,14 +1908,14 @@ TEMPLATE = r"""<!doctype html>
       __GAUGE__
     </section>
 
-    <!-- ═══ 06. F&G vs SPX chart ═══ -->
+    <!-- ═══ 06. F&G vs SPY chart ═══ -->
     <section class="card">
       <div class="card-head">
         <div class="card-title">
           <span class="card-num">06</span>
           <div>
             <h2>Mood against price</h2>
-            <p class="lede">Sentiment on the left axis, S&amp;P 500 on the right. Bear phases bottom with fear readings below 25; tops tend to coincide with extreme-greed plateaus — not coincidence, but also not a tradable signal on its own.</p>
+            <p class="lede">Sentiment on the left axis, SPY on the right. Bear phases bottom with fear readings below 25; tops tend to coincide with extreme-greed plateaus — not coincidence, but also not a tradable signal on its own.</p>
           </div>
         </div>
         <div class="card-aside">Dual axis · shared X__ASOF_06__</div>
@@ -1950,7 +1940,7 @@ TEMPLATE = r"""<!doctype html>
           <span class="card-num">07</span>
           <div>
             <h2>Has the mood meant anything?</h2>
-            <p class="lede">S&amp;P 500 price return (SPY, ex-dividends) 3, 6, and 12 months after each daily Fear &amp; Greed reading. <strong>Descriptive, not a strategy:</strong> windows overlap heavily, the sample starts in 2021 and spans a single cycle — one bear market, one long bull run.</p>
+            <p class="lede">SPY price return (ex-dividends) 3, 6, and 12 months after each daily Fear &amp; Greed reading. <strong>Descriptive, not a strategy:</strong> windows overlap heavily, the sample starts in 2021 and spans a single cycle — one bear market, one long bull run.</p>
           </div>
         </div>
         <div class="card-aside">Median · % positive__ASOF_07__</div>
@@ -1965,7 +1955,7 @@ TEMPLATE = r"""<!doctype html>
           <span class="card-num">08</span>
           <div>
             <h2>Are we expensive?</h2>
-            <p class="lede">Three stacked panels on one time axis. Top: the index. Middle: its forward P/E against the 20th–80th percentile band of the trailing five years, plus a 200-day moving average. Bottom: forward earnings yield (1 ÷ forward P/E) next to the 10-year Treasury yield, with bars showing the spread — bars near zero mean stocks no longer offer much premium over bonds.</p>
+            <p class="lede">Three stacked panels on one time axis. Top: the ETF price (SPY or QQQ). Middle: its index's forward P/E against the 20th–80th percentile band of the trailing five years, plus a 200-day moving average. Bottom: forward earnings yield (1 ÷ forward P/E) next to the 10-year Treasury yield, with bars showing the spread — bars near zero mean stocks no longer offer much premium over bonds.</p>
           </div>
         </div>
         <div class="card-aside">3 panels · shared X__ASOF_08__</div>
@@ -2021,7 +2011,7 @@ TEMPLATE = r"""<!doctype html>
         <span class="dot">·</span>
         <span>P/E &amp; prices · Koyfin</span>
         <span class="dot">·</span>
-        <span>Fear &amp; Greed, breadth · MacroMicro</span>
+        <span>CNN Fear &amp; Greed, breadth · MacroMicro</span>
       </div>
       <span>as of __LATEST_ISO__ · 5-year window</span>
     </footer>
@@ -2029,6 +2019,8 @@ TEMPLATE = r"""<!doctype html>
 </div>
 
 <script>
+// Plotly loads with defer; deferred scripts run before DOMContentLoaded.
+document.addEventListener("DOMContentLoaded", () => {
 const DATA = __DATA__;
 const LATEST = "__LATEST_ISO__";
 
@@ -2042,6 +2034,23 @@ const LATEST = "__LATEST_ISO__";
 })();
 
 // ═══ Shared utilities ═══
+// Start of a range-button window ("all" | "ytd" | "<n>y"), never before the
+// series' first date.
+function rangeStart(key, firstDate) {
+  const now = new Date(LATEST), first = new Date(firstDate);
+  let start;
+  if (key === "all") start = first;
+  else if (key === "ytd") start = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+  else { start = new Date(now); start.setUTCFullYear(start.getUTCFullYear() - parseInt(key, 10)); }
+  return start < first ? first : start;
+}
+
+// A double-click reset refits x only; route it through the "All" button so
+// the y axes refit to the full window too.
+function selectRange(attr, key, apply) {
+  document.querySelectorAll(`[${attr}]`).forEach(b => b.classList.toggle("active", b.getAttribute(attr) === key));
+  apply(key);
+}
 function prepareFamily(f) {
   if (!f || !f.series) return null;
   f.series.forEach(s => { s._t = s.points.map(p => Date.parse(p[0])); });
@@ -2165,10 +2174,9 @@ let _skipRelayout = false;
 function applyRange(key) {
   currentRange = key;
   const now = new Date(LATEST);
-  let start;
-  if (key === "all") start = new Date("1995-01-01");
-  else if (key === "ytd") start = new Date(now.getFullYear(), 0, 1);
-  else { const years = parseInt(key, 10); start = new Date(now); start.setFullYear(start.getFullYear() - years); }
+  const family = DATA[currentLens];
+  const first = family ? family.series.map(s => s.points[0][0]).sort()[0] : LATEST;
+  const start = rangeStart(key, first);
   const yr = yRangeForWindow(start.getTime(), now.getTime());
   const upd = {
     "xaxis.range": [start.toISOString().slice(0,10), now.toISOString().slice(0,10)],
@@ -2576,22 +2584,22 @@ function stickSolo(id) {
   }
 })();
 
-// ═══ Section 05: F&G vs SPX dual-axis chart ═══
+// ═══ Section 06: F&G vs SPY dual-axis chart ═══
 (function renderMoodChart() {
   const fg = DATA.fg.points;
-  const spx = DATA.spx.points;
-  if (!fg.length || !spx.length) return;
+  if (!fg.length) return;
+  const spx = DATA.spx.points.filter(p => p[0] >= fg[0][0]);
 
   const moodTraces = [
     {
       x: spx.map(p => p[0]),
       y: spx.map(p => p[1]),
       type: "scattergl", mode: "lines",
-      name: "S&P 500",
+      name: "SPY",
       line: { color: "#A78BFA", width: 2.4 },
       fill: "tozeroy", fillcolor: "rgba(139,124,246,0.10)",
       yaxis: "y2",
-      hovertemplate: "<b>S&P 500</b>  %{y:.2f}<extra></extra>",
+      hovertemplate: "<b>SPY</b>  %{y:.2f}<extra></extra>",
     },
     {
       x: fg.map(p => p[0]),
@@ -2605,6 +2613,7 @@ function stickSolo(id) {
     },
   ];
   const moodLayout = Object.assign({}, baseLayout, {
+    margin: Object.assign({}, baseLayout.margin, { r: 56 }),
     yaxis: {
       gridcolor: "rgba(255,255,255,0.06)", zeroline: false,
       tickfont: TICK_FONT,
@@ -2618,24 +2627,23 @@ function stickSolo(id) {
       gridcolor: "rgba(0,0,0,0)", zeroline: false,
       tickfont: TICK_FONT,
       tickcolor: "rgba(255,255,255,0.25)",
-      title: { text: "S&P 500", font: { family: BODY, size: 11, color: "#A78BFA" }, standoff: 14 },
+      title: { text: "SPY", font: { family: BODY, size: 11, color: "#A78BFA" }, standoff: 14 },
     },
     shapes: [
       { type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: 25, y1: 25, line: { color: "rgba(52,211,153,0.55)", width: 1, dash: "dot" } },
       { type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: 75, y1: 75, line: { color: "rgba(248,113,113,0.55)", width: 1, dash: "dot" } },
     ],
   });
-  Plotly.newPlot("mood-chart", moodTraces, moodLayout, chartConfig).then(() => applyMoodRange("5y"));
+  Plotly.newPlot("mood-chart", moodTraces, moodLayout, chartConfig).then(gd => {
+    applyMoodRange("5y");
+    gd.on("plotly_relayout", ev => { if (ev["xaxis.autorange"]) selectRange("data-mood-range", "all", applyMoodRange); });
+  });
 
   function applyMoodRange(key) {
     const now = new Date(LATEST);
-    let start;
-    if (key === "all") start = new Date(fg[0][0]);
-    else if (key === "ytd") start = new Date(now.getFullYear(), 0, 1);
-    else { const y = parseInt(key, 10); start = new Date(now); start.setFullYear(start.getFullYear() - y); }
+    const start = rangeStart(key, fg[0][0]);
     const startStr = start.toISOString().slice(0,10);
     const endStr = now.toISOString().slice(0,10);
-    // Compute SPX Y-axis range for window
     let lo = Infinity, hi = -Infinity;
     const startMs = start.getTime(), endMs = now.getTime();
     for (let j = 0; j < spx.length; j++) {
@@ -2666,9 +2674,10 @@ function stickSolo(id) {
   });
 })();
 
-// ═══ Section 06: Are we expensive — 3-panel valuation chart (SPY / QQQ toggle) ═══
+// ═══ Section 08: Are we expensive, 3-panel valuation chart (SPY / QQQ toggle) ═══
 (function renderValuationChart() {
   if (!DATA.valuation || !DATA.valuation.spy) return;
+  const spyPe = DATA.forward.series.find(s => s.id === 20052);
 
   const TITLE_FONT = { family: BODY, size: 11 };
 
@@ -2678,15 +2687,26 @@ function stickSolo(id) {
   let currentIndex = "spy";
   let currentRange = "5y";
 
-  function priceOf(idx) {
-    return idx === "qqq" ? (DATA.qqq && DATA.qqq.price) || [] : DATA.spx.points;
+  // Every panel starts where the index's forward P/E does, so a reset
+  // (double-click) lands on the same window as "All".
+  const cache = {};
+  function valOf(idx) {
+    if (cache[idx]) return cache[idx];
+    const pe = idx === "qqq" ? DATA.qqq.pe : spyPe.points;
+    const from = pe[0][0];
+    const price = idx === "qqq" ? DATA.qqq.price : DATA.spx.points;
+    return (cache[idx] = Object.assign({}, DATA.valuation[idx], {
+      pe,
+      ey: pe.map(p => [p[0], Math.round(10000 / p[1]) / 100]),
+      us10y: DATA.us10y.filter(p => p[0] >= from),
+      price: price.filter(p => p[0] >= from),
+    }));
   }
-  function valOf(idx) { return DATA.valuation[idx]; }
-  function priceLabel(idx) { return idx === "qqq" ? "QQQ" : "S&P 500 (SPY)"; }
+  function priceLabel(idx) { return idx === "qqq" ? "QQQ" : "SPY"; }
 
   function buildTraces(idx) {
     const v = valOf(idx);
-    const price = priceOf(idx);
+    const price = v.price;
     return [
       // ───── Panel 1: Index price (log) ─────
       {
@@ -2700,14 +2720,14 @@ function stickSolo(id) {
       // ───── Panel 2: forward P/E + 5Y rolling P20/P80 band + 200d SMA ─────
       {
         x: xs(v.band_p80), y: ys(v.band_p80),
-        type: "scattergl", mode: "lines",
+        type: "scatter", mode: "lines",
         name: "5Y P80", line: { color: "rgba(0,0,0,0)", width: 0 },
         yaxis: "y2", xaxis: "x", showlegend: false,
         hovertemplate: "P80 %{y:.2f}<extra></extra>",
       },
       {
         x: xs(v.band_p20), y: ys(v.band_p20),
-        type: "scattergl", mode: "lines",
+        type: "scatter", mode: "lines",
         name: "5Y P20–P80 band",
         line: { color: "rgba(0,0,0,0)", width: 0 },
         fill: "tonexty", fillcolor: "rgba(139,124,246,0.18)",
@@ -2778,7 +2798,7 @@ function stickSolo(id) {
         domain: [0.70, 1.0], type: "log",
         gridcolor: "rgba(255,255,255,0.06)", zeroline: false,
         tickfont: TICK_FONT, tickcolor: "rgba(255,255,255,0.25)",
-        title: { text: (idx === "qqq" ? "QQQ" : "S&P 500") + " (log)", font: Object.assign({}, TITLE_FONT, { color: "#A78BFA" }), standoff: 12 },
+        title: { text: priceLabel(idx) + " (log)", font: Object.assign({}, TITLE_FONT, { color: "#A78BFA" }), standoff: 12 },
       },
       yaxis2: {
         domain: [0.37, 0.66],
@@ -2804,12 +2824,9 @@ function stickSolo(id) {
   function applyValRange(key) {
     currentRange = key;
     const v = valOf(currentIndex);
-    const price = priceOf(currentIndex);
+    const price = v.price;
     const now = new Date(LATEST);
-    let start;
-    if (key === "all") start = new Date(v.pe[0][0]);
-    else if (key === "ytd") start = new Date(now.getFullYear(), 0, 1);
-    else { const y = parseInt(key, 10); start = new Date(now); start.setFullYear(start.getFullYear() - y); }
+    const start = rangeStart(key, v.pe[0][0]);
     const startStr = start.toISOString().slice(0,10);
     const endStr = now.toISOString().slice(0,10);
     const startMs = start.getTime(), endMs = now.getTime();
@@ -2857,7 +2874,10 @@ function stickSolo(id) {
   }
 
   Plotly.newPlot("val-chart", buildTraces(currentIndex), buildLayout(currentIndex), chartConfig)
-    .then(() => applyValRange("5y"));
+    .then(gd => {
+      applyValRange("5y");
+      gd.on("plotly_relayout", ev => { if (ev["xaxis.autorange"]) selectRange("data-val-range", "all", applyValRange); });
+    });
 
   document.querySelectorAll("[data-val-range]").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -2895,10 +2915,7 @@ function stickSolo(id) {
 
   function windowOf(key) {
     const now = new Date(LATEST);
-    let start;
-    if (key === "all") start = new Date(b.ma50[0][0]);
-    else if (key === "ytd") start = new Date(now.getFullYear(), 0, 1);
-    else { const y = parseInt(key, 10); start = new Date(now); start.setFullYear(start.getFullYear() - y); }
+    const start = rangeStart(key, b.ma50[0][0]);
     return { startStr: start.toISOString().slice(0, 10), endStr: now.toISOString().slice(0, 10) };
   }
 
@@ -2991,6 +3008,7 @@ function stickSolo(id) {
     });
   });
 })();
+});
 </script>
 </body>
 </html>
