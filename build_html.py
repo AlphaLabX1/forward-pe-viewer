@@ -109,13 +109,13 @@ SECTOR_TICKERS = {
 def compute_5y(points):
     latest_date_str, current = points[-1]
     latest = date.fromisoformat(latest_date_str)
-    cutoff = latest - timedelta(days=365 * 5)
-    window_vals = [
-        v for d, v in points
-        if v is not None and date.fromisoformat(d) >= cutoff
-    ]
-    if not window_vals:
+    cutoff = (latest - timedelta(days=365 * 5)).isoformat()
+    window = [(d, v) for d, v in points if v is not None and d >= cutoff]
+    # Same rule as computePctSeries in the page: under a year of history is
+    # too little to rank against.
+    if not window or (latest - date.fromisoformat(window[0][0])).days < 365:
         return None
+    window_vals = [v for _, v in window]
     lower = sum(1 for v in window_vals if v <= current)
     return {
         "rank": lower / len(window_vals) * 100,
@@ -1780,7 +1780,7 @@ TEMPLATE = r"""<!doctype html>
           <span class="card-num">04</span>
           <div>
             <h2>Historical path</h2>
-            <p class="lede">Forward view shows 12-month analyst estimates; trailing view uses reported TTM earnings — both daily since 2003 (Real Estate 2016, Communication Services 2018). The percentile view replots every series as its rolling five-year rank, 0–100. The Y axis auto-scales to whichever window and series are visible.</p>
+            <p class="lede">Forward view shows 12-month analyst estimates; trailing view uses reported TTM earnings — both daily since 2003 (Real Estate 2016, Communication Services 2018; forward Financials from 2016, since the source is broken before). The percentile view replots every series as its rolling five-year rank, 0–100. The Y axis auto-scales to whichever window and series are visible.</p>
           </div>
         </div>
         <div class="card-aside"><span class="lens-echo"></span></div>

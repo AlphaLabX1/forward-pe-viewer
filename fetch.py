@@ -35,7 +35,10 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
+from typing import Callable
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Series catalog
@@ -92,6 +95,52 @@ BREADTH_CSV = DATA_DIR / "sp500_breadth.csv"
 def pe_csv(lens: str, sid: int) -> Path:
     slug = SERIES[sid].lower().replace("&", "and").replace(" ", "_")
     return LENS_DIRS[lens] / f"{sid}_{slug}.csv"
+
+
+@dataclass(frozen=True)
+class Series:
+    """Where one stored series lives and what a sane reply for it looks like."""
+    path: Path
+    columns: tuple[str, ...]
+    lo: float
+    hi: float
+    merge: bool = False     # keep stored dates the reply lacks
+    valid_from: str = ""    # rows dated earlier are broken upstream and never stored
+    despike: bool = False   # drop isolated one-day spikes that revert
+
+
+# Trailing P/E legitimately runs into the hundreds when earnings collapse
+# (Energy 2017, Materials 2009); forward never has outside Energy 2020 (213).
+PE_HI = {"forward": 250.0, "trailing": 1000.0}
+
+# Each cut is a regime the source got wrong, not a range we dislike:
+#   XLF forward reads 165-500 every day until 2015-12-31, 13.8 on 2016-01-01.
+#   XLC's launch-day print is 10.1 forward / 6.6 trailing against 21.7 / 18.9
+#   the next day.
+PE_VALID_FROM = {
+    ("forward", 20520): "2016-01-01",
+    ("forward", 20518): "2018-06-20",
+    ("trailing", 20518): "2018-06-20",
+}
+
+CATALOG: dict[str, Series] = {
+    **{
+        f"{lens}/{sid}": Series(
+            pe_csv(lens, sid), (f"{lens}_pe",), 0.01, PE_HI[lens],
+            valid_from=PE_VALID_FROM.get((lens, sid), ""),
+        )
+        for sid in SERIES for lens in LENS_DIRS
+    },
+    # Before 1993-01-29 (SPY's launch) the file held S&P index levels, 10x SPY.
+    "spx_price": Series(SPX_PRICE_CSV, ("price",), 0.01, 1e5, merge=True,
+                        valid_from="1993-01-29", despike=True),
+    # QQQ forward P/E swings between 0.2 and 25 from 2004-09 until 2011-10-24.
+    "qqq_pe": Series(QQQ_PE_CSV, ("forward_pe",), 0.01, PE_HI["forward"], valid_from="2011-10-25"),
+    "qqq_price": Series(QQQ_PRICE_CSV, ("price",), 0.01, 1e5, merge=True, despike=True),
+    "us10y": Series(US10Y_CSV, ("yield",), 0.0, 25.0, merge=True),
+    "fear_greed": Series(FEAR_GREED_CSV, ("value",), 0.0, 100.0, merge=True),
+    "breadth": Series(BREADTH_CSV, ("above_50d", "above_200d"), 0.0, 100.0, merge=True),
+}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Koyfin client
@@ -167,10 +216,10 @@ _SCRAPINGANT_KEY = os.environ.get("SCRAPINGANT_API_KEY")
 _TOKEN_RE = re.compile(r'stk["\s]*[:=]["\s]*["\']([^"\']+)["\']')
 MM_FG_CHART_ID = 50108
 MM_FG_SLUG = "cnn-fear-and-greed"
+MM_FG_STAT = 22748   # the chart's other series is SPX (stat 2)
 MM_BREADTH_CHART_ID = 81081
 MM_BREADTH_SLUG = "S-P-500-Breadth"
-# User-generated chart, so series order is not stable; select by stat_id.
-MM_BREADTH_STATS = {18331: "ma50", 22718: "ma200"}
+MM_BREADTH_STATS = (18331, 22718)   # % above 50d MA, % above 200d MA
 MM_BASE = "https://en.macromicro.me"
 
 
@@ -283,139 +332,137 @@ def fetch_mm_chart(chart_id: int, slug: str) -> dict:
     return payload["data"][f"c:{chart_id}"]
 
 
-def fetch_fear_greed() -> list[list]:
-    """CNN F&G daily series from MacroMicro chart 50108."""
-    chart = fetch_mm_chart(MM_FG_CHART_ID, MM_FG_SLUG)
-    # series[0] = CNN F&G index, series[1] = SPX (which we now get from Koyfin).
-    return chart["series"][0]
-
-
-def fetch_sp500_breadth() -> dict[str, list[list]]:
-    """% of S&P 500 constituents above their 50d / 200d MA, keyed "ma50" / "ma200"."""
-    chart = fetch_mm_chart(MM_BREADTH_CHART_ID, MM_BREADTH_SLUG)
+def _series_by_stat(chart: dict, stat_ids) -> list[list[list]]:
+    """MacroMicro charts reorder their series; stat_id is the stable key."""
     configs = chart["info"]["chart_config"]["seriesConfigs"]
     by_stat = {cfg["stats"][0]["stat_id"]: i for i, cfg in enumerate(configs)}
-    missing = [sid for sid in MM_BREADTH_STATS if sid not in by_stat]
+    missing = [sid for sid in stat_ids if sid not in by_stat]
     if missing:
-        raise RuntimeError(
-            f"MacroMicro breadth chart missing stat_id(s) {missing}; found {sorted(by_stat)}"
-        )
-    return {key: chart["series"][by_stat[sid]] for sid, key in MM_BREADTH_STATS.items()}
+        raise RuntimeError(f"MacroMicro chart missing stat_id(s) {missing}; found {sorted(by_stat)}")
+    return [chart["series"][by_stat[sid]] for sid in stat_ids]
+
+
+def fetch_fear_greed() -> list[list]:
+    """CNN F&G daily series from MacroMicro chart 50108."""
+    return _series_by_stat(fetch_mm_chart(MM_FG_CHART_ID, MM_FG_SLUG), [MM_FG_STAT])[0]
+
+
+def fetch_sp500_breadth() -> list[list]:
+    """Rows [date, % above 50d MA, % above 200d MA], outer-joined; a missing
+    cell is ""."""
+    chart = fetch_mm_chart(MM_BREADTH_CHART_ID, MM_BREADTH_SLUG)
+    rows: dict[str, list] = {}
+    for col, pts in enumerate(_series_by_stat(chart, MM_BREADTH_STATS)):
+        for d, v in pts:
+            if v not in (None, ""):
+                rows.setdefault(str(d), ["", ""])[col] = v
+    return [[d, *rows[d]] for d in sorted(rows)]
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# CSV merge + write
+# Validation + storage
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _merge_with_existing_csv(path: Path, new_pts: list[list]) -> list[list]:
-    """Merge new points into existing CSV by date — new wins on overlap, old
-    dates not present in new are kept. Preserves deep history (e.g. SPX 1928+)."""
-    by_date: dict[str, str] = {}
-    if path.exists():
-        with path.open() as f:
-            reader = csv.reader(f)
-            next(reader, None)
-            for row in reader:
-                if len(row) >= 2:
-                    by_date[row[0]] = row[1]
-    for d, v in new_pts:
-        by_date[str(d)] = str(v)
-    return [[d, by_date[d]] for d in sorted(by_date)]
+class SeriesError(ValueError):
+    pass
 
 
-def write_breadth_csv(path: Path, breadth: dict[str, list[list]]) -> list[list]:
-    """Outer-join ma50 / ma200 by date and merge into the existing CSV. A
-    fresh value wins per cell; a blank fresh cell never erases a prior one."""
-    rows: dict[str, list[str]] = {}
-    if path.exists():
-        with path.open() as f:
-            reader = csv.reader(f)
-            next(reader, None)
-            for row in reader:
-                if len(row) >= 3:
-                    rows[row[0]] = [row[1], row[2]]
-    for col, key in enumerate(("ma50", "ma200")):
-        for d, v in breadth[key]:
-            if v is None or v == "":
+def check_series(name: str, pts: list[list], lo: float, hi: float,
+                 prior_last_date: str | None, min_points: int) -> None:
+    """Reject a reply that is out of range, older than what is stored, or
+    implausibly short. Raises SeriesError; the caller keeps the prior CSV."""
+    if not pts or len(pts) < min_points:
+        raise SeriesError(f"{name}: {len(pts)} rows, expected at least {max(min_points, 1)}")
+    bad = [row for row in pts for v in row[1:] if v not in (None, "") and not lo <= float(v) <= hi]
+    if bad:
+        raise SeriesError(f"{name}: {len(bad)} value(s) outside [{lo:g}, {hi:g}], first {bad[0]}")
+    last = max(row[0] for row in pts)
+    if prior_last_date and last < prior_last_date:
+        raise SeriesError(f"{name}: reply ends {last}, stored data ends {prior_last_date}")
+
+
+def drop_spikes(rows: list[list], ratio: float = 1.5) -> list[list]:
+    """Drop single rows that sit `ratio`x above or below both neighbours."""
+    keep = []
+    for i, row in enumerate(rows):
+        if 0 < i < len(rows) - 1:
+            a, b, c = (float(r[1]) for r in (rows[i - 1], row, rows[i + 1]))
+            if min(a, c) > b * ratio or max(a, c) * ratio < b:
                 continue
-            rows.setdefault(str(d), ["", ""])[col] = str(v)
-    out = [[d, *rows[d]] for d in sorted(rows)]
-    with path.open("w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["date", "above_50d", "above_200d"])
-        w.writerows(out)
-    return out
+        keep.append(row)
+    return keep
 
 
-def write_csv(path: Path, col: str, pts: list[list], merge: bool = False) -> int:
-    """Write a two-column CSV. merge=True keeps prior dates the reply lacks."""
-    rows = _merge_with_existing_csv(path, pts) if merge else pts
-    with path.open("w", newline="") as f:
+def read_rows(path: Path) -> list[list[str]]:
+    if not path.exists():
+        return []
+    with path.open() as f:
+        reader = csv.reader(f)
+        next(reader, None)
+        return [row for row in reader if len(row) >= 2]
+
+
+def clean_rows(spec: Series, rows: list[list]) -> list[list]:
+    rows = [r for r in rows if r[0] >= spec.valid_from]
+    return drop_spikes(rows) if spec.despike else rows
+
+
+def store(name: str, reply: list[list]) -> list[list]:
+    """Validate one fetched series and write its CSV; returns the stored rows.
+    Raises SeriesError and leaves the file untouched when validation fails."""
+    spec = CATALOG[name]
+    prior = clean_rows(spec, read_rows(spec.path))
+    reply = clean_rows(spec, [[str(r[0]), *r[1:]] for r in reply])
+    check_series(name, reply, spec.lo, spec.hi,
+                 prior[-1][0] if prior else None, int(len(prior) * 0.9))
+    by_date: dict[str, list] = {r[0]: r[1:] for r in prior} if spec.merge else {}
+    for d, *cells in reply:
+        old = by_date.get(d, [""] * len(cells))
+        by_date[d] = [new if new not in (None, "") else o for new, o in zip(cells, old)]
+    rows = clean_rows(spec, [[d, *by_date[d]] for d in sorted(by_date)])
+    with spec.path.open("w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["date", col])
+        w.writerow(["date", *spec.columns])
         w.writerows(rows)
-    return len(rows)
+    return rows
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Main
 # ──────────────────────────────────────────────────────────────────────────────
 
+# Source -> the series it feeds, each with the call that fetches it.
+SOURCES: dict[str, dict[str, Callable[[], list[list]]]] = {
+    "koyfin_pe": {
+        f"{lens}/{sid}": partial(koy_fundamental, KOYFIN_PE_KIDS[sid][0], key)
+        for sid in SERIES for lens, key in (("forward", "f_pe"), ("trailing", "f_peltm"))
+    },
+    "koyfin_prices": {
+        "spx_price": partial(koy_price, KOYFIN_SPX_KID),
+        "qqq_pe": partial(koy_fundamental, KOYFIN_QQQ_KID, "f_pe"),
+        "qqq_price": partial(koy_price, KOYFIN_QQQ_KID),
+    },
+    "us10y": {"us10y": partial(koy_price, KOYFIN_US10Y_KID)},
+    "fear_greed": {"fear_greed": fetch_fear_greed},
+    "breadth": {"breadth": fetch_sp500_breadth},
+}
+
+
 def main() -> None:
     for d in LENS_DIRS.values():
         d.mkdir(parents=True, exist_ok=True)
-
-    print(f"[1/4] Koyfin forward + trailing P/E ({len(KOYFIN_PE_KIDS)} series) ...")
-    n_ok = 0
-    for sid in SERIES:
-        kid, tk = KOYFIN_PE_KIDS[sid]
-        try:
-            fwd = koy_fundamental(kid, "f_pe")
-            trl = koy_fundamental(kid, "f_peltm")
-        except Exception as e:
-            print(f"  s:{sid:<6} {tk:<5} FAILED: {e} — keeping prior CSVs", file=sys.stderr)
-            continue
-        write_csv(pe_csv("forward", sid), "forward_pe", fwd)
-        write_csv(pe_csv("trailing", sid), "trailing_pe", trl)
-        n_ok += 1
-        print(f"  s:{sid:<6} {tk:<5} fwd={len(fwd):>5}  trail={len(trl):>5}")
-
-    print(f"[2/4] Koyfin SPX price + QQQ + 10Y yield ...")
-    spx = koy_price(KOYFIN_SPX_KID)
-    n_spx = write_csv(SPX_PRICE_CSV, "price", spx, merge=True)
-    print(f"  spx_price  Koyfin {len(spx):>5} pts; merged → {n_spx} pts")
-
-    qqq_pe = koy_fundamental(KOYFIN_QQQ_KID, "f_pe")
-    qqq_price = koy_price(KOYFIN_QQQ_KID)
-    n_qqq_pe = write_csv(QQQ_PE_CSV, "forward_pe", qqq_pe)
-    n_qqq_p = write_csv(QQQ_PRICE_CSV, "price", qqq_price, merge=True)
-    print(f"  qqq_fwd_pe Koyfin {len(qqq_pe):>5} pts → {n_qqq_pe} pts")
-    print(f"  qqq_price  Koyfin {len(qqq_price):>5} pts; merged → {n_qqq_p} pts")
-
-    us10y = koy_price(KOYFIN_US10Y_KID)
-    n_10y = write_csv(US10Y_CSV, "yield", us10y, merge=True)
-    print(f"  us10y      Koyfin {len(us10y):>5} pts; merged → {n_10y} pts")
-
-    print(f"[3/4] MacroMicro CNN F&G (chart {MM_FG_CHART_ID}) ...")
-    try:
-        fg = fetch_fear_greed()
-        n_fg = write_csv(FEAR_GREED_CSV, "value", fg)
-        print(f"  fear_greed {n_fg:>5} pts (CNN, replace)")
-    except Exception as e:
-        print(f"  fear_greed FAILED: {e} — keeping prior CSV", file=sys.stderr)
-
-    print(f"[4/4] MacroMicro S&P 500 breadth (chart {MM_BREADTH_CHART_ID}) ...")
-    try:
-        breadth = fetch_sp500_breadth()
-        rows = write_breadth_csv(BREADTH_CSV, breadth)
-        print(
-            f"  breadth    ma50 {len(breadth['ma50']):>5} / ma200 {len(breadth['ma200']):>5} pts;"
-            f" merged → {len(rows)} rows"
-        )
-    except Exception as e:
-        print(f"  breadth FAILED: {e} — keeping prior CSV", file=sys.stderr)
-
-    print(f"\nP/E refreshed for {n_ok}/{len(SERIES)} series. output: {DATA_DIR}")
+    failures: dict[str, dict[str, str]] = {}
+    for source, fetchers in SOURCES.items():
+        print(f"[{source}]")
+        for name, fetch_fn in fetchers.items():
+            try:
+                rows = store(name, fetch_fn())
+            except Exception as e:
+                failures.setdefault(source, {})[name] = str(e)
+                print(f"  {name:<16} FAILED, keeping prior CSV: {e}", file=sys.stderr)
+                continue
+            print(f"  {name:<16} {len(rows):>6} rows, last {rows[-1][0]}")
+    print(f"\nfailed: {failures or 'none'}")
 
 
 if __name__ == "__main__":
