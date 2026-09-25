@@ -24,7 +24,6 @@ build_html.py reads only these committed CSVs, through the paths defined here.
 
 from __future__ import annotations
 
-import base64
 import csv
 import datetime
 import json

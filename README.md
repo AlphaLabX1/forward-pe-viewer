@@ -1,111 +1,166 @@
-# Valuation & Mood — S&P 500 dashboard
+# Valuation & Mood
 
-A single-page viewer covering:
+A static dashboard of S&P 500 and sector valuations, market sentiment, and
+breadth. GitHub Actions rebuilds it every weekday and GitHub Pages serves the
+result.
 
-1. **Forward P/E** (12-month analyst estimates) for the S&P 500 + its 11 GICS
-   sectors, with a 5-year percentile rank per sector
-2. **Trailing P/E** (reported TTM earnings) for the same 12 series, as a
-   toggleable second lens
-3. **Fear & Greed** composite with an S&P 500 price overlay
+**Live dashboard: <https://alphalabx1.github.io/forward-pe-viewer/>**
 
-**Live dashboard → <https://alphalabx1.github.io/forward-pe-viewer/>**
+## What the page shows
 
-## What it does
+The page is one self-contained `index.html` with nine numbered cards. Cards
+01 to 04 have a Forward / Trailing lens toggle.
 
-- Pulls daily forward P/E (~4,600 points/series × 12) + daily Fear & Greed +
-  daily SPX price from **MacroMicro** in two HTTP calls
-- Pulls monthly trailing P/E (~375 points/series × 12, SPX back to 1871) from
-  **worldperatio.com** as a second independent source
-- Computes each sector's current P/E as a percentile of its own trailing
-  5-year distribution, under both lenses
-- Renders a single self-contained `index.html` with:
-  - A pin-strip and ranked table with Forward / Trailing lens toggle
-  - An interactive Plotly line chart with auto-rescaling Y axis
-  - A Fear & Greed gauge showing current reading + 1W/1M/3M/1Y markers
-  - A dual-axis F&G / SPX chart
+| Card | Content |
+| --- | --- |
+| 01 | Each sector's P/E as a percentile of its own last five years, the model's findings about the table, and an "ask the table" panel |
+| 02 | Ranked table: P/E, implied earnings growth, five-year percentile and range |
+| 03 | Change in five-year percentile over one week and one month |
+| 04 | P/E history per series, or its rolling five-year percentile |
+| 05 | CNN Fear & Greed gauge with 1W / 1M / 3M / 1Y readings |
+| 06 | Fear & Greed against SPY |
+| 07 | SPY returns 3, 6 and 12 months after extreme-fear and extreme-greed readings |
+| 08 | SPY or QQQ price, forward P/E with its 5-year P20 to P80 band and 200-day average, earnings yield against the 10-year Treasury yield |
+| 09 | SPY and QQQ rebased to 100, against the share of S&P 500 stocks above their 50-day and 200-day averages |
 
-## Stack
+The page date is the date of the latest Koyfin P/E reading. Each card shows
+the date of its own data. A source that failed to fetch, or whose data is
+older than the page date, turns red on its cards and is named in the
+masthead. If the page itself is more than four days old, a banner says so.
 
-- `fetch.py` — scrapes MacroMicro (forward P/E, SPX price, F&G) through
-  ScrapingAnt when `SCRAPINGANT_API_KEY` is set, else `curl_cffi` /
-  `cloudscraper`
-- `fetch_trailing.py` — scrapes worldperatio.com sector pages; the monthly
-  time series is embedded directly in each page as a `detailPE_data` JS array
-- `build_html.py` — reads both data sources, computes percentile ranks,
-  renders the dashboard to `index.html`
-- GitHub Pages serves `index.html` off the `main` branch root
-- GitHub Actions runs daily at 22:00 UTC (06:00 Asia/Shanghai)
+## Pipeline
+
+The workflow `.github/workflows/daily.yml` runs at 22:00 UTC, Monday to
+Friday. Each step reads the committed files that the previous step wrote.
+
+1. `fetch.py` downloads every series, validates it, and writes it to
+   `data/`. It then writes `data/status.json`.
+2. `python -m unittest discover -s tests` runs the test suite.
+3. `commentary.py` asks a model for the section 01 findings and writes
+   `data/insights.json`.
+4. `build_html.py` reads `data/` and writes `index.html`.
+5. `alerts.py` sends a Telegram message for failed or stale sources and for
+   threshold crossings.
+6. The workflow commits `data/` and `index.html` to `main`.
+
+The production scripts use only the Python standard library.
+
+### Sources
+
+| Source | Series | Files |
+| --- | --- | --- |
+| Koyfin (`koyfin_pe`) | Forward (`f_pe`) and trailing (`f_peltm`) P/E for SPY and the 11 sector SPDR ETFs | `data/<id>_<name>.csv`, `data/trailing/<id>_<name>.csv` |
+| Koyfin (`koyfin_prices`) | SPY price, QQQ price, QQQ forward P/E | `data/spx_price.csv`, `data/qqq_price.csv`, `data/qqq_forward_pe.csv` |
+| Koyfin (`us10y`) | US 10-year Treasury yield | `data/us10y.csv` |
+| MacroMicro (`fear_greed`) | CNN Fear & Greed index, chart 50108, stat 22748 | `data/fear_greed.csv` |
+| MacroMicro (`breadth`) | % of S&P 500 above the 50-day and 200-day average, chart 81081, stats 18331 and 22718 | `data/sp500_breadth.csv` |
+
+Koyfin is called through its unauthenticated web API. The instrument IDs are
+in `fetch.py`. The numeric series IDs (20052 for the S&P 500, 20517 to 20527
+for sectors) are legacy MacroMicro IDs and are kept as keys and filenames.
+
+MacroMicro blocks datacenter IPs. In CI, `fetch.py` sends its MacroMicro
+requests through [ScrapingAnt](https://scrapingant.com/) when the
+`SCRAPINGANT_API_KEY` secret is set. Each chart needs two requests: the chart
+page, which issues a token, and the data call that uses it. The session
+cookie is carried between the two. Without the key, `fetch.py` uses
+`curl_cffi`, which works from a residential IP.
+
+### Validation
+
+`fetch.py` defines every stored series in one `CATALOG`: its file, value
+bounds, whether new data merges with or replaces the stored file, and a
+`valid_from` date. Before a write, `check_series` rejects a reply that has a
+value outside the bounds, ends earlier than the stored data, or has fewer
+than 90% of the stored rows. A rejected or failed series keeps its previous
+file, and the failure goes into `status.json`.
+
+Some upstream history is wrong and is filtered out on every write:
+
+- Financials forward P/E before 2016-01-01 reads 165 to 500.
+- QQQ forward P/E before 2011-10-25 swings between 0.2 and 25.
+- Communication Services has a bad first reading on its launch day,
+  2018-06-19.
+- `spx_price.csv` holds SPY prices from 1993-01-29. Isolated one-day price
+  spikes that revert are dropped.
+
+### status.json
+
+```json
+{
+  "generated_at": "2026-09-24T22:10:03+00:00",
+  "sources": {
+    "fear_greed": {
+      "ok": false,
+      "as_of": "2026-09-23",
+      "prior_as_of": "2026-09-23",
+      "error": "HTTP 423: ...",
+      "missing": ["fear_greed"]
+    }
+  }
+}
+```
+
+`as_of` is the latest date stored for the source after the run, and
+`prior_as_of` is the date before it. `missing` lists the failed series and
+appears only when a series failed. `alerts.py` checks threshold crossings
+only for series whose date advanced in this run, so a second run on the same
+day does not repeat an alert.
+
+### Commentary
+
+The masthead's "Today's read" is a template in `build_html.standfirst()`. It
+names the richest and cheapest sector against their own five years and the
+largest one-week move. It says "richest in five years" only at the 95th
+percentile or above.
+
+The section 01 findings come from a model. `commentary.py` sends the table
+brief to a personal OpenRouter proxy (a Cloudflare Worker) and keeps only
+findings whose numbers all appear in the brief. The page states that the
+interpretation is the model's and is not checked. The "ask the table" panel
+calls the same proxy from the browser. No API key is involved.
+
+### Alerts
+
+`alerts.py` reports:
+
+- A source that failed or is older than the P/E date.
+- Fear & Greed crossing 25 or 75.
+- A sector's forward P/E five-year percentile crossing 5 or 95.
+
+With the `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` secrets set, it sends a
+Telegram message. Without them, it prints the lines. It never fails the run.
 
 ## Run locally
 
 ```bash
-pip install -r requirements.txt
-python fetch.py           # MacroMicro: forward P/E + F&G + SPX price
-python fetch_trailing.py  # worldperatio: trailing P/E (monthly)
-python build_html.py      # writes index.html
+python -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python fetch.py          # refresh data/ (needs network)
+python3 build_html.py              # write index.html from data/
+python3 -m unittest discover -s tests
 open index.html
 ```
+
+`requirements.txt` lists `curl_cffi`, which only the local MacroMicro
+fallback needs. `build_html.py` and the tests need nothing beyond Python 3.10
+or later, and build from the committed `data/` without fetching.
 
 ## Layout
 
 ```
-forward-pe-viewer/
-├── fetch.py              # MacroMicro batch (14 series, 1 API call)
-├── fetch_trailing.py     # worldperatio.com (12 HTML pages)
-├── build_html.py         # merges both sources → self-contained HTML
-├── requirements.txt
-├── data/
-│   ├── *.csv             # forward P/E per sector + spx_price.csv + fear_greed.csv
-│   ├── raw.json          # MacroMicro raw batch response
-│   └── trailing/
-│       ├── *.csv         # one trailing P/E CSV per sector
-│       └── raw.json      # worldperatio parsed output
-├── index.html            # the dashboard (committed, served by Pages)
-└── .github/workflows/daily.yml
+fetch.py             sources, series catalog, validation, status.json
+build_html.py        page build: payload, rendered fragments, HTML/CSS/JS template
+commentary.py        section 01 findings (model, number-checked)
+alerts.py            Telegram alerts
+tests/               unittest suite
+data/                committed CSVs, status.json, insights.json
+index.html           the built page, served by GitHub Pages
+.github/workflows/daily.yml
 ```
 
-## Alerts
+## Sector tickers
 
-`alerts.py` runs in CI after each build and checks the freshly fetched data
-for threshold crossings vs the previous trading day:
-
-- Fear & Greed crossing **25** (extreme fear) or **75** (extreme greed)
-- Any sector's forward-P/E 5-year percentile crossing **95** (rich) or **5** (cheap)
-
-If the repo secrets `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set, the
-alert goes out as a Telegram message; otherwise the lines are just printed in
-the workflow log. Errors never fail the refresh run.
-
-## Daily update in CI
-
-MacroMicro's Cloudflare blocks GitHub Actions datacenter IPs on sight, so
-`fetch.py` routes its two requests through [ScrapingAnt](https://scrapingant.com/)'s
-proxy API when the `SCRAPINGANT_API_KEY` repo secret is set. Each run costs
-2 credits out of the 10,000/month free tier — ~0.6% monthly usage. Cookies
-(specifically `PHPSESSID`) are preserved across the seed + API calls so the
-`stk` token validates on the JSON hop.
-
-`fetch_trailing.py` hits worldperatio.com directly — that host is on plain
-Apache, no bot protection, no proxy needed.
-
-Locally without `SCRAPINGANT_API_KEY` set, `fetch.py` falls back to
-`curl_cffi` / `cloudscraper`, which works fine from a residential IP.
-
-## Sector taxonomy
-
-GICS 11. Tickers used in the UI: `IT`, `COMM`, `DISC`, `FIN`, `IND`, `UTIL`,
-`EGY`, `RE`, `MAT`, `STPL`, `HLTH`, plus `SPX` for the index.
-
-## Sources
-
-- **Forward P/E, Fear & Greed, SPX daily price** — [MacroMicro](https://en.macromicro.me/)
-  series `20052`, `20517–20527`, `2`, `46974`. Ultimately sourced by MacroMicro
-  from S&P Dow Jones Indices. Note: S&P's "forward EPS" column retroactively
-  overwrites historical forecasts with realized TTM earnings, so old P/E
-  values for sectors with earnings shocks (e.g. Energy in 2020) can look
-  distorted.
-- **Trailing P/E** — [worldperatio.com](https://worldperatio.com/sp-500-sectors/);
-  monthly series embedded in each sector's detail page as a JS array,
-  starting 1995 for sectors and 1871 for the index (Shiller series).
+The UI uses `SPX` for the index and `IT`, `COMM`, `DISC`, `FIN`, `IND`,
+`UTIL`, `EGY`, `RE`, `MAT`, `STPL`, `HLTH` for the 11 GICS sectors.
 
 Internal dashboard for **AlphaLabX1**.

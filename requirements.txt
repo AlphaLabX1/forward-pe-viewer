@@ -1,2 +1,3 @@
+# Local only: fetch.py falls back to curl_cffi for MacroMicro when
+# SCRAPINGANT_API_KEY is unset. CI and the build need nothing beyond stdlib.
 curl_cffi>=0.7.0
-cloudscraper>=1.2.71

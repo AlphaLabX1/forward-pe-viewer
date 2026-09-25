@@ -20,13 +20,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Production scripts are stdlib-only; requirements.txt is for local runs.
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
-
-      - name: Install deps
-        run: pip install -r requirements.txt
 
       - name: Fetch, build, commit
         env:
@@ -39,10 +36,11 @@ jobs:
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
           if ! python fetch.py; then
-            echo "::warning::fetch.py (Koyfin) failed — skipping refresh this run."
+            echo "::warning::fetch.py crashed — skipping refresh this run."
             exit 0
           fi
-          python commentary.py || echo "::warning::commentary step failed — page falls back to static copy."
+          python -m unittest discover -s tests
+          python commentary.py || echo "::warning::commentary step failed — section 01 keeps the previous findings or none."
           python build_html.py
           python alerts.py
           git add -A data/ index.html
