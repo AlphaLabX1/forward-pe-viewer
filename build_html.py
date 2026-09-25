@@ -287,18 +287,160 @@ def _load_csv_points(path: Path) -> list[tuple[str, float]]:
     return out
 
 
-def load_breadth(path: Path) -> dict[str, list[list]]:
-    out: dict[str, list[list]] = {"ma50": [], "ma200": []}
+def load_breadth_rows(path: Path) -> list[tuple[str, float | None, float | None]]:
+    """(date, % above 50-day, % above 200-day), unrounded."""
     if not path.exists():
-        return out
+        return []
     with path.open() as f:
         r = csv.reader(f)
         next(r, None)
-        for row in r:
-            for key, cell in zip(("ma50", "ma200"), row[1:3]):
-                if cell:
-                    out[key].append([row[0], round(float(cell), 1)])
-    return out
+        num = lambda c: float(c) if c else None
+        return [(d, num(b50), num(b200)) for d, b50, b200 in r]
+
+
+def breadth_series(rows) -> dict[str, list[list]]:
+    return {
+        key: [[d, round(v[i], 1)] for d, *v in rows if v[i] is not None]
+        for i, key in enumerate(("ma50", "ma200"))
+    }
+
+
+DIVERGENCE_NEAR_HIGH = -3.0
+DIVERGENCE_BREADTH = 50.0
+DIVERGENCE_EPISODE_GAP = 20
+HIGH_WINDOW = 252
+FWD_SESSIONS = 63
+DRAWDOWN_SESSIONS = 252
+DRAWDOWN_PCT = -10.0
+
+
+def _divergence_stats(rows, in_zone) -> dict:
+    """rows: dicts with fwd63 and dd (None when unknown). in_zone: parallel
+    bools. An episode starts at a zone day that follows at least
+    DIVERGENCE_EPISODE_GAP sessions without one."""
+    picked = [r for r, z in zip(rows, in_zone) if z]
+    fwd = [r["fwd63"] for r in picked if r["fwd63"] is not None]
+    dd = [r["dd"] for r in picked if r["dd"] is not None]
+    starts, last = [], None
+    for i, z in enumerate(in_zone):
+        if not z:
+            continue
+        if last is None or i - last - 1 >= DIVERGENCE_EPISODE_GAP:
+            starts.append(i)
+        last = i
+    episode_fwd = [rows[i]["fwd63"] for i in starts if rows[i]["fwd63"] is not None]
+    r1 = lambda v: round(v, 1) if v is not None else None
+    return {
+        "days": len(picked),
+        "episodes": len(starts),
+        "n_fwd": len(fwd),
+        "median_fwd63": r1(statistics.median(fwd) if fwd else None),
+        "pos_share": r1(sum(1 for x in fwd if x > 0) / len(fwd) * 100 if fwd else None),
+        "n_dd": len(dd),
+        "dd_share": r1(sum(dd) / len(dd) * 100 if dd else None),
+        "n_episode_fwd": len(episode_fwd),
+        "episode_median_fwd63": r1(statistics.median(episode_fwd) if episode_fwd else None),
+    }
+
+
+def divergence_payload(spy_points, breadth_rows) -> dict | None:
+    """Each session with both SPY and breadth: distance of SPY below its
+    252-session high against % of S&P 500 stocks above their 50/200-day
+    averages, the next-63-session SPY return, and whether a 10% drawdown
+    followed within 252 sessions. Forward windows overlap; stats are
+    descriptive."""
+    closes = [v for _, v in spy_points]
+    index_of = {d: i for i, (d, _) in enumerate(spy_points)}
+    rows = []
+    for d, b50, b200 in breadth_rows:
+        i = index_of.get(d)
+        if i is None or i < HIGH_WINDOW:
+            continue
+        c = closes[i]
+        off = (c / max(closes[i - HIGH_WINDOW + 1:i + 1]) - 1) * 100
+        fwd = (closes[i + FWD_SESSIONS] / c - 1) * 100 if i + FWD_SESSIONS < len(closes) else None
+        dd = None
+        if i + DRAWDOWN_SESSIONS < len(closes):
+            dd = (min(closes[i + 1:i + DRAWDOWN_SESSIONS + 1]) / c - 1) * 100 <= DRAWDOWN_PCT
+        rows.append({"date": d, "off": off, "b50": b50, "b200": b200, "fwd63": fwd, "dd": dd})
+    if not rows:
+        return None
+
+    def zone(r, key):
+        return r["off"] >= DIVERGENCE_NEAR_HIGH and r[key] is not None and r[key] < DIVERGENCE_BREADTH
+
+    zones = {}
+    for key in ("b200", "b50"):
+        present = [r[key] is not None for r in rows]
+        zones[key] = {
+            "zone": _divergence_stats(rows, [zone(r, key) for r in rows]),
+            "all": _divergence_stats(rows, present),
+        }
+    last = rows[-1]
+    r1 = lambda v: round(v, 1) if v is not None else None
+    return {
+        "points": [
+            [r["date"], round(r["off"], 1), r1(r["b50"]), r1(r["b200"]), r1(r["fwd63"])]
+            for r in rows
+        ],
+        "zones": zones,
+        "zone_box": {"off_high_pct": DIVERGENCE_NEAR_HIGH, "breadth": DIVERGENCE_BREADTH},
+        "today": {
+            "date": last["date"],
+            "off_high_pct": round(last["off"], 2),
+            "b50": r1(last["b50"]),
+            "b200": r1(last["b200"]),
+            "in_zone": {key: zone(last, key) for key in ("b200", "b50")},
+        },
+    }
+
+
+def render_divergence_stats(div) -> str:
+    if not div:
+        return "<p style='color:var(--dim)'>Not enough data for divergence stats.</p>"
+
+    def pct(v, signed=False):
+        return "–" if v is None else (f"{v:+.1f}%" if signed else f"{v:.0f}%")
+
+    def med(s):
+        v = s["median_fwd63"]
+        cls = "" if v is None else (" pos" if v > 0 else " neg")
+        return f'<span class="sig-med{cls}">{pct(v, True)}</span><span class="sig-win">n={s["n_fwd"]}</span>'
+
+    def sample(s, episodes):
+        head = f'{s["episodes"]} episodes' if episodes else f'{s["days"]} days'
+        sub = f'{s["days"]} days' if episodes else "since " + div["points"][0][0][:4]
+        return f'<span class="sig-med">{head}</span><span class="sig-win">{sub}</span>'
+
+    metrics = [
+        ("Median return, next 3 months", "SPY price, 63 sessions", med),
+        ("Up after 3 months", "share of days",
+         lambda s: f'<span class="sig-med">{pct(s["pos_share"])}</span><span class="sig-win">n={s["n_fwd"]}</span>'),
+        ("Fell 10% within a year", "close to later low, 252 sessions",
+         lambda s: f'<span class="sig-med">{pct(s["dd_share"])}</span><span class="sig-win">n={s["n_dd"]}</span>'),
+    ]
+    tables = []
+    for key, label in (("b200", "200-day"), ("b50", "50-day")):
+        z, a = div["zones"][key]["zone"], div["zones"][key]["all"]
+        body = "".join(
+            f'<tr><td>{name}<span class="sig-cond-sub">{sub}</span></td>'
+            f'<td>{fn(z)}</td><td class="sig-base-cell">{fn(a)}</td></tr>'
+            for name, sub, fn in metrics
+        )
+        body += (
+            f'<tr><td>Sample<span class="sig-cond-sub">new episode after {DIVERGENCE_EPISODE_GAP} quiet sessions</span></td>'
+            f'<td>{sample(z, True)}</td><td class="sig-base-cell">{sample(a, False)}</td></tr>'
+        )
+        hidden = "" if key == "b200" else " hidden"
+        tables.append(
+            f'<div class="sig-wrap div-stats" data-div-stats="{key}"{hidden}>'
+            '<table class="sig-table">'
+            f'<thead><tr><th></th><th>In the zone</th><th>All days</th></tr></thead>'
+            f'<tbody>{body}</tbody></table>'
+            f'<p class="div-note">Zone: SPY within {-DIVERGENCE_NEAR_HIGH:g}% of its 52-week high and under half of stocks above their {label} average.</p>'
+            '</div>'
+        )
+    return "".join(tables)
 
 
 def build_family_payload(points_by_sid: dict[int, list[tuple[str, float]]]):
@@ -744,6 +886,7 @@ CARD_SOURCES = {
     "07": ("fear_greed", "koyfin_prices"),
     "08": ("koyfin_prices", "us10y"),
     "09": ("breadth", "koyfin_prices"),
+    "10": ("breadth", "koyfin_prices"),
 }
 
 
@@ -819,7 +962,9 @@ def build() -> Path:
     # Valuation panel (section 08), built per index, switchable in the UI.
     qqq_pe = _round_series(_load_csv_points(QQQ_PE_CSV), 4)
     qqq_price = _round_series(_load_csv_points(QQQ_PRICE_CSV), 2)
-    breadth = load_breadth(BREADTH_CSV)
+    breadth_rows = load_breadth_rows(BREADTH_CSV)
+    breadth = breadth_series(breadth_rows)
+    divergence = divergence_payload(spx_points, breadth_rows)
     valuation_spy = valuation_payload(spx_forward_pe, us10y_points)
     valuation_qqq = valuation_payload(qqq_pe, us10y_points)
 
@@ -846,6 +991,7 @@ def build() -> Path:
         "us10y": _round_series(since(us10y_points), 2),
         "valuation": {"spy": valuation_spy, "qqq": valuation_qqq},
         "breadth": breadth,
+        "divergence": divergence,
     }, separators=(",", ":"))
 
     html = (TEMPLATE
@@ -859,6 +1005,7 @@ def build() -> Path:
         .replace("__MOVERS_FORWARD__", forward["movers_html"])
         .replace("__MOVERS_TRAILING__", trailing["movers_html"] if trailing else "")
         .replace("__FG_STATS__", render_fg_stats(fg_stats))
+        .replace("__DIV_STATS__", render_divergence_stats(divergence))
         .replace("__STANDFIRST__", render_standfirst(standfirst(forward["summary"], fg_points[-1] if fg_points else None)))
         .replace("__INSIGHTS__", render_insights(forward["latest_date"]))
         .replace("__ASK_CHIPS__", chips_html)
@@ -1169,6 +1316,7 @@ TEMPLATE = r"""<!doctype html>
   #chart, #mood-chart { width: 100%; height: 560px; }
   #val-chart { width: 100%; height: 760px; }
   #breadth-chart { width: 100%; height: 640px; }
+  #div-chart { width: 100%; height: 560px; }
 
   /* ─────────────────── Strip (dot distribution) ─────────────────── */
   .strip-frame {
@@ -1581,6 +1729,9 @@ TEMPLATE = r"""<!doctype html>
   .sig-med.neg { color: var(--hot); }
   .sig-win { display: block; font-size: 10.5px; color: var(--dim); margin-top: 3px; }
   .sig-base td { opacity: 0.75; }
+  .div-stats .sig-table { min-width: 0; }
+  .div-stats .sig-base-cell { opacity: 0.75; }
+  .div-note { font-family: var(--font-mono); font-size: 10.5px; color: var(--dim); margin: 10px 0 0; }
 
   /* ─────────────────── Gauge (Fear & Greed) ─────────────────── */
   .gauge { display: flex; align-items: center; gap: 40px; margin-top: 20px; }
@@ -1697,6 +1848,8 @@ TEMPLATE = r"""<!doctype html>
     .pin-row-3 { top: 90px; }
     .strip-labels { font-size: 9px; }
     .strip-labels span:nth-child(2) { display: none; }
+    #div-chart { height: 440px; }
+    .div-stats .sig-table td, .div-stats .sig-table td:first-child { font-size: 12.5px; padding: 11px 6px; }
   }
 </style>
 </head>
@@ -2002,6 +2155,28 @@ TEMPLATE = r"""<!doctype html>
         </div>
       </div>
       <div class="chart-wrap"><div id="breadth-chart"></div></div>
+    </section>
+
+    <!-- ═══ 10. Price against participation ═══ -->
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="card-num">10</span>
+          <div>
+            <h2>Price against participation</h2>
+            <p class="lede">Each dot is one trading day since 2006. Across: how far SPY stood below its 52-week high. Up: the share of S&amp;P 500 stocks above their 200-day or 50-day average. Color: SPY's price return over the next three months, an open circle where that is not yet known. The dotted box in the corner is the divergence from section 09, an index near its high with fewer than half its stocks joining in. The table compares what followed those days with what followed any day. Windows overlap, so read it as a description, not a signal.</p>
+          </div>
+        </div>
+        <div class="card-aside">Daily · next 3 months__ASOF_10__</div>
+      </div>
+      <div class="chart-controls">
+        <div class="seg">
+          <button data-div-measure="b200" class="active">% above 200-day</button>
+          <button data-div-measure="b50">% above 50-day</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><div id="div-chart"></div></div>
+      __DIV_STATS__
     </section>
 
     <!-- ═══ Footer ═══ -->
@@ -3004,6 +3179,115 @@ function stickSolo(id) {
       document.querySelectorAll("[data-breadth-range]").forEach(x => x.classList.remove("active"));
       btn.classList.add("active");
       currentRange = btn.dataset.breadthRange;
+      render();
+    });
+  });
+})();
+
+// ═══ Section 10: SPY distance from high against breadth ═══
+(function renderDivergenceChart() {
+  const dv = DATA.divergence;
+  if (!dv || !dv.points.length) return;
+
+  const COL = { b50: 2, b200: 3 };
+  const LABEL = { b50: "% above 50-day", b200: "% above 200-day" };
+  const X_MIN = -35;
+  const TRAIL = 60;
+  const TITLE_FONT = { family: BODY, size: 11, color: "#6B7078" };
+  const pts = dv.points;
+  let measure = "b200";
+
+  const fwdText = f => f === null ? "not yet known" : (f > 0 ? "+" : "") + f.toFixed(1) + "%";
+
+  function dotTrace(rows, key, marker, name) {
+    const r = rows.filter(p => p[COL[key]] !== null);
+    return {
+      x: r.map(p => p[1]), y: r.map(p => p[COL[key]]),
+      customdata: r.map(p => [p[0], fwdText(p[4])]),
+      type: "scattergl", mode: "markers", name: name,
+      marker: marker,
+      hovertemplate: "<b>%{customdata[0]}</b><br>%{x:.1f}% off 52-week high<br>" + LABEL[key] + " %{y:.1f}%<br>next 3 months %{customdata[1]}<extra></extra>",
+    };
+  }
+
+  function buildTraces(key, narrow) {
+    const known = pts.filter(p => p[4] !== null);
+    const recent = pts.slice(-TRAIL);
+    const today = pts.slice(-1);
+    return [
+      Object.assign(dotTrace(known, key, {
+        size: 5, opacity: 0.5,
+        color: known.filter(p => p[COL[key]] !== null).map(p => p[4]),
+        cmin: -15, cmax: 15,
+        colorscale: [[0, "#F87171"], [0.5, "#7C8290"], [1, "#34D399"]],
+        colorbar: {
+          orientation: "h", x: 1, xanchor: "right", y: -0.16, yanchor: "top",
+          len: 0.45, thickness: 8, outlinewidth: 0,
+          tickfont: TICK_FONT, ticksuffix: "%", tickvals: [-15, 0, 15],
+          title: { text: "Next 3 months", side: "top", font: TITLE_FONT },
+        },
+      }, "History"), { showlegend: false }),
+      dotTrace(pts.filter(p => p[4] === null), key, { size: 6, opacity: 0.8, symbol: "circle-open", color: "#C4C8D0" }, narrow ? "Not yet known" : "Next 3 months not yet known"),
+      Object.assign(dotTrace(recent, key, { size: 4, color: "#A78BFA" }, "Last " + TRAIL + (narrow ? "" : " sessions")), {
+        mode: "lines+markers", line: { color: "#A78BFA", width: 1.4 },
+      }),
+      dotTrace(today, key, { size: 13, color: "#D66AE0", line: { color: "#EDEEF0", width: 2 } }, "Latest"),
+    ];
+  }
+
+  function buildLayout(key, narrow) {
+    const t = dv.today;
+    return {
+      margin: narrow ? { l: 40, r: 8, t: 28, b: 92 } : { l: 52, r: 16, t: 28, b: 96 },
+      hovermode: "closest",
+      hoverlabel: baseLayout.hoverlabel,
+      paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+      font: baseLayout.font,
+      legend: { orientation: "h", x: 0, y: 1.02, yanchor: "bottom", font: { family: MONO, size: 10, color: "#9BA0AB" } },
+      xaxis: {
+        range: [X_MIN, 1], autorange: false, zeroline: false,
+        showgrid: false, linecolor: "rgba(255,255,255,0.12)", tickcolor: "rgba(255,255,255,0.25)",
+        tickfont: TICK_FONT, ticksuffix: "%",
+        title: { text: narrow ? "SPY below 52-week high" : "SPY below its 52-week high (axis stops at " + X_MIN + "%)", font: TITLE_FONT, standoff: 8 },
+      },
+      yaxis: {
+        range: [0, 100], autorange: false, tickvals: [0, 20, 50, 80, 100],
+        gridcolor: "rgba(255,255,255,0.06)", zeroline: false,
+        tickfont: TICK_FONT, tickcolor: "rgba(255,255,255,0.25)",
+        title: { text: LABEL[key], font: TITLE_FONT, standoff: 10 },
+      },
+      shapes: [{
+        type: "rect", xref: "x", yref: "y", x0: dv.zone_box.off_high_pct, x1: 0, y0: 0, y1: dv.zone_box.breadth,
+        line: { color: "rgba(155,140,250,0.85)", width: 1.2, dash: "dot" },
+      }],
+      annotations: [
+        {
+          x: 0, y: dv.zone_box.breadth, xref: "x", yref: "y", xanchor: "right", yanchor: "bottom", showarrow: false,
+          text: "zone", font: { family: MONO, size: 10, color: "#9B8CFA" },
+        },
+      ].concat(t[key] === null ? [] : [{
+        x: t.off_high_pct, y: t[key], xref: "x", yref: "y", ax: narrow ? -60 : -80, ay: 36,
+        arrowcolor: "rgba(237,238,240,0.5)", arrowwidth: 1, arrowhead: 0,
+        bgcolor: "rgba(22,24,31,0.85)", borderpad: 4,
+        text: t.date + "<br>" + t.off_high_pct.toFixed(1) + "% off high, " + t[key].toFixed(1) + "%",
+        font: { family: MONO, size: 10, color: "#EDEEF0" }, align: "left",
+      }]),
+    };
+  }
+
+  function render() {
+    const narrow = document.getElementById("div-chart").clientWidth < 520;
+    return Plotly.react("div-chart", buildTraces(measure, narrow), buildLayout(measure, narrow), chartConfig);
+  }
+
+  render();
+
+  document.querySelectorAll("[data-div-measure]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-div-measure]").forEach(x => x.classList.remove("active"));
+      btn.classList.add("active");
+      measure = btn.dataset.divMeasure;
+      document.querySelectorAll("[data-div-stats]").forEach(el => { el.hidden = el.dataset.divStats !== measure; });
       render();
     });
   });

@@ -8,7 +8,7 @@ result.
 
 ## What the page shows
 
-The page is one self-contained `index.html` with nine numbered cards. Cards
+The page is one self-contained `index.html` with ten numbered cards. Cards
 01 to 04 have a Forward / Trailing lens toggle.
 
 | Card | Content |
@@ -22,6 +22,7 @@ The page is one self-contained `index.html` with nine numbered cards. Cards
 | 07 | SPY returns 3, 6 and 12 months after extreme-fear and extreme-greed readings |
 | 08 | SPY or QQQ price, forward P/E with its 5-year P20 to P80 band and 200-day average, earnings yield against the 10-year Treasury yield |
 | 09 | SPY and QQQ rebased to 100, against the share of S&P 500 stocks above their 50-day and 200-day averages |
+| 10 | Each day's SPY distance below its 52-week high against breadth, colored by the next three months' return, with stats for days near the high while under half of stocks are above their average |
 
 The page date is the date of the latest Koyfin P/E reading. Each card shows
 the date of its own data. A source that failed to fetch, or whose data is
