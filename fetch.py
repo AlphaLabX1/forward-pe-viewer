@@ -7,6 +7,8 @@ Data sources (post 2026-05 migration):
     endpoint `POST /api/v1/bfc/tickers/search`.
   - MacroMicro chart 50108 via ScrapingAnt for the CNN Fear & Greed index
     (Koyfin doesn't carry sentiment data).
+  - MacroMicro chart 81081 for S&P 500 breadth (% of constituents above
+    their 50-day and 200-day moving averages).
 
 Outputs:
   data/<sid>_<slug>.csv           — forward P/E (12 series)
@@ -14,6 +16,7 @@ Outputs:
   data/spx_price.csv              — S&P 500 daily price (SPY ETF proxy)
   data/us10y.csv                  — US 10-year Treasury yield (%)
   data/fear_greed.csv             — CNN Fear & Greed Index
+  data/sp500_breadth.csv          — % of S&P 500 above 50d / 200d MA
   data/raw.json                   — combined raw points, used by build_html.py
 """
 
@@ -155,6 +158,10 @@ _SCRAPINGANT_KEY = os.environ.get("SCRAPINGANT_API_KEY")
 _TOKEN_RE = re.compile(r'stk["\s]*[:=]["\s]*["\']([^"\']+)["\']')
 MM_FG_CHART_ID = 50108
 MM_FG_SLUG = "cnn-fear-and-greed"
+MM_BREADTH_CHART_ID = 81081
+MM_BREADTH_SLUG = "S-P-500-Breadth"
+# User-generated chart, so series order is not stable; select by stat_id.
+MM_BREADTH_STATS = {18331: "ma50", 22718: "ma200"}
 MM_BASE = "https://en.macromicro.me"
 
 
@@ -241,11 +248,11 @@ class _MacroMicroSession:
         return _ScrapingAntResponse(last_status, last_body)
 
 
-def fetch_fear_greed() -> list[list]:
-    """Pull the CNN F&G daily series from MacroMicro chart 50108. Two calls:
-    seed page → /charts/data/<id> with the page-issued stk token."""
+def fetch_mm_chart(chart_id: int, slug: str) -> dict:
+    """Pull one MacroMicro chart (`info` + `series`). Two calls: seed page →
+    /charts/data/<id> with the page-issued stk token."""
     session = _MacroMicroSession()
-    page_url = f"{MM_BASE}/charts/{MM_FG_CHART_ID}/{MM_FG_SLUG}"
+    page_url = f"{MM_BASE}/charts/{chart_id}/{slug}"
     r1 = session.get(page_url, timeout=60)
     r1.raise_for_status()
     m = _TOKEN_RE.search(r1.text)
@@ -259,14 +266,32 @@ def fetch_fear_greed() -> list[list]:
         "Accept": "application/json, text/plain, */*",
         "X-Requested-With": "XMLHttpRequest",
     }
-    r2 = session.get(f"{MM_BASE}/charts/data/{MM_FG_CHART_ID}", headers=headers)
+    r2 = session.get(f"{MM_BASE}/charts/data/{chart_id}", headers=headers)
     r2.raise_for_status()
     payload = r2.json()
     if payload.get("success") != 1:
-        raise RuntimeError(f"MacroMicro F&G chart returned non-success: {payload!r}")
-    chart = payload["data"][f"c:{MM_FG_CHART_ID}"]
+        raise RuntimeError(f"MacroMicro chart {chart_id} returned non-success: {payload!r}")
+    return payload["data"][f"c:{chart_id}"]
+
+
+def fetch_fear_greed() -> list[list]:
+    """CNN F&G daily series from MacroMicro chart 50108."""
+    chart = fetch_mm_chart(MM_FG_CHART_ID, MM_FG_SLUG)
     # series[0] = CNN F&G index, series[1] = SPX (which we now get from Koyfin).
     return chart["series"][0]
+
+
+def fetch_sp500_breadth() -> dict[str, list[list]]:
+    """% of S&P 500 constituents above their 50d / 200d MA, keyed "ma50" / "ma200"."""
+    chart = fetch_mm_chart(MM_BREADTH_CHART_ID, MM_BREADTH_SLUG)
+    configs = chart["info"]["chart_config"]["seriesConfigs"]
+    by_stat = {cfg["stats"][0]["stat_id"]: i for i, cfg in enumerate(configs)}
+    missing = [sid for sid in MM_BREADTH_STATS if sid not in by_stat]
+    if missing:
+        raise RuntimeError(
+            f"MacroMicro breadth chart missing stat_id(s) {missing}; found {sorted(by_stat)}"
+        )
+    return {key: chart["series"][by_stat[sid]] for sid, key in MM_BREADTH_STATS.items()}
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -287,6 +312,30 @@ def _merge_with_existing_csv(path: Path, new_pts: list[list]) -> list[list]:
     for d, v in new_pts:
         by_date[str(d)] = str(v)
     return [[d, by_date[d]] for d in sorted(by_date)]
+
+
+def write_breadth_csv(path: Path, breadth: dict[str, list[list]]) -> list[list]:
+    """Outer-join ma50 / ma200 by date and merge into the existing CSV. A
+    fresh value wins per cell; a blank fresh cell never erases a prior one."""
+    rows: dict[str, list[str]] = {}
+    if path.exists():
+        with path.open() as f:
+            reader = csv.reader(f)
+            next(reader, None)
+            for row in reader:
+                if len(row) >= 3:
+                    rows[row[0]] = [row[1], row[2]]
+    for col, key in enumerate(("ma50", "ma200")):
+        for d, v in breadth[key]:
+            if v is None or v == "":
+                continue
+            rows.setdefault(str(d), ["", ""])[col] = str(v)
+    out = [[d, *rows[d]] for d in sorted(rows)]
+    with path.open("w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["date", "above_50d", "above_200d"])
+        w.writerows(out)
+    return out
 
 
 def write_pe_csv(out_dir: Path, sid: int, name: str, pts: list[list], header_col: str):
@@ -324,7 +373,7 @@ def main() -> None:
     forward_points: dict[int, list] = {}
     trailing_points: dict[int, list] = {}
 
-    print(f"[1/4] Koyfin forward + trailing P/E ({len(KOYFIN_PE_KIDS)} series) ...")
+    print(f"[1/5] Koyfin forward + trailing P/E ({len(KOYFIN_PE_KIDS)} series) ...")
     for sid in SERIES:
         kid, tk = KOYFIN_PE_KIDS[sid]
         try:
@@ -339,7 +388,7 @@ def main() -> None:
         write_pe_csv(trailing_dir, sid, SERIES[sid], trl, "trailing_pe")
         print(f"  s:{sid:<6} {tk:<5} fwd={len(fwd):>5}  trail={len(trl):>5}")
 
-    print(f"[2/4] Koyfin SPX price + QQQ + 10Y yield ...")
+    print(f"[2/5] Koyfin SPX price + QQQ + 10Y yield ...")
     extras: dict[int, list] = {}
     spx = koy_price(KOYFIN_SPX_KID)
     extras[2] = spx
@@ -358,7 +407,7 @@ def main() -> None:
     n_10y = write_extra_csv(out_dir, "us10y", "yield", us10y, merge=True)
     print(f"  us10y      Koyfin {len(us10y):>5} pts; merged → {n_10y} pts")
 
-    print(f"[3/4] MacroMicro CNN F&G (chart {MM_FG_CHART_ID}) ...")
+    print(f"[3/5] MacroMicro CNN F&G (chart {MM_FG_CHART_ID}) ...")
     try:
         fg = fetch_fear_greed()
         extras[46974] = fg
@@ -367,7 +416,19 @@ def main() -> None:
     except Exception as e:
         print(f"  fear_greed FAILED: {e} — keeping prior CSV", file=sys.stderr)
 
-    print(f"[4/4] writing raw.json ...")
+    print(f"[4/5] MacroMicro S&P 500 breadth (chart {MM_BREADTH_CHART_ID}) ...")
+    breadth: dict[str, list[list]] = {}
+    try:
+        breadth = fetch_sp500_breadth()
+        rows = write_breadth_csv(out_dir / "sp500_breadth.csv", breadth)
+        print(
+            f"  breadth    ma50 {len(breadth['ma50']):>5} / ma200 {len(breadth['ma200']):>5} pts;"
+            f" merged → {len(rows)} rows"
+        )
+    except Exception as e:
+        print(f"  breadth FAILED: {e} — keeping prior CSV", file=sys.stderr)
+
+    print(f"[5/5] writing raw.json ...")
     raw = {
         "forward": {str(sid): pts for sid, pts in forward_points.items()},
         "trailing": {str(sid): pts for sid, pts in trailing_points.items()},
@@ -376,6 +437,7 @@ def main() -> None:
         "qqq_price": qqq_price,
         "us10y": extras.get(354, []),
         "fg": extras.get(46974, []),
+        "breadth": breadth,
     }
     (out_dir / "raw.json").write_text(json.dumps(raw, indent=2))
 
@@ -385,6 +447,7 @@ def main() -> None:
     print(f"  SPX price     : {len(extras.get(2, []))} new daily pts")
     print(f"  10Y yield     : {len(extras.get(354, []))} new daily pts")
     print(f"  CNN F&G       : {len(extras.get(46974, []))} pts")
+    print(f"  S&P breadth   : {len(breadth.get('ma50', []))} / {len(breadth.get('ma200', []))} pts")
     print(f"output: {out_dir}")
 
 

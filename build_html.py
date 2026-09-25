@@ -275,6 +275,20 @@ def _load_csv_points(path: Path) -> list[tuple[str, float]]:
     return out
 
 
+def load_breadth(path: Path) -> dict[str, list[list]]:
+    out: dict[str, list[list]] = {"ma50": [], "ma200": []}
+    if not path.exists():
+        return out
+    with path.open() as f:
+        r = csv.reader(f)
+        next(r, None)
+        for row in r:
+            for key, cell in zip(("ma50", "ma200"), row[1:3]):
+                if cell:
+                    out[key].append([row[0], round(float(cell), 2)])
+    return out
+
+
 def build_family_payload(points_by_sid: dict[int, list[tuple[str, float]]]):
     """Given raw points per series ID, produce the series / summary / strip
     HTML fragments for one P/E family (forward or trailing)."""
@@ -734,6 +748,7 @@ def build() -> Path:
     # Valuation panel (section 06) — built per index, switchable in the UI.
     qqq_pe = _round_series(raw.get("qqq_pe") or [], 4)
     qqq_price = _round_series(raw.get("qqq_price") or [], 2)
+    breadth = load_breadth(DATA / "sp500_breadth.csv")
     valuation_spy = valuation_payload(forward_points.get(20052) or [], us10y_points)
     valuation_qqq = valuation_payload(qqq_pe, us10y_points)
 
@@ -767,6 +782,7 @@ def build() -> Path:
         "spx": {"points": spx_points},
         "qqq": {"price": qqq_price},
         "valuation": {"spy": valuation_spy, "qqq": valuation_qqq},
+        "breadth": breadth,
     })
 
     html = (TEMPLATE
@@ -1081,6 +1097,7 @@ TEMPLATE = r"""<!doctype html>
   }
   #chart, #mood-chart { width: 100%; height: 560px; }
   #val-chart { width: 100%; height: 760px; }
+  #breadth-chart { width: 100%; height: 640px; }
 
   /* ─────────────────── Strip (dot distribution) ─────────────────── */
   .strip-frame {
@@ -1889,6 +1906,31 @@ TEMPLATE = r"""<!doctype html>
       <div class="chart-wrap"><div id="val-chart"></div></div>
     </section>
 
+    <!-- ═══ 09. Breadth vs price ═══ -->
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="card-num">09</span>
+          <div>
+            <h2>Is the rally broad?</h2>
+            <p class="lede">Top: SPY and QQQ, each rebased to 100 at the start of the visible window. Bottom: the share of S&amp;P 500 stocks trading above their 50-day and 200-day moving averages. Watch for divergence. An index pushing to new highs while fewer of its stocks join in means a handful of large names carry the move.</p>
+          </div>
+        </div>
+        <div class="card-aside">2 panels · shared X</div>
+      </div>
+      <div class="chart-controls">
+        <div class="seg">
+          <button data-breadth-range="all">All</button>
+          <button data-breadth-range="10y">10Y</button>
+          <button data-breadth-range="5y" class="active">5Y</button>
+          <button data-breadth-range="3y">3Y</button>
+          <button data-breadth-range="1y">1Y</button>
+          <button data-breadth-range="ytd">YTD</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><div id="breadth-chart"></div></div>
+    </section>
+
     <!-- ═══ Footer ═══ -->
     <footer>
       <div class="left">
@@ -1896,7 +1938,7 @@ TEMPLATE = r"""<!doctype html>
         <span class="dot">·</span>
         <span>P/E &amp; prices · Koyfin</span>
         <span class="dot">·</span>
-        <span>Fear &amp; Greed · MacroMicro</span>
+        <span>Fear &amp; Greed, breadth · MacroMicro</span>
       </div>
       <span>as of __LATEST_ISO__ · 5-year window</span>
     </footer>
@@ -2739,6 +2781,121 @@ function stickSolo(id) {
       btn.classList.add("active");
       currentIndex = btn.dataset.valIndex;
       rerender();
+    });
+  });
+})();
+
+// ═══ Section 09: S&P 500 breadth vs SPY / QQQ ═══
+(function renderBreadthChart() {
+  const b = DATA.breadth;
+  if (!b || !b.ma50.length || !b.ma200.length) return;
+
+  const TITLE_FONT = { family: BODY, size: 11 };
+  const PRICES = [
+    { name: "SPY", pts: DATA.spx.points, color: "#A78BFA" },
+    { name: "QQQ", pts: (DATA.qqq && DATA.qqq.price) || [], color: "#6AA0E0" },
+  ];
+  const BREADTH = [
+    { name: "% above 50d", pts: b.ma50, color: "#F0A868" },
+    { name: "% above 200d", pts: b.ma200, color: "#34D399" },
+  ];
+  let currentRange = "5y";
+
+  function windowOf(key) {
+    const now = new Date(LATEST);
+    let start;
+    if (key === "all") start = new Date(b.ma50[0][0]);
+    else if (key === "ytd") start = new Date(now.getFullYear(), 0, 1);
+    else { const y = parseInt(key, 10); start = new Date(now); start.setFullYear(start.getFullYear() - y); }
+    return { startStr: start.toISOString().slice(0, 10), endStr: now.toISOString().slice(0, 10) };
+  }
+
+  function rebased(pts, startStr, endStr) {
+    const vis = pts.filter(p => p[0] >= startStr && p[0] <= endStr);
+    if (!vis.length) return { x: [], y: [], raw: [] };
+    const base = vis[0][1];
+    return {
+      x: vis.map(p => p[0]),
+      y: vis.map(p => p[1] / base * 100),
+      raw: vis.map(p => p[1]),
+    };
+  }
+
+  function buildTraces(w) {
+    const priceTraces = PRICES.map(s => {
+      const r = rebased(s.pts, w.startStr, w.endStr);
+      return {
+        x: r.x, y: r.y, customdata: r.raw,
+        type: "scattergl", mode: "lines",
+        name: s.name,
+        line: { color: s.color, width: 1.8 },
+        yaxis: "y", xaxis: "x",
+        hovertemplate: "<b>" + s.name + "</b> %{y:.1f} (%{customdata:.2f})<extra></extra>",
+      };
+    });
+    const breadthTraces = BREADTH.map(s => ({
+      x: s.pts.map(p => p[0]), y: s.pts.map(p => p[1]),
+      type: "scattergl", mode: "lines",
+      name: s.name,
+      line: { color: s.color, width: 1.4 },
+      yaxis: "y2", xaxis: "x",
+      hovertemplate: "<b>" + s.name + "</b> %{y:.1f}%<extra></extra>",
+    }));
+    return priceTraces.concat(breadthTraces);
+  }
+
+  function refLine(y, color) {
+    return { type: "line", xref: "paper", x0: 0, x1: 1, yref: "y2", y0: y, y1: y, line: { color: color, width: 1, dash: "dot" } };
+  }
+
+  function buildLayout(w) {
+    return {
+      margin: { l: 56, r: 20, t: 16, b: 36 },
+      hovermode: "x unified",
+      hoverlabel: baseLayout.hoverlabel,
+      paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+      font: baseLayout.font,
+      legend: { orientation: "h", y: -0.08, x: 0, font: { family: MONO, size: 10, color: "#9BA0AB" } },
+      xaxis: {
+        anchor: "y2", domain: [0, 1],
+        range: [w.startStr, w.endStr], autorange: false,
+        showgrid: false, linecolor: "rgba(255,255,255,0.12)", tickcolor: "rgba(255,255,255,0.25)",
+        tickfont: TICK_FONT, type: "date",
+      },
+      yaxis: {
+        domain: [0.52, 1.0], type: "log", autorange: true,
+        gridcolor: "rgba(255,255,255,0.06)", zeroline: false,
+        tickfont: TICK_FONT, tickcolor: "rgba(255,255,255,0.25)",
+        title: { text: "Rebased, start = 100 (log)", font: Object.assign({}, TITLE_FONT, { color: "#A78BFA" }), standoff: 12 },
+      },
+      yaxis2: {
+        domain: [0.0, 0.44], range: [0, 100], autorange: false,
+        tickvals: [0, 20, 50, 80, 100],
+        gridcolor: "rgba(255,255,255,0.06)", zeroline: false,
+        tickfont: TICK_FONT, tickcolor: "rgba(255,255,255,0.25)",
+        title: { text: "% of S&P 500", font: Object.assign({}, TITLE_FONT, { color: "#F0A868" }), standoff: 12 },
+      },
+      shapes: [
+        refLine(20, "rgba(52,211,153,0.45)"),
+        refLine(50, "rgba(255,255,255,0.22)"),
+        refLine(80, "rgba(248,113,113,0.45)"),
+      ],
+    };
+  }
+
+  function render() {
+    const w = windowOf(currentRange);
+    return Plotly.react("breadth-chart", buildTraces(w), buildLayout(w), chartConfig);
+  }
+
+  render();
+
+  document.querySelectorAll("[data-breadth-range]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-breadth-range]").forEach(x => x.classList.remove("active"));
+      btn.classList.add("active");
+      currentRange = btn.dataset.breadthRange;
+      render();
     });
   });
 })();
