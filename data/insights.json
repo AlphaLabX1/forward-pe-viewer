@@ -1,16 +1,16 @@
 {
   "findings": [
     {
-      "title": "Materials' forward P/E hides a 127% earnings bet",
-      "body": "Materials trades at 16.36x forward but 37.15x trailing, a 65-point percentile gap between the two lenses. The market is underwriting a 127 percent earnings surge that would be the steepest in the table, yet the forward multiple sits at percentile 23 — cheap only if that growth actually arrives."
+      "title": "Materials' 65-point lens gap signals earnings rebound",
+      "body": "Materials' trailing P/E sits at the 89th percentile while its forward P/E is at the 23rd, a 65-point divergence—the widest in the table. That spread implies the market is pricing in a 127 percent earnings surge, an aggressive bet that recent margin compression is about to reverse sharply."
     },
     {
-      "title": "Real Estate's collapse is a de-rating, not an earnings story",
-      "body": "Real Estate's forward percentile fell 63 points in a month to 8, while its forward P/E of 34.25 remains the highest of any sector. The multiple barely moved relative to that percentile plunge, meaning the selloff is compressing the earnings base itself — implied growth is a 4 percent decline, so investors are paying a premium for shrinking profits."
+      "title": "Consumer Staples' month-long de-rating hits extreme",
+      "body": "Consumer Staples' forward percentile plunged 39 points in a month, the steepest decline among all sectors, yet its forward P/E of 19.11 remains near the middle of its five-year range. This suggests the market is rapidly repricing defensive growth lower, but the multiple has not yet caught up to the speed of the sentiment shift."
     },
     {
-      "title": "Consumer Staples' cheapness is a month-old panic",
-      "body": "Consumer Staples' forward percentile dropped 39 points in a month to 12, yet its trailing percentile sits at 59 — a 47-point gap. That divergence says the market is pricing in a 39 percent earnings rebound, but the speed of the de-rating looks like a sentiment shock rather than a fundamental repricing."
+      "title": "Real Estate's collapse belies stable earnings outlook",
+      "body": "Real Estate's forward percentile dropped 49 points in a month to the 8th percentile, yet its implied earnings growth is only a 4 percent decline. The valuation compression appears driven by multiple de-rating rather than deteriorating fundamentals, leaving the sector priced for a downturn that earnings estimates do not yet reflect."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
