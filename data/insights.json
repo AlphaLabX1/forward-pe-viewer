@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 129% earnings bet looks stretched",
-      "body": "Materials' forward P/E sits at the 23rd percentile while its trailing multiple is at the 89th, a 66-point gap. Analysts are underwriting 129 percent earnings growth, which would be a remarkable turnaround for a sector whose trailing earnings have kept its reported multiple that rich."
+      "title": "Materials' 66-point lens gap signals earnings collapse",
+      "body": "Materials trades at 16.30x forward but 36.98x trailing, a 66-point percentile gap between the two lenses. That spread implies analysts expect 127 percent earnings growth next year, a bet that the current earnings trough is about to reverse violently."
     },
     {
-      "title": "Real Estate's forward multiple collapses despite flat earnings",
-      "body": "Real Estate's forward P/E fell 44 percentile points in a month to the 8th percentile, yet its implied earnings growth is only a 3 percent decline. The forward multiple now sits below the trailing one, suggesting the market is repricing the sector on risk rather than on a fundamental earnings cliff."
+      "title": "Real Estate's 45-point monthly percentile plunge",
+      "body": "Real Estate's forward percentile fell 45 points in one month to 7, yet its forward P/E of 33.94 remains the most expensive in the table. The market is marking the sector down on expectations of a 4 percent earnings decline, but the multiple still prices in no such deterioration."
     },
     {
-      "title": "Consumer Staples' cheap forward hides rich trailing",
-      "body": "Consumer Staples trades at a forward P/E in the 13th percentile but a trailing multiple in the 61st, a 48-point gap. The market is paying up for stability in the trailing lens while forward estimates imply only 39 percent growth, a disconnect that points to defensive demand rather than earnings optimism."
+      "title": "Energy's forward percentile cheapens while trailing stays rich",
+      "body": "Energy's forward percentile dropped 14 points in a month to 47, while its trailing percentile sits at 77. The 30-point gap between lenses shows analysts expect 47 percent earnings growth, but the market is already discounting that optimism in the forward multiple."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-28"
+  "as_of": "2026-09-29"
 }
