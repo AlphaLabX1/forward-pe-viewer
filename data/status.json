@@ -1,35 +1,38 @@
 {
-  "generated_at": "2026-09-30T01:06:42+00:00",
+  "generated_at": "2026-10-01T01:06:10+00:00",
   "sources": {
     "koyfin_pe": {
-      "ok": true,
-      "as_of": "2026-09-29",
-      "prior_as_of": "2026-09-28",
-      "error": null
-    },
-    "koyfin_prices": {
-      "ok": true,
-      "as_of": "2026-09-29",
-      "prior_as_of": "2026-09-28",
-      "error": null
-    },
-    "us10y": {
       "ok": true,
       "as_of": "2026-09-30",
       "prior_as_of": "2026-09-29",
       "error": null
     },
+    "koyfin_prices": {
+      "ok": true,
+      "as_of": "2026-09-30",
+      "prior_as_of": "2026-09-29",
+      "error": null
+    },
+    "us10y": {
+      "ok": true,
+      "as_of": "2026-10-01",
+      "prior_as_of": "2026-09-30",
+      "error": null
+    },
     "fear_greed": {
       "ok": true,
-      "as_of": "2026-09-29",
-      "prior_as_of": "2026-09-28",
+      "as_of": "2026-09-30",
+      "prior_as_of": "2026-09-29",
       "error": null
     },
     "breadth": {
-      "ok": true,
+      "ok": false,
       "as_of": "2026-09-29",
-      "prior_as_of": "2026-09-28",
-      "error": null
+      "prior_as_of": "2026-09-29",
+      "error": "HTTP 423: {\"detail\":\"Our browser was detected by target site. Retry the request or try adjusting proxy country, proxy type and browser rendering settings. Our documentation: https://docs.scrapingant.com/ and su",
+      "missing": [
+        "breadth"
+      ]
     }
   }
 }

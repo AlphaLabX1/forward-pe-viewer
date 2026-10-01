@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 66-point lens gap signals earnings collapse",
-      "body": "Materials trades at 16.30x forward but 36.98x trailing, a 66-point percentile gap between the two lenses. That spread implies analysts expect 127 percent earnings growth next year, a bet that the current earnings trough is about to reverse violently."
+      "title": "Materials' 68-point lens gap",
+      "body": "Materials trades at 16.18x forward but 36.70x trailing, a 68-point percentile gap between the two lenses. The market is underwriting 127 percent earnings growth next year, a bet that would require an unprecedented earnings surge to justify."
     },
     {
-      "title": "Real Estate's 45-point monthly percentile plunge",
-      "body": "Real Estate's forward percentile fell 45 points in one month to 7, yet its forward P/E of 33.94 remains the most expensive in the table. The market is marking the sector down on expectations of a 4 percent earnings decline, but the multiple still prices in no such deterioration."
+      "title": "Energy's forward multiple collapses",
+      "body": "Energy's forward P/E fell 21 percentile points in a month to 11.84, while its trailing multiple sits at the 74th percentile. The 32-point gap between lenses implies analysts expect 48 percent earnings growth, but the market is pricing in a sharp downturn instead."
     },
     {
-      "title": "Energy's forward percentile cheapens while trailing stays rich",
-      "body": "Energy's forward percentile dropped 14 points in a month to 47, while its trailing percentile sits at 77. The 30-point gap between lenses shows analysts expect 47 percent earnings growth, but the market is already discounting that optimism in the forward multiple."
+      "title": "Real Estate's month-long de-rating",
+      "body": "Real Estate's forward percentile dropped 33 points in a month to 7, the steepest one-month fall in the table. Its forward P/E of 33.95 remains the highest of any sector, yet the implied 4 percent earnings decline suggests the multiple has further to compress."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-29"
+  "as_of": "2026-09-30"
 }
