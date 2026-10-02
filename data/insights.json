@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 68-point lens gap",
-      "body": "Materials trades at 16.18x forward but 36.70x trailing, a 68-point percentile gap between the two lenses. The market is underwriting 127 percent earnings growth next year, a bet that would require an unprecedented earnings surge to justify."
+      "title": "Materials' 67-point lens gap signals earnings cliff",
+      "body": "Materials trades at 16.09x forward but 35.38x trailing, a 55 percent compression that implies 120 percent earnings growth next year. The market is pricing a margin recovery that would be unprecedented for a sector whose trailing multiple sits at the 86th percentile of its own five-year range."
     },
     {
-      "title": "Energy's forward multiple collapses",
-      "body": "Energy's forward P/E fell 21 percentile points in a month to 11.84, while its trailing multiple sits at the 74th percentile. The 32-point gap between lenses implies analysts expect 48 percent earnings growth, but the market is pricing in a sharp downturn instead."
+      "title": "Consumer Staples' forward price ignores trailing richness",
+      "body": "Consumer Staples' forward P/E of 18.61 sits at the 4th percentile while its trailing multiple of 27.23 is at the 72nd. That 68-point gap implies 46 percent earnings growth, a bet that staples can suddenly accelerate after years of stagnation — a sharp reversal from the sector's defensive reputation."
     },
     {
-      "title": "Real Estate's month-long de-rating",
-      "body": "Real Estate's forward percentile dropped 33 points in a month to 7, the steepest one-month fall in the table. Its forward P/E of 33.95 remains the highest of any sector, yet the implied 4 percent earnings decline suggests the multiple has further to compress."
+      "title": "Real Estate's month collapse outruns its multiple",
+      "body": "Real Estate's forward percentile fell 33 points in one month to the 6th percentile, yet its forward P/E of 33.64 remains the highest in the table. The market has repriced the sector's rank far faster than its actual earnings multiple, suggesting the selloff is about sentiment, not fundamentals."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-09-30"
+  "as_of": "2026-10-01"
 }
