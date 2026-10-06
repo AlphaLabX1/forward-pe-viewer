@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-10-06T00:57:52+00:00",
+  "generated_at": "2026-10-06T01:27:21+00:00",
   "sources": {
     "koyfin_pe": {
       "ok": true,
       "as_of": "2026-10-05",
-      "prior_as_of": "2026-10-02",
+      "prior_as_of": "2026-10-05",
       "error": null
     },
     "koyfin_prices": {
@@ -15,14 +15,14 @@
     },
     "us10y": {
       "ok": true,
-      "as_of": "2026-10-05",
-      "prior_as_of": "2026-10-02",
+      "as_of": "2026-10-06",
+      "prior_as_of": "2026-10-05",
       "error": null
     },
     "fear_greed": {
       "ok": true,
       "as_of": "2026-10-05",
-      "prior_as_of": "2026-10-02",
+      "prior_as_of": "2026-10-05",
       "error": null
     },
     "breadth": {

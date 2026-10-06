@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 70-point lens gap signals collapse",
-      "body": "Materials sits at the 16th percentile on forward earnings but the 87th on trailing, a 70-point chasm that implies 127 percent earnings growth. The market is pricing a near-total earnings reset, not a cyclical uptick."
+      "title": "Materials' 66-point lens gap signals collapse",
+      "body": "Materials trades at 15.69x forward but 33.75x trailing, a 66-point percentile gap between the two lenses. Analysts are underwriting 115 percent earnings growth, which would be a historic rebound from a depressed base — the market is pricing a recovery that has not yet appeared in reported results."
     },
     {
-      "title": "Health Care's rich multiple hinges on 84% growth",
-      "body": "Health Care's forward multiple is only 46 percent below trailing, yet the implied earnings growth is 84 percent. Analysts are underwriting a dramatic margin expansion that the trailing lens does not support."
+      "title": "Utilities' forward multiple defies trailing cheapness",
+      "body": "Utilities sits at the 10th percentile on forward P/E but the 1st percentile on trailing, yet the forward multiple is 16.07 versus 18.03 trailing. That means the market is paying a premium for expected stability even as reported earnings remain near their five-year low — a bet on resilience, not growth."
     },
     {
-      "title": "Utilities' cheapness is a value trap signal",
-      "body": "Utilities trades at the 10th percentile forward but the 1st percentile trailing, a rare inversion that implies just 12 percent growth. The market is paying a premium for stability, not for earnings power."
+      "title": "Real Estate's forward premium ignores earnings decline",
+      "body": "Real Estate's forward P/E of 33.55 is its cheapest in five years at the 6th percentile, but the implied next-12m earnings growth is a 4 percent decline. The market is still assigning a rich multiple to a sector whose earnings are expected to shrink, suggesting the cheapness is relative to a falling base."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-10-02"
+  "as_of": "2026-10-05"
 }
