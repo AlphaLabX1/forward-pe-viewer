@@ -5,19 +5,23 @@ Data sources (post 2026-05 migration):
     /api/v3p/data/graph (fundamental) and /api/v3/data/graph (price/yield)
     endpoints. KIDs captured 2026-05-12; verifiable via the public search
     endpoint `POST /api/v1/bfc/tickers/search`.
-  - MacroMicro chart 50108 via ScrapingAnt for the CNN Fear & Greed index
-    (Koyfin doesn't carry sentiment data).
-  - MacroMicro chart 81081 for S&P 500 breadth (% of constituents above
-    their 50-day and 200-day moving averages).
+  - MacroMicro, one shared session per run. Chart 50108 is the CNN Fear &
+    Greed index (Koyfin doesn't carry sentiment data). Chart 81081 is S&P 500
+    breadth, chart 96064 is Nasdaq-100 breadth, and chart 136200 is S&P 500
+    advancers and decliners.
 
 Outputs:
   data/<sid>_<slug>.csv           — forward P/E (12 series)
   data/trailing/<sid>_<slug>.csv  — trailing P/E (12 series)
   data/spx_price.csv              — S&P 500 daily price (SPY ETF proxy)
+  data/rsp_price.csv              — equal-weight S&P 500 (RSP)
+  data/qqq_forward_pe.csv, data/qqq_price.csv — QQQ valuation + price
+  data/qqew_price.csv             — equal-weight Nasdaq-100 (QQEW)
   data/us10y.csv                  — US 10-year Treasury yield (%)
   data/fear_greed.csv             — CNN Fear & Greed Index
   data/sp500_breadth.csv          — % of S&P 500 above 50d / 200d MA
-  data/qqq_forward_pe.csv, data/qqq_price.csv — QQQ valuation + price
+  data/ndx_breadth.csv            — % of Nasdaq-100 above 50d / 200d MA
+  data/sp500_ad.csv               — S&P 500 advancers, unchanged, decliners
 
 build_html.py reads only these committed CSVs, through the paths defined here.
 """
@@ -78,17 +82,23 @@ KOYFIN_PE_KIDS: dict[int, tuple[str, str]] = {
 }
 
 KOYFIN_SPX_KID = "et-n5kqqt"    # SPY ETF — proxy for S&P 500 index price
+KOYFIN_RSP_KID = "et-wezwxf"    # RSP ETF — equal-weight S&P 500
 KOYFIN_QQQ_KID = "et-gpvivq"    # QQQ ETF — proxy for NDX (Nasdaq-100)
+KOYFIN_QQEW_KID = "et-hvil9v"   # QQEW ETF — equal-weight Nasdaq-100
 KOYFIN_US10Y_KID = "bn-dm6gok"  # US 10Y Treasury (close = yield in %)
 
 DATA_DIR = Path(__file__).parent / "data"
 LENS_DIRS = {"forward": DATA_DIR, "trailing": DATA_DIR / "trailing"}
 SPX_PRICE_CSV = DATA_DIR / "spx_price.csv"
+RSP_PRICE_CSV = DATA_DIR / "rsp_price.csv"
 QQQ_PE_CSV = DATA_DIR / "qqq_forward_pe.csv"
 QQQ_PRICE_CSV = DATA_DIR / "qqq_price.csv"
+QQEW_PRICE_CSV = DATA_DIR / "qqew_price.csv"
 US10Y_CSV = DATA_DIR / "us10y.csv"
 FEAR_GREED_CSV = DATA_DIR / "fear_greed.csv"
 BREADTH_CSV = DATA_DIR / "sp500_breadth.csv"
+NDX_BREADTH_CSV = DATA_DIR / "ndx_breadth.csv"
+SP500_AD_CSV = DATA_DIR / "sp500_ad.csv"
 STATUS_JSON = DATA_DIR / "status.json"
 
 
@@ -99,7 +109,7 @@ def pe_csv(lens: str, sid: int) -> Path:
 
 @dataclass(frozen=True)
 class Series:
-    """Where one stored series lives and what a sane reply for it looks like."""
+    """Where one stored series lives and what a sane reply looks like."""
     path: Path
     columns: tuple[str, ...]
     lo: float
@@ -107,6 +117,7 @@ class Series:
     merge: bool = False     # keep stored dates the reply lacks
     valid_from: str = ""    # rows dated earlier are broken upstream and never stored
     despike: bool = False   # drop isolated one-day spikes that revert
+    min_reply_rows: int | None = None  # fixed floor for rolling-window replies
 
 
 # Trailing P/E legitimately runs into the hundreds when earnings collapse
@@ -134,12 +145,17 @@ CATALOG: dict[str, Series] = {
     # Before 1993-01-29 (SPY's launch) the file held S&P index levels, 10x SPY.
     "spx_price": Series(SPX_PRICE_CSV, ("price",), 0.01, 1e5, merge=True,
                         valid_from="1993-01-29", despike=True),
+    "rsp_price": Series(RSP_PRICE_CSV, ("price",), 0.01, 1e5, merge=True, despike=True),
     # QQQ forward P/E swings between 0.2 and 25 from 2004-09 until 2011-10-24.
     "qqq_pe": Series(QQQ_PE_CSV, ("forward_pe",), 0.01, PE_HI["forward"], valid_from="2011-10-25"),
     "qqq_price": Series(QQQ_PRICE_CSV, ("price",), 0.01, 1e5, merge=True, despike=True),
+    "qqew_price": Series(QQEW_PRICE_CSV, ("price",), 0.01, 1e5, merge=True, despike=True),
     "us10y": Series(US10Y_CSV, ("yield",), 0.0, 25.0, merge=True),
     "fear_greed": Series(FEAR_GREED_CSV, ("value",), 0.0, 100.0, merge=True),
     "breadth": Series(BREADTH_CSV, ("above_50d", "above_200d"), 0.0, 100.0, merge=True),
+    "ndx_breadth": Series(NDX_BREADTH_CSV, ("above_50d", "above_200d"), 0.0, 100.0, merge=True),
+    "sp500_ad": Series(SP500_AD_CSV, ("advancers", "unchanged", "decliners"),
+                       0.0, 510.0, merge=True, min_reply_rows=200),
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -220,6 +236,12 @@ MM_FG_STAT = 22748   # the chart's other series is SPX (stat 2)
 MM_BREADTH_CHART_ID = 81081
 MM_BREADTH_SLUG = "S-P-500-Breadth"
 MM_BREADTH_STATS = (18331, 22718)   # % above 50d MA, % above 200d MA
+MM_NDX_BREADTH_CHART_ID = 96064
+MM_NDX_BREADTH_SLUG = "nasdaq100-ma50-ma200-breadth"
+MM_NDX_BREADTH_STATS = (18332, 25229)   # % above 50d MA, % above 200d MA
+MM_AD_CHART_ID = 136200
+MM_AD_SLUG = "us-s-p-500-advancers-and-decliners"
+MM_AD_STATS = (76090, 76092, 76091)   # advancers, unchanged, decliners
 MM_BASE = "https://en.macromicro.me"
 
 
@@ -238,7 +260,7 @@ class _ScrapingAntResponse:
 
 
 class _MacroMicroSession:
-    """Two-call client for MacroMicro chart pages. Routes through ScrapingAnt
+    """Client for MacroMicro chart pages. Routes through ScrapingAnt
     when SCRAPINGANT_API_KEY is set (CI / datacenter), falls back to direct
     curl_cffi otherwise (local / residential). Persists PHPSESSID across calls
     — required for MacroMicro's stk token to validate."""
@@ -306,30 +328,64 @@ class _MacroMicroSession:
         return _ScrapingAntResponse(last_status, last_body)
 
 
-def fetch_mm_chart(chart_id: int, slug: str) -> dict:
-    """Pull one MacroMicro chart (`info` + `series`). Two calls: seed page →
-    /charts/data/<id> with the page-issued stk token."""
-    session = _MacroMicroSession()
-    page_url = f"{MM_BASE}/charts/{chart_id}/{slug}"
-    r1 = session.get(page_url, timeout=60)
-    r1.raise_for_status()
-    m = _TOKEN_RE.search(r1.text)
-    if not m:
-        raise RuntimeError(f"stk token not found on {page_url}")
-    token = m.group(1)
+class _MmRun:
+    """One lazily seeded MacroMicro session for a fetch run."""
 
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Referer": page_url,
-        "Accept": "application/json, text/plain, */*",
-        "X-Requested-With": "XMLHttpRequest",
-    }
-    r2 = session.get(f"{MM_BASE}/charts/data/{chart_id}", headers=headers)
-    r2.raise_for_status()
-    payload = r2.json()
-    if payload.get("success") != 1:
-        raise RuntimeError(f"MacroMicro chart {chart_id} returned non-success: {payload!r}")
-    return payload["data"][f"c:{chart_id}"]
+    def __init__(self):
+        self.reset()
+
+    def reset(self) -> None:
+        self._session = None
+        self._token: str | None = None
+        self._seed_url: str | None = None
+        self._seed_error: Exception | None = None
+
+    def _ensure(self):
+        if self._seed_error is not None:
+            raise self._seed_error
+        if self._token is not None:
+            return self._session, self._token, self._seed_url
+        session = _MacroMicroSession()
+        seed_url = f"{MM_BASE}/charts/{MM_FG_CHART_ID}/{MM_FG_SLUG}"
+        try:
+            page = session.get(seed_url, timeout=60)
+            page.raise_for_status()
+            found = _TOKEN_RE.search(page.text)
+            if not found:
+                raise RuntimeError(f"stk token not found on {seed_url}")
+            token = found.group(1)
+        except Exception as e:
+            self._seed_error = e
+            raise
+        self._session = session
+        self._token = token
+        self._seed_url = seed_url
+        return session, token, seed_url
+
+    def chart(self, chart_id: int, slug: str) -> dict:
+        session, token, seed_url = self._ensure()
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Referer": seed_url,
+            "Accept": "application/json, text/plain, */*",
+            "X-Requested-With": "XMLHttpRequest",
+        }
+        resp = session.get(f"{MM_BASE}/charts/data/{chart_id}", headers=headers)
+        resp.raise_for_status()
+        payload = resp.json()
+        if payload.get("success") != 1:
+            raise RuntimeError(
+                f"MacroMicro chart {chart_id}/{slug} returned non-success: {payload!r}"
+            )
+        return payload["data"][f"c:{chart_id}"]
+
+
+_mm_run = _MmRun()
+
+
+def fetch_mm_chart(chart_id: int, slug: str) -> dict:
+    """Pull one MacroMicro chart (`info` + `series`) on the shared session."""
+    return _mm_run.chart(chart_id, slug)
 
 
 def _series_by_stat(chart: dict, stat_ids) -> list[list[list]]:
@@ -347,16 +403,31 @@ def fetch_fear_greed() -> list[list]:
     return _series_by_stat(fetch_mm_chart(MM_FG_CHART_ID, MM_FG_SLUG), [MM_FG_STAT])[0]
 
 
-def fetch_sp500_breadth() -> list[list]:
-    """Rows [date, % above 50d MA, % above 200d MA], outer-joined; a missing
-    cell is ""."""
-    chart = fetch_mm_chart(MM_BREADTH_CHART_ID, MM_BREADTH_SLUG)
+def _join_by_stat(chart: dict, stat_ids) -> list[list]:
+    """Rows [date, *values] for stat_ids, outer-joined. A missing cell is ""."""
     rows: dict[str, list] = {}
-    for col, pts in enumerate(_series_by_stat(chart, MM_BREADTH_STATS)):
+    blank = [""] * len(stat_ids)
+    for col, pts in enumerate(_series_by_stat(chart, stat_ids)):
         for d, v in pts:
             if v not in (None, ""):
-                rows.setdefault(str(d), ["", ""])[col] = v
+                rows.setdefault(str(d), blank.copy())[col] = v
     return [[d, *rows[d]] for d in sorted(rows)]
+
+
+def fetch_sp500_breadth() -> list[list]:
+    """Rows [date, % above 50d MA, % above 200d MA]."""
+    return _join_by_stat(fetch_mm_chart(MM_BREADTH_CHART_ID, MM_BREADTH_SLUG), MM_BREADTH_STATS)
+
+
+def fetch_ndx_breadth() -> list[list]:
+    """Rows [date, % of Nasdaq-100 above 50d MA, % above 200d MA]."""
+    chart = fetch_mm_chart(MM_NDX_BREADTH_CHART_ID, MM_NDX_BREADTH_SLUG)
+    return _join_by_stat(chart, MM_NDX_BREADTH_STATS)
+
+
+def fetch_sp500_ad() -> list[list]:
+    """Rows [date, advancers, unchanged, decliners] for the S&P 500."""
+    return _join_by_stat(fetch_mm_chart(MM_AD_CHART_ID, MM_AD_SLUG), MM_AD_STATS)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -413,8 +484,9 @@ def store(name: str, reply: list[list]) -> list[list]:
     spec = CATALOG[name]
     prior = clean_rows(spec, read_rows(spec.path))
     reply = clean_rows(spec, [[str(r[0]), *r[1:]] for r in reply])
-    check_series(name, reply, spec.lo, spec.hi,
-                 prior[-1][0] if prior else None, int(len(prior) * 0.9))
+    floor = (int(len(prior) * 0.9) if spec.min_reply_rows is None
+             else spec.min_reply_rows)
+    check_series(name, reply, spec.lo, spec.hi, prior[-1][0] if prior else None, floor)
     by_date: dict[str, list] = {r[0]: r[1:] for r in prior} if spec.merge else {}
     for d, *cells in reply:
         old = by_date.get(d, [""] * len(cells))
@@ -439,12 +511,18 @@ SOURCES: dict[str, dict[str, Callable[[], list[list]]]] = {
     },
     "koyfin_prices": {
         "spx_price": partial(koy_price, KOYFIN_SPX_KID),
+        "rsp_price": partial(koy_price, KOYFIN_RSP_KID),
         "qqq_pe": partial(koy_fundamental, KOYFIN_QQQ_KID, "f_pe"),
         "qqq_price": partial(koy_price, KOYFIN_QQQ_KID),
+        "qqew_price": partial(koy_price, KOYFIN_QQEW_KID),
     },
     "us10y": {"us10y": partial(koy_price, KOYFIN_US10Y_KID)},
     "fear_greed": {"fear_greed": fetch_fear_greed},
-    "breadth": {"breadth": fetch_sp500_breadth},
+    "breadth": {
+        "breadth": fetch_sp500_breadth,
+        "ndx_breadth": fetch_ndx_breadth,
+    },
+    "advance_decline": {"sp500_ad": fetch_sp500_ad},
 }
 
 
@@ -490,6 +568,7 @@ def load_status() -> dict:
 
 
 def main() -> None:
+    _mm_run.reset()
     for d in LENS_DIRS.values():
         d.mkdir(parents=True, exist_ok=True)
     prior_as_of = {source: stored_as_of(source) for source in SOURCES}

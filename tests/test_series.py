@@ -102,6 +102,29 @@ class StoreTest(unittest.TestCase):
         self.assertEqual(self.path.read_text().splitlines(),
                          ["date,a,b", "2026-01-01,40,61", "2026-01-02,41,62"])
 
+    def test_rolling_window_uses_fixed_reply_floor_and_merges(self):
+        prior = daily("2024-01-01", [250] * 731)
+        self.path.write_text("date,advancers\n" + "".join(f"{d},{v}\n" for d, v in prior))
+        reply = prior[-243:]
+        reply[-1][1] = 251
+        spec = {"s": Series(self.path, ("advancers",), 0, 510,
+                            merge=True, min_reply_rows=200)}
+        with mock.patch.dict(fetch.CATALOG, spec):
+            stored = fetch.store("s", reply)
+        self.assertEqual(len(stored), 731)
+        self.assertEqual(stored[-1], ["2025-12-31", 251])
+
+    def test_rolling_window_rejects_tiny_reply(self):
+        prior = daily("2024-01-01", [250] * 731)
+        self.path.write_text("date,advancers\n" + "".join(f"{d},{v}\n" for d, v in prior))
+        spec = {"s": Series(self.path, ("advancers",), 0, 510,
+                            merge=True, min_reply_rows=200)}
+        before = self.path.read_text()
+        with mock.patch.dict(fetch.CATALOG, spec):
+            with self.assertRaisesRegex(SeriesError, "at least 200"):
+                fetch.store("s", prior[-20:])
+        self.assertEqual(self.path.read_text(), before)
+
 
 class Compute5yTest(unittest.TestCase):
     def test_needs_a_year_of_history(self):

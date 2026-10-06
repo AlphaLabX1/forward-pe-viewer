@@ -8,7 +8,7 @@ result.
 
 ## What the page shows
 
-The page is one self-contained `index.html` with ten numbered cards. Cards
+The page is one self-contained `index.html` with twelve numbered cards. Cards
 01 to 04 have a Forward / Trailing lens toggle.
 
 | Card | Content |
@@ -21,8 +21,10 @@ The page is one self-contained `index.html` with ten numbered cards. Cards
 | 06 | Fear & Greed against SPY |
 | 07 | SPY returns 3, 6 and 12 months after extreme-fear and extreme-greed readings |
 | 08 | SPY or QQQ price, forward P/E with its 5-year P20 to P80 band and 200-day average, earnings yield against the 10-year Treasury yield |
-| 09 | SPY and QQQ rebased to 100, against the share of S&P 500 stocks above their 50-day and 200-day averages |
+| 09 | SPY and QQQ rebased to 100, against the share of S&P 500 or Nasdaq-100 stocks above their 50-day and 200-day averages |
 | 10 | Each day's SPY distance below its 52-week high against breadth, colored by the next three months' return, with stats for days near the high while under half of stocks are above their average |
+| 11 | Equal-weight against cap-weight price ratios for RSP / SPY and QQEW / QQQ, with recent changes and five-year percentiles |
+| 12 | SPY, the cumulative S&P 500 advance/decline line, daily net advancers, and the McClellan Oscillator |
 
 The page date is the date of the latest Koyfin P/E reading. Each card shows
 the date of its own data. A source that failed to fetch, or whose data is
@@ -51,10 +53,11 @@ The production scripts use only the Python standard library.
 | Source | Series | Files |
 | --- | --- | --- |
 | Koyfin (`koyfin_pe`) | Forward (`f_pe`) and trailing (`f_peltm`) P/E for SPY and the 11 sector SPDR ETFs | `data/<id>_<name>.csv`, `data/trailing/<id>_<name>.csv` |
-| Koyfin (`koyfin_prices`) | SPY price, QQQ price, QQQ forward P/E | `data/spx_price.csv`, `data/qqq_price.csv`, `data/qqq_forward_pe.csv` |
+| Koyfin (`koyfin_prices`) | SPY, RSP, QQQ and QQEW prices, plus QQQ forward P/E | `data/spx_price.csv`, `data/rsp_price.csv`, `data/qqq_price.csv`, `data/qqew_price.csv`, `data/qqq_forward_pe.csv` |
 | Koyfin (`us10y`) | US 10-year Treasury yield | `data/us10y.csv` |
 | MacroMicro (`fear_greed`) | CNN Fear & Greed index, chart 50108, stat 22748 | `data/fear_greed.csv` |
-| MacroMicro (`breadth`) | % of S&P 500 above the 50-day and 200-day average, chart 81081, stats 18331 and 22718 | `data/sp500_breadth.csv` |
+| MacroMicro (`breadth`) | % of S&P 500 above the 50-day and 200-day average, chart 81081, stats 18331 and 22718; % of Nasdaq-100 above those averages, chart 96064, stats 18332 and 25229 | `data/sp500_breadth.csv`, `data/ndx_breadth.csv` |
+| MacroMicro (`advance_decline`) | S&P 500 advancers, unchanged and decliners, chart 136200, stats 76090, 76092 and 76091 | `data/sp500_ad.csv` |
 
 Koyfin is called through its unauthenticated web API. The instrument IDs are
 in `fetch.py`. The numeric series IDs (20052 for the S&P 500, 20517 to 20527
@@ -62,10 +65,11 @@ for sectors) are legacy MacroMicro IDs and are kept as keys and filenames.
 
 MacroMicro blocks datacenter IPs. In CI, `fetch.py` sends its MacroMicro
 requests through [ScrapingAnt](https://scrapingant.com/) when the
-`SCRAPINGANT_API_KEY` secret is set. Each chart needs two requests: the chart
-page, which issues a token, and the data call that uses it. The session
-cookie is carried between the two. Without the key, `fetch.py` uses
-`curl_cffi`, which works from a residential IP.
+`SCRAPINGANT_API_KEY` secret is set. One run-scoped session loads a chart page
+once to obtain a token, then uses that token for every chart data call. This is
+one seed request plus one request per chart. A failed chart data call does not
+stop the other charts. Without the key, `fetch.py` uses `curl_cffi`, which
+works from a residential IP.
 
 ### Validation
 
@@ -73,8 +77,11 @@ cookie is carried between the two. Without the key, `fetch.py` uses
 bounds, whether new data merges with or replaces the stored file, and a
 `valid_from` date. Before a write, `check_series` rejects a reply that has a
 value outside the bounds, ends earlier than the stored data, or has fewer
-than 90% of the stored rows. A rejected or failed series keeps its previous
-file, and the failure goes into `status.json`.
+than 90% of the stored rows. Rolling-window sources can define a fixed minimum
+reply length instead. The advance/decline chart uses a 200-row minimum because
+MacroMicro serves only its latest year while the stored file grows by merging
+new windows. A rejected or failed series keeps its previous file, and the
+failure goes into `status.json`.
 
 Some upstream history is wrong and is filtered out on every write:
 

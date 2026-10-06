@@ -8,7 +8,8 @@ from build_html import freshness, render_asof, render_stale_note
 def status(**overrides):
     base = {
         source: {"ok": True, "as_of": "2026-09-24", "prior_as_of": "2026-09-23", "error": None}
-        for source in ("koyfin_pe", "koyfin_prices", "us10y", "fear_greed", "breadth")
+        for source in ("koyfin_pe", "koyfin_prices", "us10y", "fear_greed", "breadth",
+                       "advance_decline")
     }
     for source, entry in overrides.items():
         base[source] = {**base[source], **entry}
@@ -34,6 +35,14 @@ class FreshnessTest(unittest.TestCase):
         self.assertNotIn("stale", render_asof("02", fresh))
         self.assertIn("Fear &amp; Greed (fetch failed, last 2026-09-23)", render_stale_note(fresh))
 
+    def test_advance_decline_may_trail_one_session(self):
+        friday_on_monday = freshness(status(advance_decline={"as_of": "2026-10-02"}), "2026-10-05")
+        self.assertFalse(friday_on_monday["advance_decline"]["stale"])
+        friday_on_tuesday = freshness(status(advance_decline={"as_of": "2026-10-02"}), "2026-10-06")
+        self.assertEqual(friday_on_tuesday["advance_decline"]["why"], "no new data")
+        breadth_one_behind = freshness(status(breadth={"as_of": "2026-10-02"}), "2026-10-05")
+        self.assertTrue(breadth_one_behind["breadth"]["stale"])
+
     def test_source_behind_page_without_error_is_stale(self):
         fresh = freshness(status(breadth={"as_of": "2026-09-22"}), "2026-09-24")
         self.assertEqual(fresh["breadth"]["why"], "no new data")
@@ -42,6 +51,12 @@ class FreshnessTest(unittest.TestCase):
         pe = {"ok": False, "missing": ["forward/20520"], "error": "HTTP 500"}
         fresh = freshness(status(koyfin_pe=pe), "2026-09-24")
         self.assertEqual(fresh["koyfin_pe"]["why"], "missing Financials forward")
+
+    def test_advance_decline_failure_marks_card_12_stale(self):
+        ad = {"ok": False, "as_of": "2026-09-23", "error": "HTTP 500",
+              "missing": ["sp500_ad"]}
+        fresh = freshness(status(advance_decline=ad), "2026-09-24")
+        self.assertIn("stale", render_asof("12", fresh))
 
 
 class AlertsTest(unittest.TestCase):

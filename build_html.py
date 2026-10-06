@@ -9,14 +9,19 @@ import statistics
 from datetime import date, datetime, timedelta
 from html import escape as html_escape
 from pathlib import Path
+from typing import TypedDict
 
 from fetch import (
     BREADTH_CSV,
     DATA_DIR as DATA,
     FEAR_GREED_CSV,
+    NDX_BREADTH_CSV,
     QQQ_PE_CSV,
     QQQ_PRICE_CSV,
+    QQEW_PRICE_CSV,
+    RSP_PRICE_CSV,
     SERIES,
+    SP500_AD_CSV,
     SPX_PRICE_CSV,
     US10Y_CSV,
     load_status,
@@ -303,6 +308,169 @@ def breadth_series(rows) -> dict[str, list[list]]:
         key: [[d, round(v[i], 1)] for d, *v in rows if v[i] is not None]
         for i, key in enumerate(("ma50", "ma200"))
     }
+
+
+def ratio_series(equal_weight, cap_weight) -> list[list]:
+    """Daily price ratio on dates present in both inputs."""
+    cap = {d: float(v) for d, v in cap_weight}
+    return [[d, float(v) / cap[d]] for d, v in equal_weight if d in cap and cap[d]]
+
+
+def equal_weight_ratio_stats(points) -> dict | None:
+    if not points:
+        return None
+    latest_date, latest = points[-1]
+    latest_d = date.fromisoformat(latest_date)
+    changes = {}
+    for label, days in (("1m", 30), ("3m", 91), ("1y", 365)):
+        prior = _nearest_on_or_before(points, latest_d - timedelta(days=days))
+        changes[label] = ((latest / prior[1] - 1) * 100) if prior and prior[1] else None
+    cutoff = (latest_d - timedelta(days=365 * 5)).isoformat()
+    window = [v for d, v in points if d >= cutoff]
+    percentile = sum(v <= latest for v in window) / len(window) * 100
+    return {
+        "date": latest_date,
+        "changes": {k: round(v, 1) if v is not None else None for k, v in changes.items()},
+        "percentile_5y": round(percentile, 1),
+    }
+
+
+def render_equal_weight_stats(stats: dict[str, dict | None]) -> str:
+    def cell(value, signed=True):
+        if value is None:
+            return "–"
+        return f"{value:+.1f}%" if signed else f"{value:.1f}%"
+
+    rows = []
+    for key, label in (("rsp_spy", "RSP / SPY"), ("qqew_qqq", "QQEW / QQQ")):
+        stat = stats.get(key)
+        if not stat:
+            continue
+        ch = stat["changes"]
+        rows.append(
+            f'<tr><td>{label}<span class="sig-cond-sub">price ratio</span></td>'
+            f'<td>{cell(ch["1m"])}</td><td>{cell(ch["3m"])}</td>'
+            f'<td>{cell(ch["1y"])}</td><td>{cell(stat["percentile_5y"], False)}</td></tr>'
+        )
+    if not rows:
+        return '<p style="color:var(--dim)">Equal-weight stats unavailable.</p>'
+    return (
+        '<div class="sig-wrap ratio-stats"><table class="sig-table ratio-table">'
+        '<thead><tr><th>Ratio</th><th>1 month</th><th>3 months</th>'
+        '<th>1 year</th><th>5Y percentile</th></tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table></div>'
+    )
+
+
+def load_advance_decline_rows(path: Path) -> list[tuple[str, float, float, float]]:
+    if not path.exists():
+        return []
+    out = []
+    with path.open() as f:
+        reader = csv.reader(f)
+        next(reader, None)
+        for row in reader:
+            if len(row) < 4 or not row[1] or not row[3]:
+                continue
+            out.append((row[0], float(row[1]), float(row[2] or 0), float(row[3])))
+    return out
+
+
+class AdvanceDeclinePoint(TypedDict):
+    date: str
+    net: float
+    rana: float
+    oscillator: float
+    summation: float
+    ad_line: float
+    warmup: bool
+
+
+def mcclellan_series(rows) -> list[AdvanceDeclinePoint]:
+    """Compute the ratio-adjusted McClellan and cumulative A/D series."""
+    out: list[AdvanceDeclinePoint] = []
+    ema19 = ema39 = None
+    summation = ad_line = 0.0
+    for i, (day, advancers, _unchanged, decliners) in enumerate(rows):
+        net = float(advancers) - float(decliners)
+        total = float(advancers) + float(decliners)
+        rana = net / total * 1000 if total else 0.0
+        ema19 = rana if ema19 is None else 0.10 * rana + 0.90 * ema19
+        ema39 = rana if ema39 is None else 0.05 * rana + 0.95 * ema39
+        oscillator = ema19 - ema39
+        summation += oscillator
+        ad_line += net
+        out.append({
+            "date": day,
+            "net": net,
+            "rana": rana,
+            "oscillator": oscillator,
+            "summation": summation,
+            "ad_line": ad_line,
+            "warmup": i < 39,
+        })
+    return out
+
+
+def _percentile_value(values, percentile: float) -> float:
+    ordered = sorted(values)
+    if not ordered:
+        raise ValueError("percentile requires at least one value")
+    pos = (len(ordered) - 1) * percentile
+    lo = int(pos)
+    hi = min(lo + 1, len(ordered) - 1)
+    weight = pos - lo
+    return ordered[lo] * (1 - weight) + ordered[hi] * weight
+
+
+def advance_decline_payload(rows, spy_points) -> dict | None:
+    computed = mcclellan_series(rows)
+    ready = [p for p in computed if not p["warmup"]]
+    if not computed or not ready:
+        return None
+    oscillators = [p["oscillator"] for p in ready]
+    latest = computed[-1]
+    latest_d = date.fromisoformat(latest["date"])
+    prior = next((p for p in reversed(computed)
+                  if p["date"] <= (latest_d - timedelta(days=30)).isoformat()), None)
+    osc_percentile = sum(v <= latest["oscillator"] for v in oscillators) / len(oscillators) * 100
+    first_date = computed[0]["date"]
+    return {
+        "points": [
+            [p["date"], round(p["net"]),
+             None if p["warmup"] else round(p["oscillator"], 2),
+             round(p["ad_line"])]
+            for p in computed
+        ],
+        "spy": [[d, round(v, 2)] for d, v in spy_points if first_date <= d <= latest["date"]],
+        "guides": {
+            "p10": round(_percentile_value(oscillators, 0.10), 2),
+            "p90": round(_percentile_value(oscillators, 0.90), 2),
+        },
+        "today": {
+            "date": latest["date"],
+            "net": round(latest["net"]),
+            "oscillator": round(latest["oscillator"], 2),
+            "oscillator_percentile": round(osc_percentile, 1),
+            "ad_line_1m_change": round(latest["ad_line"] - prior["ad_line"]) if prior else None,
+        },
+    }
+
+
+def render_advance_decline_readout(payload) -> str:
+    if not payload:
+        return '<p style="color:var(--dim)">Advance/decline readout unavailable.</p>'
+    today = payload["today"]
+    ad_change = today["ad_line_1m_change"]
+    ad_text = "–" if ad_change is None else f"{ad_change:+,.0f}"
+    return (
+        '<div class="ad-readout">'
+        f'<div><span>Net advancers</span><strong>{today["net"]:+,.0f}</strong></div>'
+        f'<div><span>McClellan oscillator</span><strong>{today["oscillator"]:+.1f}</strong>'
+        f'<small>percentile {today["oscillator_percentile"]:.1f}</small></div>'
+        f'<div><span>A/D line, 1 month</span><strong>{ad_text}</strong></div>'
+        '</div>'
+    )
 
 
 DIVERGENCE_NEAR_HIGH = -3.0
@@ -870,10 +1038,11 @@ def render_insights(latest_date_str: str) -> str:
 
 SOURCE_LABELS = {
     "koyfin_pe": "P/E",
-    "koyfin_prices": "SPY/QQQ prices",
+    "koyfin_prices": "ETF prices",
     "us10y": "10Y yield",
     "fear_greed": "Fear & Greed",
     "breadth": "Breadth",
+    "advance_decline": "Advancers/decliners",
 }
 
 CARD_SOURCES = {
@@ -887,12 +1056,27 @@ CARD_SOURCES = {
     "08": ("koyfin_prices", "us10y"),
     "09": ("breadth", "koyfin_prices"),
     "10": ("breadth", "koyfin_prices"),
+    "11": ("koyfin_prices",),
+    "12": ("advance_decline", "koyfin_prices"),
 }
 
 
 def _series_label(name: str) -> str:
     lens, _, sid = name.partition("/")
     return f"{SERIES[int(sid)]} {lens}" if sid.isdigit() else name
+
+
+# MacroMicro publishes S&P 500 advancers/decliners one session after the close.
+SOURCE_LAG_SESSIONS = {"advance_decline": 1}
+
+
+def _sessions_behind(as_of: str, page_date: str) -> int:
+    d, end = date.fromisoformat(as_of), date.fromisoformat(page_date)
+    n = 0
+    while d < end:
+        d += timedelta(days=1)
+        n += d.weekday() < 5
+    return n
 
 
 def freshness(status: dict, page_date: str) -> dict[str, dict]:
@@ -905,7 +1089,7 @@ def freshness(status: dict, page_date: str) -> dict[str, dict]:
             why = "missing " + ", ".join(_series_label(m) for m in missing)
         elif not entry.get("ok"):
             why = "fetch failed"
-        elif not as_of or as_of < page_date:
+        elif not as_of or _sessions_behind(as_of, page_date) > SOURCE_LAG_SESSIONS.get(source, 0):
             why = "no new data"
         else:
             why = ""
@@ -962,11 +1146,20 @@ def build() -> Path:
     # Valuation panel (section 08), built per index, switchable in the UI.
     qqq_pe = _round_series(_load_csv_points(QQQ_PE_CSV), 4)
     qqq_price = _round_series(_load_csv_points(QQQ_PRICE_CSV), 2)
+    rsp_price = _round_series(_load_csv_points(RSP_PRICE_CSV), 3)
+    qqew_price = _round_series(_load_csv_points(QQEW_PRICE_CSV), 3)
     breadth_rows = load_breadth_rows(BREADTH_CSV)
-    breadth = breadth_series(breadth_rows)
+    ndx_breadth_rows = load_breadth_rows(NDX_BREADTH_CSV)
     divergence = divergence_payload(spx_points, breadth_rows)
     valuation_spy = valuation_payload(spx_forward_pe, us10y_points)
     valuation_qqq = valuation_payload(qqq_pe, us10y_points)
+    rsp_spy = ratio_series(rsp_price, spx_points)
+    qqew_qqq = ratio_series(qqew_price, qqq_price)
+    ratio_stats = {
+        "rsp_spy": equal_weight_ratio_stats(rsp_spy),
+        "qqew_qqq": equal_weight_ratio_stats(qqew_qqq),
+    }
+    ad_payload = advance_decline_payload(load_advance_decline_rows(SP500_AD_CSV), spx_points)
 
     # The page is dated by its P/E data; every other source is judged against it.
     latest_date_str = forward["latest_date"]
@@ -990,8 +1183,16 @@ def build() -> Path:
         "qqq": {"price": since(qqq_price), "pe": _round_series(qqq_pe, 2)},
         "us10y": _round_series(since(us10y_points), 2),
         "valuation": {"spy": valuation_spy, "qqq": valuation_qqq},
-        "breadth": breadth,
+        "breadth": {
+            "sp500": breadth_series(breadth_rows),
+            "ndx": breadth_series(ndx_breadth_rows),
+        },
         "divergence": divergence,
+        "equal_weight": {
+            "rsp_spy": _round_series(rsp_spy, 6),
+            "qqew_qqq": _round_series(qqew_qqq, 6),
+        },
+        "advance_decline": ad_payload,
     }, separators=(",", ":"))
 
     html = (TEMPLATE
@@ -1006,6 +1207,8 @@ def build() -> Path:
         .replace("__MOVERS_TRAILING__", trailing["movers_html"] if trailing else "")
         .replace("__FG_STATS__", render_fg_stats(fg_stats))
         .replace("__DIV_STATS__", render_divergence_stats(divergence))
+        .replace("__RATIO_STATS__", render_equal_weight_stats(ratio_stats))
+        .replace("__AD_READOUT__", render_advance_decline_readout(ad_payload))
         .replace("__STANDFIRST__", render_standfirst(standfirst(forward["summary"], fg_points[-1] if fg_points else None)))
         .replace("__INSIGHTS__", render_insights(forward["latest_date"]))
         .replace("__ASK_CHIPS__", chips_html)
@@ -1279,7 +1482,7 @@ TEMPLATE = r"""<!doctype html>
     display: flex; justify-content: space-between; align-items: center;
     gap: 10px; margin: 14px 0; flex-wrap: wrap;
   }
-  .ctrl-group { display: flex; gap: 8px; align-items: center; }
+  .ctrl-group { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; max-width: 100%; }
   .seg {
     display: inline-flex;
     background: rgba(255,255,255,0.05);
@@ -1317,6 +1520,8 @@ TEMPLATE = r"""<!doctype html>
   #val-chart { width: 100%; height: 760px; }
   #breadth-chart { width: 100%; height: 640px; }
   #div-chart { width: 100%; height: 560px; }
+  #ratio-chart { width: 100%; height: 480px; }
+  #ad-chart { width: 100%; height: 760px; }
 
   /* ─────────────────── Strip (dot distribution) ─────────────────── */
   .strip-frame {
@@ -1732,6 +1937,23 @@ TEMPLATE = r"""<!doctype html>
   .div-stats .sig-table { min-width: 0; }
   .div-stats .sig-base-cell { opacity: 0.75; }
   .div-note { font-family: var(--font-mono); font-size: 10.5px; color: var(--dim); margin: 10px 0 0; }
+  .ratio-table { min-width: 0; }
+  .ad-readout {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    margin-top: 16px;
+  }
+  .ad-readout > div {
+    background: rgba(255,255,255,0.03); border: 1px solid var(--hair);
+    border-radius: 10px; padding: 12px 14px;
+  }
+  .ad-readout span, .ad-readout small {
+    display: block; font-family: var(--font-mono); color: var(--dim);
+    font-size: 10px; line-height: 1.4;
+  }
+  .ad-readout strong {
+    display: block; margin: 4px 0 2px; color: var(--text);
+    font-family: var(--font-mono); font-size: 20px;
+  }
 
   /* ─────────────────── Gauge (Fear & Greed) ─────────────────── */
   .gauge { display: flex; align-items: center; gap: 40px; margin-top: 20px; }
@@ -1850,6 +2072,15 @@ TEMPLATE = r"""<!doctype html>
     .strip-labels span:nth-child(2) { display: none; }
     #div-chart { height: 440px; }
     .div-stats .sig-table td, .div-stats .sig-table td:first-child { font-size: 12.5px; padding: 11px 6px; }
+  }
+  @media (max-width: 520px) {
+    .chart-wrap { padding: 10px 6px 4px; }
+    .chart-controls .seg button { padding: 5px 8px; font-size: 10px; }
+    #ratio-chart { height: 390px; }
+    #ad-chart { height: 600px; }
+    .ratio-table th, .ratio-table td, .ratio-table td:first-child { padding: 9px 4px; font-size: 10.5px; }
+    .ratio-table .sig-cond-sub { display: none; }
+    .ad-readout { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -2139,12 +2370,16 @@ TEMPLATE = r"""<!doctype html>
           <span class="card-num">09</span>
           <div>
             <h2>Is the rally broad?</h2>
-            <p class="lede">Top: SPY and QQQ, each rebased to 100 at the start of the visible window. Bottom: the share of S&amp;P 500 stocks trading above their 50-day and 200-day moving averages. Watch for divergence. An index pushing to new highs while fewer of its stocks join in means a handful of large names carry the move.</p>
+            <p class="lede">Top: SPY and QQQ, each rebased to 100 at the start of the visible window. Bottom: the share of S&amp;P 500 or Nasdaq-100 stocks trading above their 50-day and 200-day moving averages. Watch for divergence. An index pushing to new highs while fewer of its stocks join in means a handful of large names carry the move.</p>
           </div>
         </div>
         <div class="card-aside">2 panels · shared X__ASOF_09__</div>
       </div>
       <div class="chart-controls">
+        <div class="seg">
+          <button data-breadth-index="sp500" class="active">S&amp;P 500</button>
+          <button data-breadth-index="ndx">Nasdaq-100</button>
+        </div>
         <div class="seg">
           <button data-breadth-range="all">All</button>
           <button data-breadth-range="10y">10Y</button>
@@ -2179,6 +2414,55 @@ TEMPLATE = r"""<!doctype html>
       __DIV_STATS__
     </section>
 
+    <!-- ═══ 11. Equal weight against cap weight ═══ -->
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="card-num">11</span>
+          <div>
+            <h2>Equal weight against cap weight</h2>
+            <p class="lede">These are price ratios. They ignore dividends and expense ratios, so slow drift is partly mechanical. A rising line means the average stock is beating the cap-weighted index and the rally is broadening. A falling line means the mega caps lead.</p>
+          </div>
+        </div>
+        <div class="card-aside">Rebased ratios · start = 100__ASOF_11__</div>
+      </div>
+      <div class="chart-controls">
+        <div class="seg">
+          <button data-ratio-range="all">All</button>
+          <button data-ratio-range="10y">10Y</button>
+          <button data-ratio-range="5y" class="active">5Y</button>
+          <button data-ratio-range="3y">3Y</button>
+          <button data-ratio-range="1y">1Y</button>
+          <button data-ratio-range="ytd">YTD</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><div id="ratio-chart"></div></div>
+      __RATIO_STATS__
+    </section>
+
+    <!-- ═══ 12. Advancers and decliners ═══ -->
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="card-num">12</span>
+          <div>
+            <h2>Advancers and decliners</h2>
+            <p class="lede">History starts in 2025-10 and grows daily. S&amp;P 500 member counts come from MacroMicro. An oscillator below its own 10th percentile describes a broad washout in participation. It is context, not a signal.</p>
+          </div>
+        </div>
+        <div class="card-aside">3 panels · shared X__ASOF_12__</div>
+      </div>
+      <div class="chart-controls">
+        <div class="seg">
+          <button data-ad-range="3m">3M</button>
+          <button data-ad-range="6m">6M</button>
+          <button data-ad-range="all" class="active">All</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><div id="ad-chart"></div></div>
+      __AD_READOUT__
+    </section>
+
     <!-- ═══ Footer ═══ -->
     <footer>
       <div class="left">
@@ -2186,7 +2470,7 @@ TEMPLATE = r"""<!doctype html>
         <span class="dot">·</span>
         <span>P/E &amp; prices · Koyfin</span>
         <span class="dot">·</span>
-        <span>CNN Fear &amp; Greed, breadth · MacroMicro</span>
+        <span>CNN Fear &amp; Greed, breadth, member counts · MacroMicro</span>
       </div>
       <span>as of __LATEST_ISO__ · 5-year window</span>
     </footer>
@@ -2209,14 +2493,18 @@ const LATEST = "__LATEST_ISO__";
 })();
 
 // ═══ Shared utilities ═══
-// Start of a range-button window ("all" | "ytd" | "<n>y"), never before the
+// Start of a range-button window ("all" | "ytd" | "<n>y" | "<n>m"), never before the
 // series' first date.
 function rangeStart(key, firstDate) {
   const now = new Date(LATEST), first = new Date(firstDate);
   let start;
   if (key === "all") start = first;
   else if (key === "ytd") start = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
-  else { start = new Date(now); start.setUTCFullYear(start.getUTCFullYear() - parseInt(key, 10)); }
+  else {
+    start = new Date(now);
+    if (key.endsWith("m")) start.setUTCMonth(start.getUTCMonth() - parseInt(key, 10));
+    else start.setUTCFullYear(start.getUTCFullYear() - parseInt(key, 10));
+  }
   return start < first ? first : start;
 }
 
@@ -3074,23 +3362,24 @@ function stickSolo(id) {
 
 // ═══ Section 09: S&P 500 breadth vs SPY / QQQ ═══
 (function renderBreadthChart() {
-  const b = DATA.breadth;
-  if (!b || !b.ma50.length || !b.ma200.length) return;
+  const sets = DATA.breadth;
+  if (!sets || !sets.sp500 || !sets.sp500.ma50.length || !sets.sp500.ma200.length) return;
 
   const TITLE_FONT = { family: BODY, size: 11 };
   const PRICES = [
     { name: "SPY", pts: DATA.spx.points, color: "#A78BFA" },
     { name: "QQQ", pts: (DATA.qqq && DATA.qqq.price) || [], color: "#6AA0E0" },
   ];
-  const BREADTH = [
-    { name: "% above 50d", pts: b.ma50, color: "#F0A868" },
-    { name: "% above 200d", pts: b.ma200, color: "#34D399" },
+  const breadthFor = key => [
+    { name: "% above 50d", pts: sets[key].ma50, color: "#F0A868" },
+    { name: "% above 200d", pts: sets[key].ma200, color: "#34D399" },
   ];
+  let currentIndex = "sp500";
   let currentRange = "5y";
 
   function windowOf(key) {
     const now = new Date(LATEST);
-    const start = rangeStart(key, b.ma50[0][0]);
+    const start = rangeStart(key, sets[currentIndex].ma50[0][0]);
     return { startStr: start.toISOString().slice(0, 10), endStr: now.toISOString().slice(0, 10) };
   }
 
@@ -3117,7 +3406,7 @@ function stickSolo(id) {
         hovertemplate: "<b>" + s.name + "</b> %{y:.1f} (%{customdata:.2f})<extra></extra>",
       };
     });
-    const breadthTraces = BREADTH.map(s => ({
+    const breadthTraces = breadthFor(currentIndex).map(s => ({
       x: s.pts.map(p => p[0]), y: s.pts.map(p => p[1]),
       type: "scattergl", mode: "lines",
       name: s.name,
@@ -3157,7 +3446,7 @@ function stickSolo(id) {
         tickvals: [0, 20, 50, 80, 100],
         gridcolor: "rgba(255,255,255,0.06)", zeroline: false,
         tickfont: TICK_FONT, tickcolor: "rgba(255,255,255,0.25)",
-        title: { text: "% of S&P 500", font: Object.assign({}, TITLE_FONT, { color: "#F0A868" }), standoff: 12 },
+        title: { text: currentIndex === "sp500" ? "% of S&P 500" : "% of Nasdaq-100", font: Object.assign({}, TITLE_FONT, { color: "#F0A868" }), standoff: 12 },
       },
       shapes: [
         refLine(20, "rgba(52,211,153,0.45)"),
@@ -3179,6 +3468,16 @@ function stickSolo(id) {
       document.querySelectorAll("[data-breadth-range]").forEach(x => x.classList.remove("active"));
       btn.classList.add("active");
       currentRange = btn.dataset.breadthRange;
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-breadth-index]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (!sets[btn.dataset.breadthIndex] || !sets[btn.dataset.breadthIndex].ma50.length) return;
+      document.querySelectorAll("[data-breadth-index]").forEach(x => x.classList.remove("active"));
+      btn.classList.add("active");
+      currentIndex = btn.dataset.breadthIndex;
       render();
     });
   });
@@ -3288,6 +3587,165 @@ function stickSolo(id) {
       btn.classList.add("active");
       measure = btn.dataset.divMeasure;
       document.querySelectorAll("[data-div-stats]").forEach(el => { el.hidden = el.dataset.divStats !== measure; });
+      render();
+    });
+  });
+})();
+
+// ═══ Section 11: equal weight against cap weight ═══
+(function renderRatioChart() {
+  const ratios = DATA.equal_weight;
+  if (!ratios || !ratios.rsp_spy.length || !ratios.qqew_qqq.length) return;
+  const SERIES = [
+    { name: "RSP / SPY", pts: ratios.rsp_spy, color: "#A78BFA" },
+    { name: "QQEW / QQQ", pts: ratios.qqew_qqq, color: "#34D399" },
+  ];
+  const firstDate = SERIES.map(s => s.pts[0][0]).sort()[0];
+  let currentRange = "5y";
+
+  function buildTraces(startStr, endStr) {
+    return SERIES.map(s => {
+      const visible = s.pts.filter(p => p[0] >= startStr && p[0] <= endStr);
+      const base = visible.length ? visible[0][1] : 1;
+      return {
+        x: visible.map(p => p[0]),
+        y: visible.map(p => p[1] / base * 100),
+        customdata: visible.map(p => p[1]),
+        type: "scattergl", mode: "lines", name: s.name,
+        line: { color: s.color, width: 2 },
+        hovertemplate: "<b>" + s.name + "</b> %{y:.1f}<br>ratio %{customdata:.4f}<extra></extra>",
+      };
+    });
+  }
+
+  function render() {
+    const start = rangeStart(currentRange, firstDate).toISOString().slice(0, 10);
+    const end = LATEST;
+    const narrow = document.getElementById("ratio-chart").clientWidth < 520;
+    const layout = Object.assign({}, baseLayout, {
+      margin: narrow ? { l: 42, r: 8, t: 18, b: 54 } : { l: 56, r: 20, t: 18, b: 54 },
+      xaxis: Object.assign({}, baseLayout.xaxis, { range: [start, end], autorange: false }),
+      yaxis: Object.assign({}, baseLayout.yaxis, {
+        title: { text: narrow ? "Start = 100" : "Visible window start = 100", font: { family: BODY, size: 11, color: "#6B7078" }, standoff: 10 },
+        ticksuffix: "", autorange: true,
+      }),
+      legend: { orientation: "h", y: -0.16, font: { family: MONO, size: 10, color: "#9BA0AB" } },
+    });
+    return Plotly.react("ratio-chart", buildTraces(start, end), layout, chartConfig);
+  }
+
+  render();
+  document.querySelectorAll("[data-ratio-range]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-ratio-range]").forEach(x => x.classList.remove("active"));
+      btn.classList.add("active");
+      currentRange = btn.dataset.ratioRange;
+      render();
+    });
+  });
+})();
+
+// ═══ Section 12: advancers and decliners ═══
+(function renderAdvanceDeclineChart() {
+  const ad = DATA.advance_decline;
+  if (!ad || !ad.points.length || !ad.spy.length) return;
+  const firstDate = ad.points[0][0];
+  const lastDate = ad.points[ad.points.length - 1][0];
+  let currentRange = "all";
+
+  function visible(rows, start) {
+    return rows.filter(p => p[0] >= start && p[0] <= lastDate);
+  }
+
+  function buildTraces(start) {
+    const pts = visible(ad.points, start);
+    const spy = visible(ad.spy, start);
+    return [
+      {
+        x: spy.map(p => p[0]), y: spy.map(p => p[1]),
+        type: "scattergl", mode: "lines", name: "SPY",
+        line: { color: "#A78BFA", width: 1.8 }, yaxis: "y",
+        hovertemplate: "<b>SPY</b> %{y:.2f}<extra></extra>",
+      },
+      {
+        x: pts.map(p => p[0]), y: pts.map(p => p[3]),
+        type: "scattergl", mode: "lines", name: "Cumulative A/D",
+        line: { color: "#F0A868", width: 1.5 }, yaxis: "y2",
+        hovertemplate: "<b>A/D line</b> %{y:+,.0f}<extra></extra>",
+      },
+      {
+        x: pts.map(p => p[0]), y: pts.map(p => p[1]),
+        type: "bar", name: "Net advancers", yaxis: "y3",
+        marker: { color: pts.map(p => p[1] >= 0 ? "#34D399" : "#F87171") },
+        hovertemplate: "<b>Net advancers</b> %{y:+,.0f}<extra></extra>",
+      },
+      {
+        x: pts.map(p => p[0]), y: pts.map(p => p[2]),
+        type: "scattergl", mode: "lines", name: "McClellan oscillator",
+        connectgaps: false, line: { color: "#6AA0E0", width: 1.8 }, yaxis: "y4",
+        hovertemplate: "<b>McClellan</b> %{y:+.1f}<extra></extra>",
+      },
+    ];
+  }
+
+  function guide(y, color, dash) {
+    return { type: "line", xref: "paper", x0: 0, x1: 1, yref: "y4", y0: y, y1: y, line: { color: color, width: 1, dash: dash } };
+  }
+
+  function render() {
+    const start = rangeStart(currentRange, firstDate).toISOString().slice(0, 10);
+    const narrow = document.getElementById("ad-chart").clientWidth < 520;
+    const titleFont = { family: BODY, size: 11, color: "#6B7078" };
+    const axis = {
+      gridcolor: "rgba(255,255,255,0.06)", zeroline: false,
+      tickfont: TICK_FONT, tickcolor: "rgba(255,255,255,0.25)",
+    };
+    const layout = {
+      margin: narrow ? { l: 42, r: 42, t: 28, b: 40 } : { l: 58, r: 66, t: 28, b: 42 },
+      hovermode: "x unified", hoverlabel: baseLayout.hoverlabel,
+      paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)", font: baseLayout.font,
+      legend: { orientation: "h", x: 0, y: 1.02, yanchor: "bottom", font: { family: MONO, size: narrow ? 9 : 10, color: "#9BA0AB" } },
+      xaxis: {
+        range: [start, lastDate], autorange: false, anchor: "y4", type: "date",
+        showgrid: false, linecolor: "rgba(255,255,255,0.12)", tickcolor: "rgba(255,255,255,0.25)", tickfont: TICK_FONT,
+      },
+      yaxis: Object.assign({}, axis, {
+        domain: [0.70, 1], type: "log", autorange: true,
+        title: { text: "SPY (log)", font: Object.assign({}, titleFont, { color: "#A78BFA" }), standoff: 8 },
+      }),
+      yaxis2: Object.assign({}, axis, {
+        overlaying: "y", side: "right", autorange: true, showgrid: false,
+        title: { text: narrow ? "A/D" : "Cumulative A/D", font: Object.assign({}, titleFont, { color: "#F0A868" }), standoff: 8 },
+      }),
+      yaxis3: Object.assign({}, axis, {
+        domain: [0.37, 0.61], autorange: true,
+        title: { text: narrow ? "Net" : "Net advancers", font: titleFont, standoff: 8 },
+      }),
+      yaxis4: Object.assign({}, axis, {
+        domain: [0, 0.28], autorange: true, zeroline: true,
+        zerolinecolor: "rgba(255,255,255,0.30)", zerolinewidth: 1,
+        title: { text: narrow ? "McClellan" : "McClellan oscillator", font: Object.assign({}, titleFont, { color: "#6AA0E0" }), standoff: 8 },
+      }),
+      shapes: [
+        guide(0, "rgba(255,255,255,0.30)", "solid"),
+        guide(ad.guides.p10, "rgba(248,113,113,0.65)", "dot"),
+        guide(ad.guides.p90, "rgba(52,211,153,0.65)", "dot"),
+      ],
+      annotations: [
+        { x: 1, y: ad.guides.p10, xref: "paper", yref: "y4", text: "P10", showarrow: false, xanchor: "left", font: { family: MONO, size: 9, color: "#F87171" } },
+        { x: 1, y: ad.guides.p90, xref: "paper", yref: "y4", text: "P90", showarrow: false, xanchor: "left", font: { family: MONO, size: 9, color: "#34D399" } },
+      ],
+      bargap: 0.12,
+    };
+    return Plotly.react("ad-chart", buildTraces(start), layout, chartConfig);
+  }
+
+  render();
+  document.querySelectorAll("[data-ad-range]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-ad-range]").forEach(x => x.classList.remove("active"));
+      btn.classList.add("active");
+      currentRange = btn.dataset.adRange;
       render();
     });
   });
