@@ -1,44 +1,41 @@
 {
-  "generated_at": "2026-10-07T01:14:06+00:00",
+  "generated_at": "2026-10-08T01:35:45+00:00",
   "sources": {
     "koyfin_pe": {
-      "ok": true,
-      "as_of": "2026-10-06",
-      "prior_as_of": "2026-10-05",
-      "error": null
-    },
-    "koyfin_prices": {
-      "ok": true,
-      "as_of": "2026-10-06",
-      "prior_as_of": "2026-10-05",
-      "error": null
-    },
-    "us10y": {
       "ok": true,
       "as_of": "2026-10-07",
       "prior_as_of": "2026-10-06",
       "error": null
     },
+    "koyfin_prices": {
+      "ok": true,
+      "as_of": "2026-10-07",
+      "prior_as_of": "2026-10-06",
+      "error": null
+    },
+    "us10y": {
+      "ok": true,
+      "as_of": "2026-10-08",
+      "prior_as_of": "2026-10-07",
+      "error": null
+    },
     "fear_greed": {
       "ok": true,
-      "as_of": "2026-10-06",
-      "prior_as_of": "2026-10-05",
+      "as_of": "2026-10-07",
+      "prior_as_of": "2026-10-06",
       "error": null
     },
     "breadth": {
       "ok": true,
-      "as_of": "2026-10-06",
-      "prior_as_of": "2026-10-05",
+      "as_of": "2026-10-07",
+      "prior_as_of": "2026-10-06",
       "error": null
     },
     "advance_decline": {
-      "ok": false,
+      "ok": true,
       "as_of": "2026-10-02",
       "prior_as_of": "2026-10-02",
-      "error": "HTTP 423: {\"detail\":\"Our browser was detected by target site. Retry the request or try adjusting proxy country, proxy type and browser rendering settings. Our documentation: https://docs.scrapingant.com/ and su",
-      "missing": [
-        "sp500_ad"
-      ]
+      "error": null
     }
   }
 }
