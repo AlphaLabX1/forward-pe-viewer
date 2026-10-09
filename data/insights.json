@@ -2,17 +2,17 @@
   "findings": [
     {
       "title": "Materials' 65-point lens gap is extreme",
-      "body": "Materials trades at a forward P/E of 16.01 at percentile 18 while its trailing P/E sits at 34.24 at percentile 83. The market is pricing in 114 percent earnings growth, a bet that would reverse the sector's recent margin pressure, not extend it."
+      "body": "Materials trades at 15.84x forward but 33.72x trailing, a 65-point percentile gap between the two lenses. That gap is the widest in the table and implies analysts expect 113 percent earnings growth, a bet that the sector's recent profit collapse reverses sharply."
     },
     {
-      "title": "Energy's month-long slide contradicts its percentile",
-      "body": "Energy's forward P/E of 11.89 is at percentile 44, but it has fallen 18 percentile points in a month while its trailing P/E remains rich at percentile 82. Analysts are slashing forward estimates faster than reported earnings are deteriorating, leaving the sector's cheapness suspect."
+      "title": "Energy's month-long slide defies its earnings",
+      "body": "Energy's forward percentile dropped 22 points in a month to 41, yet its trailing P/E sits at the 80th percentile. The market is pricing in 53 percent earnings growth, but the valuation compression suggests it is not trusting that forecast."
     },
     {
-      "title": "Real Estate's forward multiple defies its percentile",
-      "body": "Real Estate's forward P/E of 33.81 sits at percentile 7, yet it has dropped 32 percentile points in a month and implies a 4 percent earnings decline. The multiple is historically cheap only because estimates have been cut so aggressively that the denominator is collapsing."
+      "title": "Real Estate's forward multiple is a bargain",
+      "body": "Real Estate's forward P/E of 33.45 sits at the 6th percentile of its five-year range, while its trailing multiple is at the 20th. The 33-point monthly drop in forward percentile signals a repricing that assumes a 3 percent earnings decline, a stark contrast to other sectors' growth expectations."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-10-07"
+  "as_of": "2026-10-08"
 }
