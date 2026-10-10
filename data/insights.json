@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 65-point lens gap is extreme",
-      "body": "Materials trades at 15.84x forward but 33.72x trailing, a 65-point percentile gap between the two lenses. That gap is the widest in the table and implies analysts expect 113 percent earnings growth, a bet that the sector's recent profit collapse reverses sharply."
+      "title": "Materials' 65-point lens gap signals peak-cycle earnings",
+      "body": "Materials shows a 65-point percentile gap between its trailing and forward lenses, the widest in the table, with a trailing P/E of 33.91 at the 81st percentile. Analysts are underwriting 113 percent earnings growth, which would compress the multiple by 53 percent — a bet that current earnings are near a cyclical top, not a new plateau."
     },
     {
-      "title": "Energy's month-long slide defies its earnings",
-      "body": "Energy's forward percentile dropped 22 points in a month to 41, yet its trailing P/E sits at the 80th percentile. The market is pricing in 53 percent earnings growth, but the valuation compression suggests it is not trusting that forecast."
+      "title": "Consumer Staples' week-long percentile surge defies its cheapness",
+      "body": "Consumer Staples jumped 25 percentile points in forward valuation in a single week, yet still sits at just the 31st percentile, with a forward P/E of 19.61. The move is concentrated in analyst revisions, not reported earnings, which remain at the 70th percentile — a divergence that suggests the market is repricing the sector's growth outlook faster than its actual results."
     },
     {
-      "title": "Real Estate's forward multiple is a bargain",
-      "body": "Real Estate's forward P/E of 33.45 sits at the 6th percentile of its five-year range, while its trailing multiple is at the 20th. The 33-point monthly drop in forward percentile signals a repricing that assumes a 3 percent earnings decline, a stark contrast to other sectors' growth expectations."
+      "title": "Real Estate's forward percentile collapse outruns its multiple",
+      "body": "Real Estate's forward percentile fell 25 points in a month to the 6th percentile, yet its forward P/E of 33.60 remains the highest in the table. The percentile drop reflects a sharp repricing of expected earnings, now projected to decline 3 percent, but the multiple itself has barely moved — leaving a valuation that still assumes the old growth trajectory."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-10-08"
+  "as_of": "2026-10-09"
 }

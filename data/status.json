@@ -1,37 +1,34 @@
 {
-  "generated_at": "2026-10-09T01:45:58+00:00",
+  "generated_at": "2026-10-10T01:32:52+00:00",
   "sources": {
     "koyfin_pe": {
-      "ok": true,
-      "as_of": "2026-10-08",
-      "prior_as_of": "2026-10-07",
-      "error": null
-    },
-    "koyfin_prices": {
-      "ok": true,
-      "as_of": "2026-10-08",
-      "prior_as_of": "2026-10-07",
-      "error": null
-    },
-    "us10y": {
       "ok": true,
       "as_of": "2026-10-09",
       "prior_as_of": "2026-10-08",
       "error": null
     },
+    "koyfin_prices": {
+      "ok": true,
+      "as_of": "2026-10-09",
+      "prior_as_of": "2026-10-08",
+      "error": null
+    },
+    "us10y": {
+      "ok": true,
+      "as_of": "2026-10-09",
+      "prior_as_of": "2026-10-09",
+      "error": null
+    },
     "fear_greed": {
-      "ok": false,
-      "as_of": "2026-10-07",
+      "ok": true,
+      "as_of": "2026-10-09",
       "prior_as_of": "2026-10-07",
-      "error": "HTTP 423: {\"detail\":\"Our browser was detected by target site. Retry the request or try adjusting proxy country, proxy type and browser rendering settings. Our documentation: https://docs.scrapingant.com/ and su",
-      "missing": [
-        "fear_greed"
-      ]
+      "error": null
     },
     "breadth": {
       "ok": true,
-      "as_of": "2026-10-08",
-      "prior_as_of": "2026-10-07",
+      "as_of": "2026-10-09",
+      "prior_as_of": "2026-10-08",
       "error": null
     },
     "advance_decline": {
