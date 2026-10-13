@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 65-point lens gap signals peak-cycle earnings",
-      "body": "Materials shows a 65-point percentile gap between its trailing and forward lenses, the widest in the table, with a trailing P/E of 33.91 at the 81st percentile. Analysts are underwriting 113 percent earnings growth, which would compress the multiple by 53 percent — a bet that current earnings are near a cyclical top, not a new plateau."
+      "title": "Materials' 66-point lens gap signals earnings collapse",
+      "body": "Materials trades at 15.96x forward but 34.18x trailing, a 66-point percentile gap between the two lenses. The market is underwriting 114 percent earnings growth, which would be the rare case where a sector's forward multiple looks cheap only because analysts expect a dramatic profit recovery."
     },
     {
-      "title": "Consumer Staples' week-long percentile surge defies its cheapness",
-      "body": "Consumer Staples jumped 25 percentile points in forward valuation in a single week, yet still sits at just the 31st percentile, with a forward P/E of 19.61. The move is concentrated in analyst revisions, not reported earnings, which remain at the 70th percentile — a divergence that suggests the market is repricing the sector's growth outlook faster than its actual results."
+      "title": "Health Care's one-month re-rating is extreme",
+      "body": "Health Care's forward percentile jumped 24 points in a month to 96, yet its trailing percentile sits at 80. That 45 percent multiple compression implies analysts expect 83 percent earnings growth, a bet that the sector's current profitability is far below what it will deliver."
     },
     {
-      "title": "Real Estate's forward percentile collapse outruns its multiple",
-      "body": "Real Estate's forward percentile fell 25 points in a month to the 6th percentile, yet its forward P/E of 33.60 remains the highest in the table. The percentile drop reflects a sharp repricing of expected earnings, now projected to decline 3 percent, but the multiple itself has barely moved — leaving a valuation that still assumes the old growth trajectory."
+      "title": "Consumer Staples' week-long surge defies its range",
+      "body": "Consumer Staples' forward percentile rose 34 points in a single week to 42, while its trailing percentile is 76. The forward multiple at 19.83x is still below the trailing 27.44x, so the market is pricing in 38 percent earnings growth that has yet to appear in reported results."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-10-09"
+  "as_of": "2026-10-12"
 }
