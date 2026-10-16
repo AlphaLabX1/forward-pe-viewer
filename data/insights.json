@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 67-point lens gap signals collapse",
-      "body": "Materials trades at 15.93x forward yet 34.21x trailing, a 67-point percentile gap — the widest in the table. The market is underwriting 115 percent earnings growth, which would be a historic reversal for a sector whose forward percentile has fallen 12 points in a month."
+      "title": "Materials' 64-point lens gap signals collapse",
+      "body": "Materials sits at the 22nd percentile forward but the 86th percentile trailing, a 64-point gap that dwarfs every other sector. The market is pricing 118 percent earnings growth, which would be the only way to justify that compression — an extraordinary bet on a cyclical rebound."
     },
     {
-      "title": "Energy's cheap forward mask hides rich past",
-      "body": "Energy's forward P/E sits at the 42nd percentile while its trailing multiple ranks at the 84th, a 41-point split. The 62 percent implied earnings growth is the market's bet that the current earnings trough is temporary, but the one-month 14-point cheapening suggests fading conviction."
+      "title": "Health Care's 15-point weekly jump defies history",
+      "body": "Health Care's forward percentile surged 15 points in a single week to the 98th percentile, yet the trailing lens sits at 84. That gap implies analysts expect 87 percent earnings growth, a level of optimism that has rarely been underwritten at this extreme of the five-year range."
     },
     {
-      "title": "Consumer Staples' week-long valuation spike",
-      "body": "Consumer Staples jumped 28 percentile points in forward valuation over a single week, the largest weekly move in the table. That surge has pushed its forward P/E to 19.81 against a trailing 27.41, implying 38 percent growth — a bold assumption for a defensive sector that has historically delivered steady, low-double-digit earnings."
+      "title": "Energy's cheap forward masks rich trailing",
+      "body": "Energy trades at the 43rd percentile forward but the 84th percentile trailing, a 41-point gap that suggests the market sees 62 percent earnings growth ahead. The forward multiple looks moderate only because analysts are betting on a sharp earnings recovery that has not yet materialized in reported results."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-10-14"
+  "as_of": "2026-10-15"
 }
