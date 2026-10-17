@@ -1,16 +1,16 @@
 {
   "findings": [
     {
-      "title": "Materials' 64-point lens gap signals collapse",
-      "body": "Materials sits at the 22nd percentile forward but the 86th percentile trailing, a 64-point gap that dwarfs every other sector. The market is pricing 118 percent earnings growth, which would be the only way to justify that compression — an extraordinary bet on a cyclical rebound."
+      "title": "Materials' 59-point lens gap is a bet on 118% growth",
+      "body": "Materials trades at 16.61x forward against 36.24x trailing, a 59-point percentile gap that is the widest in the table. The market is underwriting 118 percent earnings growth, which would be an extraordinary reversion for a sector whose trailing multiple sits at the 87th percentile of its own five-year range."
     },
     {
-      "title": "Health Care's 15-point weekly jump defies history",
-      "body": "Health Care's forward percentile surged 15 points in a single week to the 98th percentile, yet the trailing lens sits at 84. That gap implies analysts expect 87 percent earnings growth, a level of optimism that has rarely been underwritten at this extreme of the five-year range."
+      "title": "Energy's forward percentile collapsed while trailing stays rich",
+      "body": "Energy's forward multiple has fallen 22 percentile points in a month to the 38th percentile, yet its trailing P/E remains at the 84th percentile. That 45-point gap implies analysts expect 64 percent earnings growth, a sharp recovery that the market is pricing in despite the sector's recent slide."
     },
     {
-      "title": "Energy's cheap forward masks rich trailing",
-      "body": "Energy trades at the 43rd percentile forward but the 84th percentile trailing, a 41-point gap that suggests the market sees 62 percent earnings growth ahead. The forward multiple looks moderate only because analysts are betting on a sharp earnings recovery that has not yet materialized in reported results."
+      "title": "Consumer Staples' one-week surge is an outlier move",
+      "body": "Consumer Staples' forward percentile jumped 38 points in a single week, the largest weekly swing in the table, after a 49-point monthly gain. The forward multiple now sits at the 70th percentile while the trailing lens is even richer at the 84th, suggesting the re-rating is not just sentiment but a genuine upgrade in earnings expectations."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
