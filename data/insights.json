@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 59-point lens gap is a bet on 118% growth",
-      "body": "Materials trades at 16.61x forward against 36.24x trailing, a 59-point percentile gap that is the widest in the table. The market is underwriting 118 percent earnings growth, which would be an extraordinary reversion for a sector whose trailing multiple sits at the 87th percentile of its own five-year range."
+      "title": "Materials' 58-point lens gap signals earnings hope",
+      "body": "Materials sits at the 88th percentile on trailing earnings but only the 29th on forward estimates, a 58-point gap that is the widest in the table. The market is underwriting 120 percent earnings growth next year, which at this extreme looks like a bet on a cyclical snapback rather than a reflection of current profitability."
     },
     {
-      "title": "Energy's forward percentile collapsed while trailing stays rich",
-      "body": "Energy's forward multiple has fallen 22 percentile points in a month to the 38th percentile, yet its trailing P/E remains at the 84th percentile. That 45-point gap implies analysts expect 64 percent earnings growth, a sharp recovery that the market is pricing in despite the sector's recent slide."
+      "title": "Energy priced for earnings rebound despite selloff",
+      "body": "Energy's forward P/E percentile fell 15 points in a month to 39, yet its trailing percentile remains high at 84, leaving a 46-point gap between the two lenses. The 68 percent implied earnings growth suggests analysts expect a sharp profit recovery, so the multiple compression may already be pricing in a cyclical trough."
     },
     {
-      "title": "Consumer Staples' one-week surge is an outlier move",
-      "body": "Consumer Staples' forward percentile jumped 38 points in a single week, the largest weekly swing in the table, after a 49-point monthly gain. The forward multiple now sits at the 70th percentile while the trailing lens is even richer at the 84th, suggesting the re-rating is not just sentiment but a genuine upgrade in earnings expectations."
+      "title": "Health Care's forward multiple at record high",
+      "body": "Health Care's forward P/E percentile hit 100 after a 22-point monthly jump, even as its trailing percentile sits at 85. The 47 percent compression between forward and trailing multiples means investors are paying an unprecedented premium for projected earnings, an extreme that hinges entirely on those forecasts materializing."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-10-15"
+  "as_of": "2026-10-19"
 }
