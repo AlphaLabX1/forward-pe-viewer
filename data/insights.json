@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 58-point lens gap signals earnings hope",
-      "body": "Materials sits at the 88th percentile on trailing earnings but only the 29th on forward estimates, a 58-point gap that is the widest in the table. The market is underwriting 120 percent earnings growth next year, which at this extreme looks like a bet on a cyclical snapback rather than a reflection of current profitability."
+      "title": "Materials' 116% earnings bet strains credibility",
+      "body": "Materials trades at 16.72x forward versus 36.06x trailing, a 54 percent compression that implies 116 percent earnings growth. The forward multiple sits at the 30th percentile while trailing sits at the 87th, so the market is pricing a dramatic re-rating that has not yet shown up in reported earnings."
     },
     {
-      "title": "Energy priced for earnings rebound despite selloff",
-      "body": "Energy's forward P/E percentile fell 15 points in a month to 39, yet its trailing percentile remains high at 84, leaving a 46-point gap between the two lenses. The 68 percent implied earnings growth suggests analysts expect a sharp profit recovery, so the multiple compression may already be pricing in a cyclical trough."
+      "title": "Energy's forward multiple ignores trailing strength",
+      "body": "Energy's trailing P/E of 19.31 is at the 84th percentile, yet the forward multiple of 11.38 sits at the 36th, a 49-point gap. The 41 percent compression implies 70 percent earnings growth, but the market is treating the sector as cheap despite its rich trailing history."
     },
     {
-      "title": "Health Care's forward multiple at record high",
-      "body": "Health Care's forward P/E percentile hit 100 after a 22-point monthly jump, even as its trailing percentile sits at 85. The 47 percent compression between forward and trailing multiples means investors are paying an unprecedented premium for projected earnings, an extreme that hinges entirely on those forecasts materializing."
+      "title": "Consumer Staples' month-long surge hits extremes",
+      "body": "Consumer Staples' forward percentile jumped 63 points in a month to the 75th, while the trailing percentile sits at 84. The forward P/E of 20.54 is now only 28 percent below trailing, implying 38 percent growth, a bet that the sector's recent earnings momentum will persist."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-10-19"
+  "as_of": "2026-10-20"
 }
