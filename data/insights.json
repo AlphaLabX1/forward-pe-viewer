@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 116% earnings bet strains credibility",
-      "body": "Materials trades at 16.72x forward versus 36.06x trailing, a 54 percent compression that implies 116 percent earnings growth. The forward multiple sits at the 30th percentile while trailing sits at the 87th, so the market is pricing a dramatic re-rating that has not yet shown up in reported earnings."
+      "title": "Materials' 59-point lens gap is extreme",
+      "body": "Materials sits at the 25th percentile on forward earnings but the 84th on trailing, a 59-point gap that dwarfs every other sector. The market is underwriting 111 percent earnings growth, which would be a historic re-rating of a sector whose trailing multiple is already rich."
     },
     {
-      "title": "Energy's forward multiple ignores trailing strength",
-      "body": "Energy's trailing P/E of 19.31 is at the 84th percentile, yet the forward multiple of 11.38 sits at the 36th, a 49-point gap. The 41 percent compression implies 70 percent earnings growth, but the market is treating the sector as cheap despite its rich trailing history."
+      "title": "Health Care's forward percentile hits ceiling",
+      "body": "Health Care's forward P/E is at the 100th percentile of its five-year range, up 22 points in a month, while its trailing multiple sits at the 87th. The 47 percent compression between the two lenses implies analysts expect 88 percent earnings growth, a bet that has pushed valuations to an absolute extreme."
     },
     {
-      "title": "Consumer Staples' month-long surge hits extremes",
-      "body": "Consumer Staples' forward percentile jumped 63 points in a month to the 75th, while the trailing percentile sits at 84. The forward P/E of 20.54 is now only 28 percent below trailing, implying 38 percent growth, a bet that the sector's recent earnings momentum will persist."
+      "title": "Energy's trailing richness contradicts forward cheapness",
+      "body": "Energy trades at the 36th percentile on forward earnings but the 84th on trailing, a 49-point gap. The 41 percent multiple compression implies 70 percent earnings growth, yet the forward percentile has been drifting cheaper over the past month, suggesting the market is not fully buying the rebound."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-10-20"
+  "as_of": "2026-10-21"
 }
