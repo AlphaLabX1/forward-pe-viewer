@@ -2,17 +2,17 @@
   "findings": [
     {
       "title": "Materials' 59-point lens gap is extreme",
-      "body": "Materials sits at the 25th percentile on forward earnings but the 84th on trailing, a 59-point gap that dwarfs every other sector. The market is underwriting 111 percent earnings growth, which would be a historic re-rating of a sector whose trailing multiple is already rich."
+      "body": "Materials sits at the 25th percentile on forward earnings but the 84th on trailing, a 59-point spread that is the widest in the table. The market is underwriting 110 percent earnings growth, which would be a historic rebound from a depressed base, not a steady-state expectation."
     },
     {
-      "title": "Health Care's forward percentile hits ceiling",
-      "body": "Health Care's forward P/E is at the 100th percentile of its five-year range, up 22 points in a month, while its trailing multiple sits at the 87th. The 47 percent compression between the two lenses implies analysts expect 88 percent earnings growth, a bet that has pushed valuations to an absolute extreme."
+      "title": "Health Care's forward percentile hits 100",
+      "body": "Health Care's forward multiple is at the 100th percentile of its five-year range, yet its trailing percentile is only 87. That 13-point gap, combined with 88 percent implied growth, means the market is pricing in a near-doubling of earnings that has not yet appeared in reported results."
     },
     {
-      "title": "Energy's trailing richness contradicts forward cheapness",
-      "body": "Energy trades at the 36th percentile on forward earnings but the 84th on trailing, a 49-point gap. The 41 percent multiple compression implies 70 percent earnings growth, yet the forward percentile has been drifting cheaper over the past month, suggesting the market is not fully buying the rebound."
+      "title": "Energy's trailing richness contradicts cheap forward",
+      "body": "Energy trades at the 85th percentile on trailing earnings but only the 37th on forward, a 48-point inversion. The 41 percent compression implies analysts expect a 69 percent earnings surge, yet the sector has been getting cheaper over the past month, suggesting the market is not buying the rebound."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-10-21"
+  "as_of": "2026-10-22"
 }
