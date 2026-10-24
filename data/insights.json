@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 59-point lens gap is extreme",
-      "body": "Materials sits at the 25th percentile on forward earnings but the 84th on trailing, a 59-point spread that is the widest in the table. The market is underwriting 110 percent earnings growth, which would be a historic rebound from a depressed base, not a steady-state expectation."
+      "title": "Materials' forward lens is a bet on a 103 percent earnings surge",
+      "body": "Materials sits at the 21st percentile forward but the 76th percentile trailing, a 55-point gap that is the widest in the table. The forward multiple is 51 percent below trailing, implying analysts expect reported earnings to more than double next year — an extraordinary underwriting at the 21st percentile of its own five-year range."
     },
     {
-      "title": "Health Care's forward percentile hits 100",
-      "body": "Health Care's forward multiple is at the 100th percentile of its five-year range, yet its trailing percentile is only 87. That 13-point gap, combined with 88 percent implied growth, means the market is pricing in a near-doubling of earnings that has not yet appeared in reported results."
+      "title": "Energy's forward multiple is far cheaper than its trailing record",
+      "body": "Energy trades at the 34th percentile forward versus the 82nd percentile trailing, a 48-point gap that is the second-largest here. The forward multiple is 39 percent below trailing, implying a 63 percent earnings jump is priced in — yet the sector has been getting cheaper for a month straight, a disconnect between the valuation and the implied growth."
     },
     {
-      "title": "Energy's trailing richness contradicts cheap forward",
-      "body": "Energy trades at the 85th percentile on trailing earnings but only the 37th on forward, a 48-point inversion. The 41 percent compression implies analysts expect a 69 percent earnings surge, yet the sector has been getting cheaper over the past month, suggesting the market is not buying the rebound."
+      "title": "Health Care's forward multiple is at a five-year extreme",
+      "body": "Health Care's forward P/E of 20.45 sits at the 100th percentile of its own five-year range, up 18 points in a month, while its trailing multiple is only at the 87th percentile. The 47 percent compression between the two lenses implies an 87 percent earnings surge is being priced in, a level of optimism that has no precedent in the sector's recent history."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-10-22"
+  "as_of": "2026-10-23"
 }
