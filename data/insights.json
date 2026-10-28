@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 110% growth bet is extreme",
-      "body": "Materials trades at 16.66x forward versus 34.94x trailing, a 52 percent compression that implies 110 percent earnings growth. That is the largest implied growth in the table, yet the forward multiple sits at percentile 28 — the market is pricing a massive rebound without paying up for it."
+      "title": "Materials' 62-point lens gap is extreme",
+      "body": "Materials trades at a 62-point percentile gap between trailing and forward lenses, the widest in the table. The market is pricing 114 percent earnings growth next year, a bet that a cyclical trough is about to reverse hard."
     },
     {
-      "title": "Energy's forward lens is far cheaper",
-      "body": "Energy's trailing P/E is at percentile 84 while its forward P/E sits at percentile 38, a 45-point gap — the widest in either direction outside Materials. The market is effectively discounting a 63 percent earnings jump, but the forward multiple's mid-range percentile suggests analysts see this as a cyclical peak, not a durable expansion."
+      "title": "Energy's forward multiple hides earnings collapse",
+      "body": "Energy's forward P/E sits at percentile 38 while its trailing multiple is at percentile 84, a 45-point gap. That implies analysts expect 64 percent earnings growth, but the market is not paying up for it—the forward percentile is barely mid-range."
     },
     {
-      "title": "Health Care's forward multiple is maxed",
-      "body": "Health Care's forward P/E is at percentile 100, its richest level in five years, after a 13-point one-month jump. The 47 percent compression from trailing earnings implies 87 percent growth, but the percentile ceiling means there is no historical room left for the multiple to stretch further — only earnings can justify the price."
+      "title": "Health Care at richest forward percentile ever",
+      "body": "Health Care's forward P/E is at the 100th percentile of its five-year range, yet its trailing multiple is only at the 87th. The market is underwriting 87 percent earnings growth, a level of optimism that has no precedent in this sector's recent history."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-10-26"
+  "as_of": "2026-10-27"
 }
