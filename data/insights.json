@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 62-point lens gap is extreme",
-      "body": "Materials trades at a 62-point percentile gap between trailing and forward lenses, the widest in the table. The market is pricing 114 percent earnings growth next year, a bet that a cyclical trough is about to reverse hard."
+      "title": "Materials' 66-point lens gap signals earnings cliff",
+      "body": "Materials trades at 16.30x forward but 36.21x trailing, a 66-point percentile gap that is the widest in the table. The market is underwriting 122 percent earnings growth, which would be a dramatic reversal from the depressed trailing base."
     },
     {
-      "title": "Energy's forward multiple hides earnings collapse",
-      "body": "Energy's forward P/E sits at percentile 38 while its trailing multiple is at percentile 84, a 45-point gap. That implies analysts expect 64 percent earnings growth, but the market is not paying up for it—the forward percentile is barely mid-range."
+      "title": "Health Care at all-time forward high despite 45% compression",
+      "body": "Health Care's forward P/E of 20.21 sits at the 100th percentile of its five-year range, yet the multiple is 45 percent below trailing. That compression implies 81 percent earnings growth, a bet on margin expansion that the market has never priced at this level before."
     },
     {
-      "title": "Health Care at richest forward percentile ever",
-      "body": "Health Care's forward P/E is at the 100th percentile of its five-year range, yet its trailing multiple is only at the 87th. The market is underwriting 87 percent earnings growth, a level of optimism that has no precedent in this sector's recent history."
+      "title": "Energy's cheap forward hides rich trailing percentile",
+      "body": "Energy's forward P/E of 11.39 is at the 36th percentile, but its trailing multiple of 18.54 sits at the 83rd percentile. The 47-point gap is the market pricing in 63 percent earnings growth, a sharp rebound that would need commodity prices to cooperate."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-10-27"
+  "as_of": "2026-10-28"
 }
