@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 66-point lens gap signals earnings cliff",
-      "body": "Materials trades at 16.30x forward but 36.21x trailing, a 66-point percentile gap that is the widest in the table. The market is underwriting 122 percent earnings growth, which would be a dramatic reversal from the depressed trailing base."
+      "title": "Materials' 68-point lens gap signals earnings cliff",
+      "body": "Materials trades at a 68-point percentile gap between its trailing and forward multiples, the widest in the table, with forward earnings growth implied at 126 percent. That is the market pricing a dramatic earnings rebound that the trailing lens has not yet seen, a bet that looks unusually aggressive for a sector at the 20th percentile of its own five-year range."
     },
     {
-      "title": "Health Care at all-time forward high despite 45% compression",
-      "body": "Health Care's forward P/E of 20.21 sits at the 100th percentile of its five-year range, yet the multiple is 45 percent below trailing. That compression implies 81 percent earnings growth, a bet on margin expansion that the market has never priced at this level before."
+      "title": "Energy's forward discount hides a rich trailing view",
+      "body": "Energy's forward P/E sits at the 37th percentile while its trailing multiple is at the 78th, a 41-point gap that implies 56 percent earnings growth ahead. The forward lens is calling for a sharp earnings recovery that the trailing lens has not confirmed, leaving the sector's apparent cheapness contingent on that growth actually arriving."
     },
     {
-      "title": "Energy's cheap forward hides rich trailing percentile",
-      "body": "Energy's forward P/E of 11.39 is at the 36th percentile, but its trailing multiple of 18.54 sits at the 83rd percentile. The 47-point gap is the market pricing in 63 percent earnings growth, a sharp rebound that would need commodity prices to cooperate."
+      "title": "Health Care's forward percentile hits 99 despite rich trailing",
+      "body": "Health Care's forward P/E is at the 99th percentile of its five-year range, while its trailing multiple sits at the 84th, with implied earnings growth of 86 percent. That near-maximum forward valuation is not just expensive on estimates; it is also pricing in a massive earnings jump that would need to materialize to justify the 46 percent multiple compression from trailing levels."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-10-28"
+  "as_of": "2026-10-29"
 }
