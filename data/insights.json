@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 68-point lens gap signals earnings cliff",
-      "body": "Materials trades at a 68-point percentile gap between its trailing and forward multiples, the widest in the table, with forward earnings growth implied at 126 percent. That is the market pricing a dramatic earnings rebound that the trailing lens has not yet seen, a bet that looks unusually aggressive for a sector at the 20th percentile of its own five-year range."
+      "title": "Materials' 121% growth bet is extreme",
+      "body": "Materials shows a 57-point percentile gap between trailing and forward lenses, the widest in the table, with trailing P/E at the 89th percentile but forward at the 32nd. That implies analysts are underwriting 121 percent earnings growth — a bet that the current earnings collapse is temporary, not structural."
     },
     {
-      "title": "Energy's forward discount hides a rich trailing view",
-      "body": "Energy's forward P/E sits at the 37th percentile while its trailing multiple is at the 78th, a 41-point gap that implies 56 percent earnings growth ahead. The forward lens is calling for a sharp earnings recovery that the trailing lens has not confirmed, leaving the sector's apparent cheapness contingent on that growth actually arriving."
+      "title": "Energy's forward discount masks earnings risk",
+      "body": "Energy's forward P/E sits at the 40th percentile while its trailing multiple is at the 79th, a 39-point gap. The 54 percent implied earnings growth is what makes the forward lens look cheap; if that growth fails to materialize, the trailing valuation is far less forgiving."
     },
     {
-      "title": "Health Care's forward percentile hits 99 despite rich trailing",
-      "body": "Health Care's forward P/E is at the 99th percentile of its five-year range, while its trailing multiple sits at the 84th, with implied earnings growth of 86 percent. That near-maximum forward valuation is not just expensive on estimates; it is also pricing in a massive earnings jump that would need to materialize to justify the 46 percent multiple compression from trailing levels."
+      "title": "Industrials' forward richness lacks earnings support",
+      "body": "Industrials trades at a 32-point percentile gap favoring the forward lens, yet implied earnings growth is only 13 percent — the lowest among sectors with a wide gap. That means the forward multiple is rich not because of expected expansion, but because trailing earnings are depressed; the market is paying up for a modest recovery."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-10-29"
+  "as_of": "2026-10-30"
 }
