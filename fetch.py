@@ -5,6 +5,7 @@ Data sources (post 2026-05 migration):
     /api/v3p/data/graph (fundamental) and /api/v3/data/graph (price/yield)
     endpoints. KIDs captured 2026-05-12; verifiable via the public search
     endpoint `POST /api/v1/bfc/tickers/search`.
+  - Cboe daily-history CSVs for VIX, VIX3M, VIX9D and VIX6M.
   - MacroMicro, one shared session per run. Chart 50108 is the CNN Fear &
     Greed index (Koyfin doesn't carry sentiment data). Chart 81081 is S&P 500
     breadth, chart 96064 is Nasdaq-100 breadth, and chart 136200 is S&P 500
@@ -22,6 +23,7 @@ Outputs:
   data/sp500_breadth.csv          — % of S&P 500 above 50d / 200d MA
   data/ndx_breadth.csv            — % of Nasdaq-100 above 50d / 200d MA
   data/sp500_ad.csv               — S&P 500 advancers, unchanged, decliners
+  data/vix.csv, data/vix3m.csv, data/vix9d.csv, data/vix6m.csv — Cboe closes
 
 build_html.py reads only these committed CSVs, through the paths defined here.
 """
@@ -30,6 +32,7 @@ from __future__ import annotations
 
 import csv
 import datetime
+import io
 import json
 import os
 import re
@@ -99,6 +102,10 @@ FEAR_GREED_CSV = DATA_DIR / "fear_greed.csv"
 BREADTH_CSV = DATA_DIR / "sp500_breadth.csv"
 NDX_BREADTH_CSV = DATA_DIR / "ndx_breadth.csv"
 SP500_AD_CSV = DATA_DIR / "sp500_ad.csv"
+VIX_CSV = DATA_DIR / "vix.csv"
+VIX3M_CSV = DATA_DIR / "vix3m.csv"
+VIX9D_CSV = DATA_DIR / "vix9d.csv"
+VIX6M_CSV = DATA_DIR / "vix6m.csv"
 STATUS_JSON = DATA_DIR / "status.json"
 
 
@@ -156,6 +163,10 @@ CATALOG: dict[str, Series] = {
     "ndx_breadth": Series(NDX_BREADTH_CSV, ("above_50d", "above_200d"), 0.0, 100.0, merge=True),
     "sp500_ad": Series(SP500_AD_CSV, ("advancers", "unchanged", "decliners"),
                        0.0, 510.0, merge=True, min_reply_rows=200),
+    "vix": Series(VIX_CSV, ("close",), 5.0, 200.0),
+    "vix3m": Series(VIX3M_CSV, ("close",), 5.0, 200.0),
+    "vix9d": Series(VIX9D_CSV, ("close",), 5.0, 200.0),
+    "vix6m": Series(VIX6M_CSV, ("close",), 5.0, 200.0),
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -222,6 +233,33 @@ def koy_price(kid: str, date_from: str = "1990-01-01") -> list[list]:
     r = _koyfin_post("/api/v3/data/graph?schema=packed", body)
     g = r["graph"]
     return [[d, c] for d, c in zip(g["date"], g["close"]) if c is not None]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Cboe volatility indices
+# ──────────────────────────────────────────────────────────────────────────────
+
+def parse_cboe_csv(text: str) -> list[list]:
+    return [[datetime.datetime.strptime(row["DATE"], "%m/%d/%Y").date().isoformat(),
+             float(row["CLOSE"])] for row in csv.DictReader(io.StringIO(text))]
+
+
+def fetch_cboe(symbol: str) -> list[list]:
+    url = f"https://cdn.cboe.com/api/global/us_indices/daily_prices/{symbol}_History.csv"
+    last_err = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return parse_cboe_csv(r.read().decode("utf-8-sig"))
+        except urllib.error.HTTPError as e:
+            last_err = f"HTTP {e.code}: {e.read()[:200].decode('utf-8', 'ignore')}"
+        except Exception as e:
+            last_err = str(e)
+        if attempt < MAX_ATTEMPTS:
+            print(f"[retry] Cboe {symbol} attempt {attempt}: {last_err}", file=sys.stderr)
+            time.sleep(RETRY_BACKOFF_SEC)
+    raise RuntimeError(f"Cboe {symbol} failed after {MAX_ATTEMPTS} attempts: {last_err}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -523,6 +561,8 @@ SOURCES: dict[str, dict[str, Callable[[], list[list]]]] = {
         "ndx_breadth": fetch_ndx_breadth,
     },
     "advance_decline": {"sp500_ad": fetch_sp500_ad},
+    "cboe_vix": {name: partial(fetch_cboe, name.upper())
+                 for name in ("vix", "vix3m", "vix9d", "vix6m")},
 }
 
 
