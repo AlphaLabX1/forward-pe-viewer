@@ -2622,7 +2622,7 @@ TEMPLATE = r"""<!doctype html>
           <span class="card-num">13</span>
           <div>
             <h2>VIX term structure</h2>
-            <p class="lede">VIX (30-day implied volatility) divided by VIX3M (3-month). Above 1 the curve is inverted: near-term fear exceeds longer-term. Shaded bands mark inverted sessions on SPY. History, not a signal.</p>
+            <p class="lede">VIX (30-day implied volatility) divided by VIX3M (3-month). Above 1 the curve is inverted: near-term fear exceeds longer-term. Shaded bands mark inverted sessions on SPY, shown with its 200-day average. History, not a signal.</p>
           </div>
         </div>
         <div class="card-aside">VIX (Cboe) · SPY (Koyfin)__ASOF_13__</div>
@@ -3939,11 +3939,18 @@ function stickSolo(id) {
   const firstDate = vix.points[0][0];
   const lastDate = vix.points[vix.points.length - 1][0];
   let currentRange = "3y";
+  let spySum = 0;
+  const spySma200 = DATA.spx.points.map((p, i, points) => {
+    spySum += p[1];
+    if (i >= 200) spySum -= points[i - 200][1];
+    return [p[0], i >= 199 ? spySum / 200 : null];
+  });
 
   function render() {
     const start = rangeStart(currentRange, firstDate).toISOString().slice(0, 10);
     const pts = vix.points.filter(p => p[0] >= start && p[0] <= lastDate);
     const spy = DATA.spx.points.filter(p => p[0] >= start && p[0] <= lastDate);
+    const spyAverage = spySma200.filter(p => p[0] >= start && p[0] <= lastDate);
     const x = pts.map(p => p[0]);
     const traces = [
       {
@@ -3951,6 +3958,12 @@ function stickSolo(id) {
         type: "scattergl", mode: "lines", name: "SPY", yaxis: "y",
         line: { color: "#A78BFA", width: 1.8 },
         hovertemplate: "<b>SPY</b> %{y:.2f}<extra></extra>",
+      },
+      {
+        x: spyAverage.map(p => p[0]), y: spyAverage.map(p => p[1]),
+        type: "scattergl", mode: "lines", name: "SPY 200-day average", yaxis: "y",
+        line: { color: "#D66AE0", width: 1.2, dash: "dash" },
+        hovertemplate: "<b>200-day avg</b> %{y:.2f}<extra></extra>",
       },
       {
         x: x, y: pts.map(() => 1), type: "scatter", mode: "lines", yaxis: "y2",
