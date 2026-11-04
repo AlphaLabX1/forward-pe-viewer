@@ -1,16 +1,16 @@
 {
   "findings": [
     {
-      "title": "Materials' 49-point lens gap signals earnings cliff",
-      "body": "Materials trades at 17.13x forward but 35.41x trailing, a 49-point percentile gap between lenses. The market is pricing a 107 percent earnings surge that would erase most of the multiple compression, a bet on a cyclical rebound that has not yet shown up in reported numbers."
+      "title": "Materials' 55-point lens gap signals earnings bet",
+      "body": "Materials trades at a forward P/E of 16.75 versus 35.55 trailing, a 55-point percentile gap — the widest in the table. The market is underwriting 112 percent earnings growth, an aggressive bet that recent margin compression reverses."
     },
     {
-      "title": "Health Care's 99th percentile forward multiple is extreme",
-      "body": "Health Care's forward P/E sits at the 99th percentile of its five-year range, up 24 points in a month, while trailing earnings justify only an 84th percentile rank. The 46 percent compression between lenses implies analysts expect 85 percent earnings growth, an unusually aggressive assumption for a sector already at historic valuation highs."
+      "title": "Health Care's extreme percentile masks modest multiple",
+      "body": "Health Care's forward P/E of 19.99 sits at the 99th percentile of its five-year range, yet the multiple itself is not extreme. The 46 percent compression from trailing suggests analysts expect a massive earnings surge, making the percentile rank a story about expectations, not current cost."
     },
     {
-      "title": "Consumer Staples' month-long repricing defies its stability",
-      "body": "Consumer Staples' forward percentile jumped 81 points in a month to 87, a violent re-rating for a defensive sector whose trailing multiple barely moved. The market is now paying 21.20x forward for 36 percent implied earnings growth, a growth rate that clashes with the sector's reputation for steady, low-volatility profits."
+      "title": "Utilities' cheap percentile hides flat growth outlook",
+      "body": "Utilities' forward P/E of 17.44 is at the 27th percentile, but its trailing multiple is at the 7th — a 20-point gap implying only 8 percent earnings growth. The sector looks cheap on a forward basis, yet the market is not pricing in any meaningful acceleration, leaving the valuation discount intact."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
