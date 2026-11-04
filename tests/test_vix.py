@@ -71,6 +71,8 @@ class EpisodeTest(unittest.TestCase):
         self.assertEqual((today['state'], today['run'], today['window']), ('Backwardation', 2, 252))
         self.assertAlmostEqual(today['backwardation_share'], 100 / 126)
         self.assertEqual(payload['points'][-1], ['2010-09-10', 1.0])
+        self.assertEqual(payload['vix'][0], ['2010-01-01', 20.0])
+        self.assertEqual(payload['vix'][-1], ['2010-09-10', 22.0])
         self.assertEqual(payload['episodes'][-1]['sessions'], 2)
         self.assertEqual(payload['snapshots'], [
             {'date': '2010-09-10', 'points': [['9D', 18.13], ['30D', 22.0], ['3M', 22.0]]},

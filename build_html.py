@@ -399,6 +399,7 @@ def vix_term_payload(vix, vix3m, vix9d, vix6m, spy_points) -> dict | None:
                          for tenor, level in zip(("9D", "30D", "3M", "6M"), levels) if day in level]})
     return {
         "points": _round_series(ratios, 4),
+        "vix": _round_series([(d, v) for d, v in vix if d >= ratios[0][0]], 2),
         "episodes": episodes,
         "snapshots": snapshots,
         "stats": vix_return_stats(ratios, episodes, spy_points),
@@ -1336,7 +1337,7 @@ def build() -> Path:
             "qqew_qqq": _round_series(qqew_qqq, 6),
         },
         "advance_decline": ad_payload,
-        "vix_term": {key: vix_payload[key] for key in ("points", "episodes", "snapshots")} if vix_payload else None,
+        "vix_term": {key: vix_payload[key] for key in ("points", "vix", "episodes", "snapshots")} if vix_payload else None,
     }, separators=(",", ":"))
 
     html = (TEMPLATE
@@ -2622,7 +2623,7 @@ TEMPLATE = r"""<!doctype html>
           <span class="card-num">13</span>
           <div>
             <h2>VIX term structure</h2>
-            <p class="lede">VIX (30-day implied volatility) divided by VIX3M (3-month). Above 1 the curve is inverted: near-term fear exceeds longer-term. Shaded bands mark inverted sessions on SPY, shown with its 200-day average. History, not a signal.</p>
+            <p class="lede">Top: SPY with its 200-day average. Middle: VIX, the 30-day implied volatility of the S&amp;P 500. Bottom: VIX divided by VIX3M (3-month). Above 1 the curve is inverted: near-term fear exceeds longer-term. Shaded bands mark inverted sessions on SPY and VIX. History, not a signal.</p>
           </div>
         </div>
         <div class="card-aside">VIX (Cboe) · SPY (Koyfin)__ASOF_13__</div>
@@ -3949,6 +3950,7 @@ function stickSolo(id) {
   function render() {
     const start = rangeStart(currentRange, firstDate).toISOString().slice(0, 10);
     const pts = vix.points.filter(p => p[0] >= start && p[0] <= lastDate);
+    const level = vix.vix.filter(p => p[0] >= start && p[0] <= lastDate);
     const spy = DATA.spx.points.filter(p => p[0] >= start && p[0] <= lastDate);
     const spyAverage = spySma200.filter(p => p[0] >= start && p[0] <= lastDate);
     const x = pts.map(p => p[0]);
@@ -3964,6 +3966,12 @@ function stickSolo(id) {
         type: "scattergl", mode: "lines", name: "SPY 200-day average", yaxis: "y",
         line: { color: "#D66AE0", width: 1.2, dash: "dash" },
         hovertemplate: "<b>200-day avg</b> %{y:.2f}<extra></extra>",
+      },
+      {
+        x: level.map(p => p[0]), y: level.map(p => p[1]),
+        type: "scattergl", mode: "lines", name: "VIX", yaxis: "y3",
+        line: { color: "#F0A868", width: 1.6 },
+        hovertemplate: "<b>VIX</b> %{y:.2f}<extra></extra>",
       },
       {
         x: x, y: pts.map(() => 1), type: "scatter", mode: "lines", yaxis: "y2",
@@ -3984,7 +3992,7 @@ function stickSolo(id) {
       type: "rect", xref: "x", yref: "paper",
       x0: new Date(new Date(e.start).getTime() - 43200000).toISOString(),
       x1: new Date(new Date(e.end).getTime() + 43200000).toISOString(),
-      y0: 0.45, y1: 1, fillcolor: "rgba(248,113,113,0.16)", line: { width: 0 }, layer: "below",
+      y0: 0.27, y1: 1, fillcolor: "rgba(248,113,113,0.16)", line: { width: 0 }, layer: "below",
     }));
     const narrow = document.getElementById("vix-chart").clientWidth < 520;
     const titleFont = { family: BODY, size: 11, color: "#6B7078" };
@@ -3992,11 +4000,15 @@ function stickSolo(id) {
       margin: narrow ? { l: 48, r: 8, t: 32, b: 42 } : { l: 64, r: 20, t: 32, b: 44 },
       xaxis: Object.assign({}, baseLayout.xaxis, { range: [start, lastDate], autorange: false, anchor: "y2" }),
       yaxis: Object.assign({}, baseLayout.yaxis, {
-        domain: [0.45, 1], autorange: true,
+        domain: [0.56, 1], autorange: true,
         title: { text: "SPY", font: titleFont, standoff: 8 },
       }),
+      yaxis3: Object.assign({}, baseLayout.yaxis, {
+        domain: [0.27, 0.5], autorange: true,
+        title: { text: "VIX", font: titleFont, standoff: 8 },
+      }),
       yaxis2: Object.assign({}, baseLayout.yaxis, {
-        domain: [0, 0.34], autorange: true,
+        domain: [0, 0.21], autorange: true,
         title: { text: "VIX / VIX3M", font: titleFont, standoff: 8 },
       }),
       legend: { orientation: "h", x: 0, y: 1.02, yanchor: "bottom", font: { family: MONO, size: 10, color: "#9BA0AB" } },
