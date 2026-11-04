@@ -8,7 +8,7 @@ result.
 
 ## What the page shows
 
-The page is one self-contained `index.html` with twelve numbered cards. Cards
+The page is one self-contained `index.html` with thirteen numbered cards. Cards
 01 to 04 have a Forward / Trailing lens toggle.
 
 | Card | Content |
@@ -25,11 +25,14 @@ The page is one self-contained `index.html` with twelve numbered cards. Cards
 | 10 | Each day's SPY distance below its 52-week high against breadth, colored by the next three months' return, with stats for days near the high while under half of stocks are above their average |
 | 11 | Equal-weight against cap-weight price ratios for RSP / SPY and QQEW / QQQ, with recent changes and five-year percentiles |
 | 12 | SPY, the cumulative S&P 500 advance/decline line, daily net advancers, and the McClellan Oscillator |
+| 13 | VIX / VIX3M against SPY with backwardation bands, a 9D to 6M term-curve snapshot, and forward SPY returns by curve state and exit |
 
 The page date is the date of the latest Koyfin P/E reading. Each card shows
 the date of its own data. A source that failed to fetch, or whose data is
 older than the page date, turns red on its cards and is named in the
-masthead. If the page itself is more than four days old, a banner says so.
+masthead. Cboe closes and MacroMicro member counts may trail by one session
+before being marked stale. If the page itself is more than four days old, a
+banner says so.
 
 ## Pipeline
 
@@ -57,6 +60,7 @@ The production scripts use only the Python standard library.
 | Koyfin (`us10y`) | US 10-year Treasury yield | `data/us10y.csv` |
 | MacroMicro (`fear_greed`) | CNN Fear & Greed index, chart 50108, stat 22748 | `data/fear_greed.csv` |
 | MacroMicro (`breadth`) | % of S&P 500 above the 50-day and 200-day average, chart 81081, stats 18331 and 22718; % of Nasdaq-100 above those averages, chart 96064, stats 18332 and 25229 | `data/sp500_breadth.csv`, `data/ndx_breadth.csv` |
+| Cboe (`cboe_vix`) | Daily VIX, VIX3M, VIX9D and VIX6M closes | `data/vix.csv`, `data/vix3m.csv`, `data/vix9d.csv`, `data/vix6m.csv` |
 | MacroMicro (`advance_decline`) | S&P 500 advancers, unchanged and decliners, chart 136200, stats 76090, 76092 and 76091 | `data/sp500_ad.csv` |
 
 Koyfin is called through its unauthenticated web API. The instrument IDs are
@@ -134,6 +138,7 @@ calls the same proxy from the browser. No API key is involved.
 
 - A source that failed or is older than the P/E date.
 - Fear & Greed crossing 25 or 75.
+- VIX / VIX3M crossing above 1 into backwardation or returning to 1 or below.
 - A sector's forward P/E five-year percentile crossing 5 or 95.
 
 With the `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` secrets set, it sends a

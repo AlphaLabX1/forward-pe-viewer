@@ -3,6 +3,7 @@
 Reads data/status.json and reports:
   - Any source that failed to fetch or trails the page's P/E date
   - Fear & Greed crossing 25 (extreme fear) or 75 (extreme greed), either way
+  - VIX / VIX3M entering backwardation above 1 or returning to 1 or below
   - Any sector's forward-P/E 5y percentile crossing 95 (rich) or 5 (cheap)
 
 Crossings compare the last two observations, so they are checked only for a
@@ -27,8 +28,9 @@ from build_html import (
     compute_5y,
     freshness,
     load_pe,
+    ratio_series,
 )
-from fetch import load_status
+from fetch import VIX_CSV, VIX3M_CSV, load_status
 
 FG_THRESHOLDS = (25, 75)
 PCT_THRESHOLDS = (5, 95)
@@ -60,6 +62,15 @@ def collect_alerts(status: dict) -> list[str]:
             if _crossed(prev, cur, thr):
                 arrow = "fell below" if cur < thr else "rose above"
                 lines.append(f"Fear & Greed {arrow} {thr}: {prev:.0f} → {cur:.0f} ({d})")
+
+    vix_source = sources.get("cboe_vix", {})
+    if _advanced(vix_source):
+        ratios = ratio_series(_load_csv_points(VIX_CSV), _load_csv_points(VIX3M_CSV))
+        if len(ratios) >= 2 and ratios[-1][0] == vix_source["as_of"]:
+            (_, prev), (d, cur) = ratios[-2], ratios[-1]
+            if (prev > 1) != (cur > 1):
+                state = "entered backwardation" if cur > 1 else "returned to contango"
+                lines.append(f"VIX / VIX3M {state}: {prev:.2f} → {cur:.2f} ({d})")
 
     fresh_pe = _advanced(pe)
     for sid, pts in load_pe("forward").items():

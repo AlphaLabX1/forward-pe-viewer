@@ -24,6 +24,10 @@ from fetch import (
     SP500_AD_CSV,
     SPX_PRICE_CSV,
     US10Y_CSV,
+    VIX_CSV,
+    VIX3M_CSV,
+    VIX9D_CSV,
+    VIX6M_CSV,
     load_status,
     pe_csv,
 )
@@ -314,6 +318,138 @@ def ratio_series(equal_weight, cap_weight) -> list[list]:
     """Daily price ratio on dates present in both inputs."""
     cap = {d: float(v) for d, v in cap_weight}
     return [[d, float(v) / cap[d]] for d, v in equal_weight if d in cap and cap[d]]
+
+
+def vix_episodes(points) -> list[dict]:
+    episodes = []
+    current = None
+    for day, ratio in points:
+        if ratio > 1:
+            if current is None:
+                current = {"start": day, "end": day, "sessions": 0, "exit": None}
+                episodes.append(current)
+            current["end"] = day
+            current["sessions"] += 1
+        elif current is not None:
+            if current["sessions"] >= 3:
+                current["exit"] = day
+            current = None
+    return episodes
+
+
+def vix_return_stats(ratios, episodes, spy_points) -> list[dict]:
+    spy = sorted(spy_points)
+    positions = {d: i for i, (d, _) in enumerate(spy)}
+    exits = {e["exit"] for e in episodes if e["exit"]}
+    groups = {key: [] for key in ("all", "contango", "backwardation", "exits", "below", "above")}
+    for day, ratio in ratios:
+        i = positions.get(day)
+        if i is None:
+            continue
+        close = spy[i][1]
+        returns = {h: (spy[i + h][1] / close - 1) * 100 if i + h < len(spy) else None
+                   for h in (21, 63)}
+        groups["all"].append(returns)
+        groups["backwardation" if ratio > 1 else "contango"].append(returns)
+        if day in exits:
+            groups["exits"].append(returns)
+            if i >= 199:
+                average = statistics.mean(v for _, v in spy[i - 199:i + 1])
+                if close < average:
+                    groups["below"].append(returns)
+                elif close > average:
+                    groups["above"].append(returns)
+    out = []
+    for key, label in (("all", "All sessions"), ("contango", "Contango sessions"),
+                       ("backwardation", "Backwardation sessions"), ("exits", "Exits"),
+                       ("below", "Exits · SPY below 200-session average"),
+                       ("above", "Exits · SPY above 200-session average")):
+        rows = groups[key]
+        stat = {"key": key, "label": label, "n": len(rows)}
+        for horizon in (21, 63):
+            values = [r[horizon] for r in rows if r[horizon] is not None]
+            stat[str(horizon)] = {
+                "n": len(values),
+                "mean": round(statistics.mean(values), 2) if values else None,
+                "positive": round(sum(v > 0 for v in values) / len(values) * 100, 1) if values else None,
+            }
+        out.append(stat)
+    return out
+
+
+def vix_term_payload(vix, vix3m, vix9d, vix6m, spy_points) -> dict | None:
+    ratios = ratio_series(vix, vix3m)
+    if not ratios:
+        return None
+    episodes = vix_episodes(ratios)
+    inverted = ratios[-1][1] > 1
+    run = 0
+    for _, value in reversed(ratios):
+        if (value > 1) != inverted:
+            break
+        run += 1
+    window = ratios[-252:]
+    levels = [dict(points) for points in (vix9d, vix, vix3m, vix6m)]
+    snapshots = []
+    for offset in (0, 5, 21):
+        if len(ratios) <= offset:
+            continue
+        day = ratios[-1 - offset][0]
+        snapshots.append({"date": day, "points": [[tenor, round(level[day], 2)]
+                         for tenor, level in zip(("9D", "30D", "3M", "6M"), levels) if day in level]})
+    return {
+        "points": _round_series(ratios, 4),
+        "episodes": episodes,
+        "snapshots": snapshots,
+        "stats": vix_return_stats(ratios, episodes, spy_points),
+        "today": {
+            "date": ratios[-1][0], "ratio": ratios[-1][1],
+            "state": "Backwardation" if inverted else "Contango", "run": run,
+            "backwardation_share": sum(v > 1 for _, v in window) / len(window) * 100,
+            "window": len(window), "episode": episodes[-1] if episodes else None,
+        },
+    }
+
+
+def render_vix_readout(payload) -> str:
+    if not payload:
+        return '<p style="color:var(--dim)">VIX readout unavailable.</p>'
+    t = payload["today"]
+    episode = t["episode"]
+    recent = f'{episode["start"]} to {episode["end"]}' if episode else "–"
+    return (
+        '<div class="ad-readout vix-readout" id="vix-readout">'
+        f'<div><span>VIX / VIX3M · {t["date"]}</span><strong>{t["ratio"]:.2f}</strong><small>{t["state"]}</small></div>'
+        f'<div><span>Current {t["state"].lower()} run</span><strong>{t["run"]}</strong><small>sessions</small></div>'
+        f'<div><span>Backwardation · last {t["window"]} sessions</span><strong>{t["backwardation_share"]:.1f}%</strong></div>'
+        f'<div><span>Most recent backwardation episode</span><strong class="vix-episode">{recent}</strong></div>'
+        '</div>'
+    )
+
+
+def render_vix_stats(payload) -> str:
+    if not payload:
+        return '<p style="color:var(--dim)">VIX return stats unavailable.</p>'
+
+    def cell(value, n, signed=False):
+        text = "–" if value is None else (f"{value:+.1f}%" if signed else f"{value:.1f}%")
+        return f'<td><span class="sig-med">{text}</span><span class="sig-win">n={n}</span></td>'
+
+    rows = []
+    for s in payload["stats"]:
+        cells = "".join(cell(s[h][key], s[h]["n"], key == "mean")
+                        for h in ("21", "63") for key in ("mean", "positive"))
+        rows.append(f'<tr><td>{s["label"]}</td><td>{s["n"]}</td>{cells}</tr>')
+    return (
+        '<div class="sig-wrap" id="vix-stats"><table class="sig-table">'
+        '<caption class="div-note">SPY price returns · window starts 2009-09 (VIX3M launch). '
+        'Sessions overlap, so n overstates independent samples. '
+        '1M = 21 SPY sessions; 3M = 63. n counts matched sessions; each return column shows its completed samples. '
+        'Exits follow at least 3 consecutive backwardation sessions; SPY equal to its average is in neither split.</caption>'
+        '<thead><tr><th>Sessions</th><th>n</th><th>1M mean</th><th>1M positive</th>'
+        '<th>3M mean</th><th>3M positive</th></tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table></div>'
+    )
 
 
 def equal_weight_ratio_stats(points) -> dict | None:
@@ -1043,6 +1179,7 @@ SOURCE_LABELS = {
     "fear_greed": "Fear & Greed",
     "breadth": "Breadth",
     "advance_decline": "Advancers/decliners",
+    "cboe_vix": "VIX (Cboe)",
 }
 
 CARD_SOURCES = {
@@ -1058,6 +1195,7 @@ CARD_SOURCES = {
     "10": ("breadth", "koyfin_prices"),
     "11": ("koyfin_prices",),
     "12": ("advance_decline", "koyfin_prices"),
+    "13": ("cboe_vix", "koyfin_prices"),
 }
 
 
@@ -1066,8 +1204,8 @@ def _series_label(name: str) -> str:
     return f"{SERIES[int(sid)]} {lens}" if sid.isdigit() else name
 
 
-# MacroMicro publishes S&P 500 advancers/decliners one session after the close.
-SOURCE_LAG_SESSIONS = {"advance_decline": 1}
+# MacroMicro member counts and Cboe closes can arrive after the daily run.
+SOURCE_LAG_SESSIONS = {"advance_decline": 1, "cboe_vix": 1}
 
 
 def _sessions_behind(as_of: str, page_date: str) -> int:
@@ -1138,7 +1276,8 @@ def build() -> Path:
 
     # Sentiment: Fear & Greed + SPX price.
     fg_points = _round_series(_load_csv_points(FEAR_GREED_CSV), 2)
-    spx_points = _round_series(_load_csv_points(SPX_PRICE_CSV), 2)
+    spx_raw = _load_csv_points(SPX_PRICE_CSV)
+    spx_points = _round_series(spx_raw, 2)
     us10y_points = _round_series(_load_csv_points(US10Y_CSV), 3)
     gauge = gauge_payload(fg_points)
     fg_stats = fg_stats_payload(fg_points, spx_points)
@@ -1160,6 +1299,10 @@ def build() -> Path:
         "qqew_qqq": equal_weight_ratio_stats(qqew_qqq),
     }
     ad_payload = advance_decline_payload(load_advance_decline_rows(SP500_AD_CSV), spx_points)
+    vix_payload = vix_term_payload(
+        *(_load_csv_points(p) for p in (VIX_CSV, VIX3M_CSV, VIX9D_CSV, VIX6M_CSV)),
+        spx_raw,
+    )
 
     # The page is dated by its P/E data; every other source is judged against it.
     latest_date_str = forward["latest_date"]
@@ -1193,6 +1336,7 @@ def build() -> Path:
             "qqew_qqq": _round_series(qqew_qqq, 6),
         },
         "advance_decline": ad_payload,
+        "vix_term": {key: vix_payload[key] for key in ("points", "episodes", "snapshots")} if vix_payload else None,
     }, separators=(",", ":"))
 
     html = (TEMPLATE
@@ -1209,6 +1353,8 @@ def build() -> Path:
         .replace("__DIV_STATS__", render_divergence_stats(divergence))
         .replace("__RATIO_STATS__", render_equal_weight_stats(ratio_stats))
         .replace("__AD_READOUT__", render_advance_decline_readout(ad_payload))
+        .replace("__VIX_READOUT__", render_vix_readout(vix_payload))
+        .replace("__VIX_STATS__", render_vix_stats(vix_payload))
         .replace("__STANDFIRST__", render_standfirst(standfirst(forward["summary"], fg_points[-1] if fg_points else None)))
         .replace("__INSIGHTS__", render_insights(forward["latest_date"]))
         .replace("__ASK_CHIPS__", chips_html)
@@ -1522,6 +1668,8 @@ TEMPLATE = r"""<!doctype html>
   #div-chart { width: 100%; height: 560px; }
   #ratio-chart { width: 100%; height: 480px; }
   #ad-chart { width: 100%; height: 760px; }
+  #vix-chart { width: 100%; height: 620px; }
+  #vix-curve-chart { width: 100%; height: 300px; }
 
   /* ─────────────────── Strip (dot distribution) ─────────────────── */
   .strip-frame {
@@ -1942,6 +2090,9 @@ TEMPLATE = r"""<!doctype html>
     display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
     margin-top: 16px;
   }
+  .vix-readout { grid-template-columns: repeat(4, 1fr); }
+  .vix-readout .vix-episode { font-size: 13px; line-height: 1.6; }
+  #vix-stats caption { text-align: left; caption-side: bottom; padding-top: 12px; line-height: 1.6; }
   .ad-readout > div {
     background: rgba(255,255,255,0.03); border: 1px solid var(--hair);
     border-radius: 10px; padding: 12px 14px;
@@ -2078,6 +2229,7 @@ TEMPLATE = r"""<!doctype html>
     .chart-controls .seg button { padding: 5px 8px; font-size: 10px; }
     #ratio-chart { height: 390px; }
     #ad-chart { height: 600px; }
+    #vix-chart { height: 500px; }
     .ratio-table th, .ratio-table td, .ratio-table td:first-child { padding: 9px 4px; font-size: 10.5px; }
     .ratio-table .sig-cond-sub { display: none; }
     .ad-readout { grid-template-columns: 1fr; }
@@ -2463,6 +2615,33 @@ TEMPLATE = r"""<!doctype html>
       __AD_READOUT__
     </section>
 
+    <!-- ═══ 13. VIX term structure ═══ -->
+    <section class="card" id="vix-card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="card-num">13</span>
+          <div>
+            <h2>VIX term structure</h2>
+            <p class="lede">VIX (30-day implied volatility) divided by VIX3M (3-month). Above 1 the curve is inverted: near-term fear exceeds longer-term. Shaded bands mark inverted sessions on SPY, shown with its 200-day average. History, not a signal.</p>
+          </div>
+        </div>
+        <div class="card-aside">VIX (Cboe) · SPY (Koyfin)__ASOF_13__</div>
+      </div>
+      <div class="chart-controls">
+        <div class="seg">
+          <button data-vix-range="1y">1Y</button>
+          <button data-vix-range="3y" class="active">3Y</button>
+          <button data-vix-range="5y">5Y</button>
+          <button data-vix-range="all">All</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><div id="vix-chart"></div></div>
+      __VIX_READOUT__
+      <p class="div-note">Implied volatility by tenor · latest, 5 sessions earlier, 21 sessions earlier. Each line is labelled with its date; missing tenors are skipped.</p>
+      <div class="chart-wrap"><div id="vix-curve-chart"></div></div>
+      __VIX_STATS__
+    </section>
+
     <!-- ═══ Footer ═══ -->
     <footer>
       <div class="left">
@@ -2471,6 +2650,8 @@ TEMPLATE = r"""<!doctype html>
         <span>P/E &amp; prices · Koyfin</span>
         <span class="dot">·</span>
         <span>CNN Fear &amp; Greed, breadth, member counts · MacroMicro</span>
+        <span class="dot">·</span>
+        <span>VIX term structure · Cboe</span>
       </div>
       <span>as of __LATEST_ISO__ · 5-year window</span>
     </footer>
@@ -3749,6 +3930,112 @@ function stickSolo(id) {
       render();
     });
   });
+})();
+
+// ═══ Section 13: VIX term structure ═══
+(function renderVixCharts() {
+  const vix = DATA.vix_term;
+  if (!vix || !vix.points.length) return;
+  const firstDate = vix.points[0][0];
+  const lastDate = vix.points[vix.points.length - 1][0];
+  let currentRange = "3y";
+  let spySum = 0;
+  const spySma200 = DATA.spx.points.map((p, i, points) => {
+    spySum += p[1];
+    if (i >= 200) spySum -= points[i - 200][1];
+    return [p[0], i >= 199 ? spySum / 200 : null];
+  });
+
+  function render() {
+    const start = rangeStart(currentRange, firstDate).toISOString().slice(0, 10);
+    const pts = vix.points.filter(p => p[0] >= start && p[0] <= lastDate);
+    const spy = DATA.spx.points.filter(p => p[0] >= start && p[0] <= lastDate);
+    const spyAverage = spySma200.filter(p => p[0] >= start && p[0] <= lastDate);
+    const x = pts.map(p => p[0]);
+    const traces = [
+      {
+        x: spy.map(p => p[0]), y: spy.map(p => p[1]),
+        type: "scattergl", mode: "lines", name: "SPY", yaxis: "y",
+        line: { color: "#A78BFA", width: 1.8 },
+        hovertemplate: "<b>SPY</b> %{y:.2f}<extra></extra>",
+      },
+      {
+        x: spyAverage.map(p => p[0]), y: spyAverage.map(p => p[1]),
+        type: "scattergl", mode: "lines", name: "SPY 200-day average", yaxis: "y",
+        line: { color: "#D66AE0", width: 1.2, dash: "dash" },
+        hovertemplate: "<b>200-day avg</b> %{y:.2f}<extra></extra>",
+      },
+      {
+        x: x, y: pts.map(() => 1), type: "scatter", mode: "lines", yaxis: "y2",
+        line: { width: 0 }, showlegend: false, hoverinfo: "skip",
+      },
+      {
+        x: x, y: pts.map(p => Math.max(1, p[1])), type: "scatter", mode: "lines", yaxis: "y2",
+        line: { width: 0 }, fill: "tonexty", fillcolor: "rgba(248,113,113,0.25)",
+        showlegend: false, hoverinfo: "skip",
+      },
+      {
+        x: x, y: pts.map(p => p[1]), type: "scatter", mode: "lines", name: "VIX / VIX3M", yaxis: "y2",
+        line: { color: "#6AA0E0", width: 1.8 },
+        hovertemplate: "<b>VIX / VIX3M</b> %{y:.2f}<extra></extra>",
+      },
+    ];
+    const bands = vix.episodes.filter(e => e.end >= start && e.start <= lastDate).map(e => ({
+      type: "rect", xref: "x", yref: "paper",
+      x0: new Date(new Date(e.start).getTime() - 43200000).toISOString(),
+      x1: new Date(new Date(e.end).getTime() + 43200000).toISOString(),
+      y0: 0.45, y1: 1, fillcolor: "rgba(248,113,113,0.16)", line: { width: 0 }, layer: "below",
+    }));
+    const narrow = document.getElementById("vix-chart").clientWidth < 520;
+    const titleFont = { family: BODY, size: 11, color: "#6B7078" };
+    const layout = Object.assign({}, baseLayout, {
+      margin: narrow ? { l: 48, r: 8, t: 32, b: 42 } : { l: 64, r: 20, t: 32, b: 44 },
+      xaxis: Object.assign({}, baseLayout.xaxis, { range: [start, lastDate], autorange: false, anchor: "y2" }),
+      yaxis: Object.assign({}, baseLayout.yaxis, {
+        domain: [0.45, 1], autorange: true,
+        title: { text: "SPY", font: titleFont, standoff: 8 },
+      }),
+      yaxis2: Object.assign({}, baseLayout.yaxis, {
+        domain: [0, 0.34], autorange: true,
+        title: { text: "VIX / VIX3M", font: titleFont, standoff: 8 },
+      }),
+      legend: { orientation: "h", x: 0, y: 1.02, yanchor: "bottom", font: { family: MONO, size: 10, color: "#9BA0AB" } },
+      shapes: bands.concat([{
+        type: "line", xref: "paper", x0: 0, x1: 1, yref: "y2", y0: 1, y1: 1,
+        line: { color: "rgba(248,113,113,0.8)", width: 1, dash: "dash" },
+      }]),
+    });
+    return Plotly.react("vix-chart", traces, layout, chartConfig);
+  }
+
+  render();
+  document.querySelectorAll("[data-vix-range]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-vix-range]").forEach(x => x.classList.remove("active"));
+      btn.classList.add("active");
+      currentRange = btn.dataset.vixRange;
+      render();
+    });
+  });
+
+  const colors = ["#A78BFA", "#F0A868", "#34D399"];
+  const traces = vix.snapshots.map((s, i) => ({
+    x: s.points.map(p => p[0]), y: s.points.map(p => p[1]),
+    type: "scatter", mode: "lines+markers", name: s.date,
+    line: { color: colors[i], width: 2 }, marker: { size: 6 },
+    hovertemplate: "<b>" + s.date + "</b><br>%{x}: %{y:.2f}<extra></extra>",
+  }));
+  const layout = Object.assign({}, baseLayout, {
+    margin: { l: 56, r: 20, t: 32, b: 54 }, hovermode: "x unified",
+    xaxis: Object.assign({}, baseLayout.xaxis, {
+      type: "category", categoryorder: "array", categoryarray: ["9D", "30D", "3M", "6M"],
+    }),
+    yaxis: Object.assign({}, baseLayout.yaxis, {
+      title: { text: "Implied volatility", font: { family: BODY, size: 11, color: "#6B7078" }, standoff: 8 },
+    }),
+    legend: { orientation: "h", x: 0, y: 1.02, yanchor: "bottom", font: { family: MONO, size: 10, color: "#9BA0AB" } },
+  });
+  Plotly.react("vix-curve-chart", traces, layout, chartConfig);
 })();
 });
 </script>

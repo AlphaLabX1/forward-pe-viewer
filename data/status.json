@@ -36,6 +36,12 @@
       "as_of": "2026-11-03",
       "prior_as_of": "2026-11-02",
       "error": null
+    },
+    "cboe_vix": {
+      "ok": true,
+      "as_of": "2026-10-30",
+      "prior_as_of": null,
+      "error": null
     }
   }
 }
