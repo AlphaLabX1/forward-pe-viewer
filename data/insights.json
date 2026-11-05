@@ -1,16 +1,16 @@
 {
   "findings": [
     {
-      "title": "Materials: 122% earnings hope despite steep discounts",
-      "body": "Materials forward multiple sits at 16.66x versus 36.99x trailing, a 60-point percentile gap — the widest in the table. Analysts expect 122 percent earnings growth, but that optimism clashes with a sector stuck near the 28th percentile; the market is underwriting a turnaround that is all promise and no evidence yet."
+      "title": "Materials' 54-point lens gap signals collapse",
+      "body": "Materials trades at 17.02x forward but 37.02x trailing, a 54-point percentile gap — the widest in the table. Analysts are underwriting 118 percent earnings growth, which would be the steepest rebound of any sector, yet the trailing multiple still sits at the 88th percentile of its five-year range."
     },
     {
-      "title": "Health Care: 99th percentile forward, 44% compression",
-      "body": "Health Care trades at a forward P/E of 19.98 and a trailing P/E of 35.48, with a 22-point percentile gap. The 44 percent compression implies an unusual bet on 78 percent earnings growth, which feels aggressive for a sector already priced at the 99th percentile of its five-year range."
+      "title": "Health Care at 100th percentile forward, 80th trailing",
+      "body": "Health Care's forward multiple has hit the richest percentile of its five-year range while its trailing multiple sits at just the 80th. The 43 percent compression between lenses implies analysts expect 77 percent earnings growth, a bet that the sector's reported earnings will catch up to an already-extreme valuation."
     },
     {
-      "title": "Energy: cheap forward, rich trailing — 23-point gap",
-      "body": "Energy's forward P/E of 11.23 sits in the 34th percentile while its trailing 15.29x is in the 57th, a 23-point gap showing the market expects earnings growth of 36 percent. This is a contrarian setup: the multiple has fallen 10 points in a month, yet the forward view still assumes a strong rebound that the trailing data has not supported."
+      "title": "Information Technology's forward percentile collapses to zero",
+      "body": "Information Technology's forward P/E percentile has fallen to 0 — the cheapest it has been in five years — even though its trailing multiple is at the 25th percentile. The 39 percent compression between lenses implies 64 percent expected earnings growth, meaning the market is pricing in a surge in profits that has not yet shown up in reported results."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
