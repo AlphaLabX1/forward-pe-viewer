@@ -1,46 +1,49 @@
 {
-  "generated_at": "2026-11-04T06:36:02+00:00",
+  "generated_at": "2026-11-05T02:00:35+00:00",
   "sources": {
     "koyfin_pe": {
       "ok": true,
-      "as_of": "2026-11-03",
+      "as_of": "2026-11-04",
       "prior_as_of": "2026-11-03",
       "error": null
     },
     "koyfin_prices": {
       "ok": true,
-      "as_of": "2026-11-03",
+      "as_of": "2026-11-04",
       "prior_as_of": "2026-11-03",
       "error": null
     },
     "us10y": {
       "ok": true,
-      "as_of": "2026-11-04",
+      "as_of": "2026-11-05",
       "prior_as_of": "2026-11-04",
       "error": null
     },
     "fear_greed": {
-      "ok": true,
+      "ok": false,
       "as_of": "2026-11-03",
       "prior_as_of": "2026-11-03",
-      "error": null
+      "error": "HTTP 423: {\"detail\":\"Our browser was detected by target site. Retry the request or try adjusting proxy country, proxy type and browser rendering settings. Our documentation: https://docs.scrapingant.com/ and su",
+      "missing": [
+        "fear_greed"
+      ]
     },
     "breadth": {
       "ok": true,
-      "as_of": "2026-11-03",
+      "as_of": "2026-11-04",
       "prior_as_of": "2026-11-03",
       "error": null
     },
     "advance_decline": {
       "ok": true,
-      "as_of": "2026-11-03",
+      "as_of": "2026-11-04",
       "prior_as_of": "2026-11-03",
       "error": null
     },
     "cboe_vix": {
       "ok": true,
-      "as_of": "2026-11-03",
-      "prior_as_of": "2026-10-30",
+      "as_of": "2026-11-04",
+      "prior_as_of": "2026-11-03",
       "error": null
     }
   }

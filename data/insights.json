@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 55-point lens gap signals earnings bet",
-      "body": "Materials trades at a forward P/E of 16.75 versus 35.55 trailing, a 55-point percentile gap — the widest in the table. The market is underwriting 112 percent earnings growth, an aggressive bet that recent margin compression reverses."
+      "title": "Materials: 122% earnings hope despite steep discounts",
+      "body": "Materials forward multiple sits at 16.66x versus 36.99x trailing, a 60-point percentile gap — the widest in the table. Analysts expect 122 percent earnings growth, but that optimism clashes with a sector stuck near the 28th percentile; the market is underwriting a turnaround that is all promise and no evidence yet."
     },
     {
-      "title": "Health Care's extreme percentile masks modest multiple",
-      "body": "Health Care's forward P/E of 19.99 sits at the 99th percentile of its five-year range, yet the multiple itself is not extreme. The 46 percent compression from trailing suggests analysts expect a massive earnings surge, making the percentile rank a story about expectations, not current cost."
+      "title": "Health Care: 99th percentile forward, 44% compression",
+      "body": "Health Care trades at a forward P/E of 19.98 and a trailing P/E of 35.48, with a 22-point percentile gap. The 44 percent compression implies an unusual bet on 78 percent earnings growth, which feels aggressive for a sector already priced at the 99th percentile of its five-year range."
     },
     {
-      "title": "Utilities' cheap percentile hides flat growth outlook",
-      "body": "Utilities' forward P/E of 17.44 is at the 27th percentile, but its trailing multiple is at the 7th — a 20-point gap implying only 8 percent earnings growth. The sector looks cheap on a forward basis, yet the market is not pricing in any meaningful acceleration, leaving the valuation discount intact."
+      "title": "Energy: cheap forward, rich trailing — 23-point gap",
+      "body": "Energy's forward P/E of 11.23 sits in the 34th percentile while its trailing 15.29x is in the 57th, a 23-point gap showing the market expects earnings growth of 36 percent. This is a contrarian setup: the multiple has fallen 10 points in a month, yet the forward view still assumes a strong rebound that the trailing data has not supported."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-11-03"
+  "as_of": "2026-11-04"
 }
