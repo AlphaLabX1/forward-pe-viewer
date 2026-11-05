@@ -2,9 +2,10 @@ name: Daily data update
 
 on:
   schedule:
-    # 22:00 UTC Mon–Fri ≈ 06:00 Asia/Shanghai Tue–Sat — runs after each US
-    # trading day's close. Sat/Sun are skipped: no new market data anyway.
-    - cron: "0 22 * * 1-5"
+    # 03:30 UTC Tue–Sat ≈ 11:30 Asia/Shanghai, after each US trading day.
+    # Cboe rewrites VIX_History.csv around 02:10 UTC, hours after VIX3M, VIX9D
+    # and VIX6M (about 22:30 UTC), so an earlier run gets a VIX a day behind.
+    - cron: "30 3 * * 2-6"
   workflow_dispatch: {}
 
 permissions:

@@ -145,6 +145,21 @@ class VixAlertTest(unittest.TestCase):
         self.assertEqual(self.collect([20, 22], advanced=False), [])
         self.assertEqual(self.collect([20, 22], ratio_date='2010-01-01'), [])
 
+    def test_crossing_alerts_when_vix_trails_the_other_cboe_series(self):
+        points = {
+            fetch.VIX_CSV: [('2010-01-01', 20.0), ('2010-01-02', 22.0)],
+            fetch.VIX3M_CSV: [('2010-01-01', 20.0), ('2010-01-02', 20.0), ('2010-01-03', 20.0)],
+        }
+        points[fetch.VIX9D_CSV] = points[fetch.VIX6M_CSV] = points[fetch.VIX3M_CSV]
+        rows = lambda path: [[d, str(v)] for d, v in points.get(path, points[fetch.VIX3M_CSV])]
+        with mock.patch.object(fetch, 'read_rows', side_effect=rows):
+            status = fetch.run_status({}, dict.fromkeys(fetch.SOURCES, '2010-01-01'))
+        self.assertEqual(status['sources']['cboe_vix']['as_of'], '2010-01-02')
+        with mock.patch.object(alerts, '_load_csv_points', side_effect=lambda p: points.get(p, [])), \
+             mock.patch.object(alerts, 'load_pe', return_value={}):
+            lines = alerts.collect_alerts(status)
+        self.assertIn('VIX / VIX3M entered backwardation: 1.00 → 1.10 (2010-01-02)', lines)
+
 
 class PageTest(unittest.TestCase):
     def test_committed_data_builds_card_13(self):

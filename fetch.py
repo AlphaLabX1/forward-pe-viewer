@@ -567,9 +567,9 @@ SOURCES: dict[str, dict[str, Callable[[], list[list]]]] = {
 
 
 def stored_as_of(source: str) -> str | None:
-    """Latest date any of the source's stored series reaches."""
+    """Latest date every one of the source's stored series reaches."""
     dates = [rows[-1][0] for name in SOURCES[source] if (rows := read_rows(CATALOG[name].path))]
-    return max(dates, default=None)
+    return min(dates, default=None)
 
 
 def run_status(failures: dict[str, dict[str, str]], prior_as_of: dict[str, str | None]) -> dict:
