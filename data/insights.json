@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 54-point lens gap signals collapse",
-      "body": "Materials trades at 17.02x forward but 37.02x trailing, a 54-point percentile gap — the widest in the table. Analysts are underwriting 118 percent earnings growth, which would be the steepest rebound of any sector, yet the trailing multiple still sits at the 88th percentile of its five-year range."
+      "title": "Staples repricing faster than any sector",
+      "body": "Consumer Staples' forward P/E jumped 76 percentile points in one month, to the 88th percentile, with the forward multiple at 21.25. That kind of monthly repricing is extreme and signals a violent rotation into defensives, not a gradual drift."
     },
     {
-      "title": "Health Care at 100th percentile forward, 80th trailing",
-      "body": "Health Care's forward multiple has hit the richest percentile of its five-year range while its trailing multiple sits at just the 80th. The 43 percent compression between lenses implies analysts expect 77 percent earnings growth, a bet that the sector's reported earnings will catch up to an already-extreme valuation."
+      "title": "Materials trapped between two realities",
+      "body": "Materials sits at the 27th percentile on forward earnings but the 86th on trailing, a 60-point gap with implied growth of 117 percent. The market is either pricing a massive earnings rebound or deeply distrusting current reported profits, and those two views are far apart."
     },
     {
-      "title": "Information Technology's forward percentile collapses to zero",
-      "body": "Information Technology's forward P/E percentile has fallen to 0 — the cheapest it has been in five years — even though its trailing multiple is at the 25th percentile. The 39 percent compression between lenses implies 64 percent expected earnings growth, meaning the market is pricing in a surge in profits that has not yet shown up in reported results."
+      "title": "Information Technology at five-year low",
+      "body": "Information Technology's forward P/E of 17.31 sits at the 0th percentile of its own five-year range, cheaper than it has been at any point in that window. The trailing lens is at the 17th percentile, so the cheapness is not a trailing earnings illusion — the market is simply discounting the sector hard."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-11-04"
+  "as_of": "2026-11-05"
 }
