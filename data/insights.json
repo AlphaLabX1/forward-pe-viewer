@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Staples repricing faster than any sector",
-      "body": "Consumer Staples' forward P/E jumped 76 percentile points in one month, to the 88th percentile, with the forward multiple at 21.25. That kind of monthly repricing is extreme and signals a violent rotation into defensives, not a gradual drift."
+      "title": "Materials' 58-point lens gap signals earnings cliff",
+      "body": "Materials trades at a 53 percent compression from trailing to forward multiple, the widest in the table, with a 58-point percentile gap. The market is pricing 112 percent earnings growth next year — an extraordinary assumption for a sector whose trailing earnings are already at the 85th percentile of its five-year range."
     },
     {
-      "title": "Materials trapped between two realities",
-      "body": "Materials sits at the 27th percentile on forward earnings but the 86th on trailing, a 60-point gap with implied growth of 117 percent. The market is either pricing a massive earnings rebound or deeply distrusting current reported profits, and those two views are far apart."
+      "title": "Utilities' forward multiple ignores flat earnings",
+      "body": "Utilities' forward P/E sits at the 22nd percentile while its trailing multiple is at the 2nd — a 21-point gap despite only 6 percent implied growth. The forward lens is barely cheaper than trailing, meaning analysts see almost no earnings recovery, yet the percentile gap suggests the market is treating this as a re-rating rather than a trough."
     },
     {
-      "title": "Information Technology at five-year low",
-      "body": "Information Technology's forward P/E of 17.31 sits at the 0th percentile of its own five-year range, cheaper than it has been at any point in that window. The trailing lens is at the 17th percentile, so the cheapness is not a trailing earnings illusion — the market is simply discounting the sector hard."
+      "title": "Information Technology's forward percentile collapse outruns multiple",
+      "body": "IT's forward P/E percentile fell 23 points in a month to 0, the cheapest in five years, while the forward multiple itself is 18.07. The trailing lens sits at the 19th percentile, so the forward collapse is not a broad de-rating — it is a sharp bet on 61 percent earnings growth that has not yet shown up in reported numbers."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-11-05"
+  "as_of": "2026-11-06"
 }
