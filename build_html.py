@@ -28,9 +28,11 @@ from fetch import (
     VIX3M_CSV,
     VIX9D_CSV,
     VIX6M_CSV,
+    VX_SETTLE_CSV,
     load_status,
     pe_csv,
 )
+from vix_signals import load_vx, load_vix, v2_replay, z1_replay
 
 ROOT = Path(__file__).parent
 
@@ -1181,6 +1183,7 @@ SOURCE_LABELS = {
     "breadth": "Breadth",
     "advance_decline": "Advancers/decliners",
     "cboe_vix": "VIX (Cboe)",
+    "cboe_vx": "VX settles (Cboe)",
 }
 
 CARD_SOURCES = {
@@ -1197,6 +1200,9 @@ CARD_SOURCES = {
     "11": ("koyfin_prices",),
     "12": ("advance_decline", "koyfin_prices"),
     "13": ("cboe_vix", "koyfin_prices"),
+    "14": ("cboe_vx", "cboe_vix"),
+    "14_v2": ("cboe_vx",),
+    "14_z1": ("cboe_vix",),
 }
 
 
@@ -1206,7 +1212,7 @@ def _series_label(name: str) -> str:
 
 
 # MacroMicro member counts and Cboe closes can arrive after the daily run.
-SOURCE_LAG_SESSIONS = {"advance_decline": 1, "cboe_vix": 1}
+SOURCE_LAG_SESSIONS = {"advance_decline": 1, "cboe_vix": 1, "cboe_vx": 1}
 
 
 def _sessions_behind(as_of: str, page_date: str) -> int:
@@ -1261,6 +1267,86 @@ def _round_series(pts, ndigits=4):
     return [[d, round(float(v), ndigits)] for d, v in pts if v is not None]
 
 
+def vix_signals_payload():
+    panels = {}
+    for key, run in (("v2", lambda: v2_replay(*load_vx(VX_SETTLE_CSV))),
+                     ("z1", lambda: z1_replay(load_vix(VIX_CSV)))):
+        try:
+            result = run()
+            panels[key] = {"result": result, "error": "" if result.state.as_of else "Data unavailable."}
+        except (ValueError, KeyError, IndexError) as exc:
+            panels[key] = {"result": None, "error": f"Data unavailable: {exc}"}
+    return panels
+
+
+def render_signal_panel(key, panel, fresh):
+    title = "Default v2 · VX calendar spread" if key == "v2" else "Z1 · short UVXY after a VIX spike"
+    result = panel["result"]
+    source = "cboe_vx" if key == "v2" else "cboe_vix"
+    panel_fresh = {**fresh, source: {**fresh[source]}}
+    panel_fresh[source]["as_of"] = str(result.state.as_of) if result and result.state.as_of else None
+    if not panel_fresh[source]["as_of"] or (fresh[source]["as_of"] and
+            panel_fresh[source]["as_of"] < fresh[source]["as_of"]):
+        panel_fresh[source]["stale"] = True
+    asof = render_asof(f"14_{key}", panel_fresh)
+    if panel["error"]:
+        return f'<article class="signal-panel"><h3>{title}</h3><p class="asof stale">{html_escape(panel["error"])}</p>{asof}</article>'
+    state = result.state
+    labels = {"near": "Near expiry", "far": "Far expiry", "third": "Long expiry",
+              "current_s": "S · near minus far", "sessions_to_switch": "Sessions until pair switch",
+              "arm_date": "Armed since", "high": "High since arming", "trigger": "Trigger · high − 0.60",
+              "signal": "Signal date", "entry": "Entry date", "s_entry": "S at entry",
+              "target": "Target S", "stop_level": "Stop S", "trail_live": "Trail live · S touched zero",
+              "sessions_held": "Sessions held", "hold": "Hold limit", "unrealised": "Unrealised L1 points · before costs",
+              "vix": "VIX close", "vix_entry": "VIX at entry", "size": "Equity at entry",
+              "cover_estimate": "Estimated cover date", "reason": "Exit reason", "last_exit": "Last exit"}
+    numbers = []
+    for field, value in state.values.items():
+        if value == "":
+            continue
+        if isinstance(value, bool):
+            value = "Yes" if value else "No"
+        elif field == "size":
+            value = f"{value:.0%}"
+        elif isinstance(value, float):
+            value = f"{value:.2f}"
+        numbers.append(f'<div><dt>{html_escape(labels.get(field, field))}</dt><dd>{html_escape(str(value))}</dd></div>')
+    warning = '<p class="asof stale">Data stale; this output describes the stored date.</p>' if panel_fresh[source]["stale"] else ""
+    if fresh[source].get("fixture"):
+        warning += '<p class="asof stale">Fixture from cached research Cboe files; live fetch blocked by sandbox DNS.</p>'
+    if key == "v2":
+        rule = ("S = near − far. Use C2/C3 when fewer than 10 sessions remain before C1 expiry; otherwise C1/C2. "
+                "Arm above 1.50; fire on a 0.60 drop from the pair’s high since arming. On a switch day, the old pair decides. "
+                "Short near, long the contract after far; choose legs at the next settle. Exit on S ≤ −1.00, "
+                "S ≥ entry S + 3.00, return to entry S after touching zero, or 21 sessions; fill at the next settle. "
+                "Expiry exception: close at the last pre-expiry settle. Round-trip cost: 0.20 points.")
+        columns = ("Signal", "Entry", "Exit", "Short / long expiry", "Reason", "Net points")
+        rows = [[t["signal"], t["entry"], t["exit"], f'{t["near"]} / {t["third"]}', t["reason"], f'{t["net"]:+.2f}']
+                for t in result.trades[-5:]]
+    else:
+        rule = ("When flat, VIX close > 30 after a close ≤ 30 signals a UVXY short at the next close, "
+                "sized at 2% of equity. Cover 84 sessions after the fill; ignore triggers while short. "
+                "No stop or target. Calendar estimates exclude regular exchange holidays; unscheduled closures may shift them. "
+                "VIX-only replay: UVXY prices and P&L are unavailable. "
+                "Z1 ignores the author’s discretionary event filter and option structures.")
+        columns = ("Signal", "Entry", "Cover", "VIX at entry")
+        rows = [[t["signal"], t["entry"], t["exit"], f'{t["vix_entry"]:.2f}'] for t in result.trades[-5:]]
+    body = "".join('<tr>' + "".join(f'<td>{html_escape(str(v))}</td>' for v in row) + '</tr>' for row in rows)
+    if not body:
+        body = f'<tr><td colspan="{len(columns)}">No closed trades in stored history.</td></tr>'
+    return (f'<article class="signal-panel" id="signal-{key}"><div class="signal-heading"><h3>{title}</h3>'
+            f'<span class="signal-badge signal-{state.tag.value.lower()}">{state.tag.value}</span></div>{asof}{warning}'
+            f'<dl class="signal-numbers">{"".join(numbers)}</dl><p class="signal-action">Next session: {html_escape(state.action)}</p>'
+            f'<p class="signal-rules">{html_escape(rule)}</p><p class="div-note">Last 5 closed trades · stored history</p>'
+            '<div class="sig-wrap"><table class="sig-table"><thead><tr>'
+            + "".join(f'<th scope="col">{c}</th>' for c in columns)
+            + f'</tr></thead><tbody>{body}</tbody></table></div></article>')
+
+
+def render_vix_signals(payload, fresh):
+    return "".join(render_signal_panel(key, payload[key], fresh) for key in ("v2", "z1"))
+
+
 def build() -> Path:
     fams = _families()
     forward, trailing = fams["forward"], fams["trailing"]
@@ -1307,7 +1393,16 @@ def build() -> Path:
 
     # The page is dated by its P/E data; every other source is judged against it.
     latest_date_str = forward["latest_date"]
-    fresh = freshness(load_status(), latest_date_str)
+    status = load_status()
+    signal_payload = vix_signals_payload()
+    for key, source in (("v2", "cboe_vx"), ("z1", "cboe_vix")):
+        result = signal_payload[key]["result"]
+        status["sources"].setdefault(source, {
+            "ok": bool(result and result.state.as_of),
+            "as_of": str(result.state.as_of) if result and result.state.as_of else None,
+        })
+    fresh = freshness(status, latest_date_str)
+    fresh["cboe_vx"]["fixture"] = status["sources"]["cboe_vx"].get("fixture", False)
     dt = datetime.fromisoformat(latest_date_str)
     latest_label = dt.strftime("%B ") + str(dt.day) + dt.strftime(", %Y")
 
@@ -1356,6 +1451,7 @@ def build() -> Path:
         .replace("__AD_READOUT__", render_advance_decline_readout(ad_payload))
         .replace("__VIX_READOUT__", render_vix_readout(vix_payload))
         .replace("__VIX_STATS__", render_vix_stats(vix_payload))
+        .replace("__VIX_SIGNALS__", render_vix_signals(signal_payload, fresh))
         .replace("__STANDFIRST__", render_standfirst(standfirst(forward["summary"], fg_points[-1] if fg_points else None)))
         .replace("__INSIGHTS__", render_insights(forward["latest_date"]))
         .replace("__ASK_CHIPS__", chips_html)
@@ -2092,6 +2188,18 @@ TEMPLATE = r"""<!doctype html>
     margin-top: 16px;
   }
   .vix-readout { grid-template-columns: repeat(4, 1fr); }
+  .signal-panels { display: grid; gap: 24px; }
+  .signal-panel { border: 1px solid var(--hair); border-radius: 12px; padding: 20px; min-width: 0; }
+  .signal-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .signal-heading h3 { margin: 0; font-size: 17px; }
+  .signal-badge { font: 12px var(--font-mono); border: 1px solid var(--hair); border-radius: 20px; padding: 6px 12px; }
+  .signal-armed { color: var(--cold); }
+  .signal-signal, .signal-exit_due, .signal-cover_due { color: var(--hot); border-color: currentColor; }
+  .signal-numbers { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin: 20px 0; }
+  .signal-numbers dt { font: 10px var(--font-mono); color: var(--dim); }
+  .signal-numbers dd { margin: 5px 0 0; font: 15px var(--font-mono); color: var(--text); }
+  .signal-action { color: var(--text); line-height: 1.6; }
+  .signal-rules { color: var(--dim); font-size: 12px; line-height: 1.7; }
   .vix-readout .vix-episode { font-size: 13px; line-height: 1.6; }
   #vix-stats caption { text-align: left; caption-side: bottom; padding-top: 12px; line-height: 1.6; }
   .ad-readout > div {
@@ -2641,6 +2749,21 @@ TEMPLATE = r"""<!doctype html>
       <p class="div-note">Implied volatility by tenor · latest, 5 sessions earlier, 21 sessions earlier. Each line is labelled with its date; missing tenors are skipped.</p>
       <div class="chart-wrap"><div id="vix-curve-chart"></div></div>
       __VIX_STATS__
+    </section>
+
+    <section class="card" id="vix-signals-card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="card-num">14</span>
+          <div>
+            <h2>VIX spread signals</h2>
+            <p class="lede">Daily rule outputs, not advice. Signals use the settle or close; orders fill at the next settle or close, with the v2 expiry exception below.</p>
+          </div>
+        </div>
+        <div class="card-aside">VX &amp; VIX · Cboe__ASOF_14__</div>
+      </div>
+      <div class="signal-panels">__VIX_SIGNALS__</div>
+      <p class="div-note">Backtest context: v2 2004–2026 · 22 trades, 17 winners, +53.0 points per spread, worst −7.61; Z1 2011–2026 · 13 trades, 12 winners, Sharpe 0.44 versus v2’s 0.71 on the same window. Historical results, not a forecast.</p>
     </section>
 
     <!-- ═══ Footer ═══ -->

@@ -8,7 +8,7 @@ result.
 
 ## What the page shows
 
-The page is one self-contained `index.html` with thirteen numbered cards. Cards
+The page is one self-contained `index.html` with fourteen numbered cards. Cards
 01 to 04 have a Forward / Trailing lens toggle.
 
 | Card | Content |
@@ -26,6 +26,7 @@ The page is one self-contained `index.html` with thirteen numbered cards. Cards
 | 11 | Equal-weight against cap-weight price ratios for RSP / SPY and QQEW / QQQ, with recent changes and five-year percentiles |
 | 12 | SPY, the cumulative S&P 500 advance/decline line, daily net advancers, and the McClellan Oscillator |
 | 13 | VIX / VIX3M against SPY with backwardation bands, a 9D to 6M term-curve snapshot, and forward SPY returns by curve state and exit |
+| 14 | Daily default v2 VX calendar-spread and Z1 short-UVXY rule outputs, next actions, and last five closed trades |
 
 The page date is the date of the latest Koyfin P/E reading. Each card shows
 the date of its own data. A source that failed to fetch, or whose data is
@@ -36,15 +37,17 @@ banner says so.
 
 ## Pipeline
 
-The workflow `.github/workflows/daily.yml` runs at 22:00 UTC, Monday to
-Friday. Each step reads the committed files that the previous step wrote.
+The workflow `.github/workflows/daily.yml` runs at 03:30 UTC, Tuesday to
+Saturday, after each US trading day. Each step reads the committed files
+that the previous step wrote.
 
 1. `fetch.py` downloads every series, validates it, and writes it to
    `data/`. It then writes `data/status.json`.
 2. `python -m unittest discover -s tests` runs the test suite.
 3. `commentary.py` asks a model for the section 01 findings and writes
    `data/insights.json`.
-4. `build_html.py` reads `data/` and writes `index.html`.
+4. `build_html.py` reads `data/` and writes `index.html`; `vix_signals.py`
+   prints the daily states and next-session actions.
 5. `alerts.py` sends a Telegram message for failed or stale sources and for
    threshold crossings.
 6. The workflow commits `data/` and `index.html` to `main`.
@@ -61,6 +64,7 @@ The production scripts use only the Python standard library.
 | MacroMicro (`fear_greed`) | CNN Fear & Greed index, chart 50108, stat 22748 | `data/fear_greed.csv` |
 | MacroMicro (`breadth`) | % of S&P 500 above the 50-day and 200-day average, chart 81081, stats 18331 and 22718; % of Nasdaq-100 above those averages, chart 96064, stats 18332 and 25229 | `data/sp500_breadth.csv`, `data/ndx_breadth.csv` |
 | Cboe (`cboe_vix`) | Daily VIX, VIX3M, VIX9D and VIX6M closes | `data/vix.csv`, `data/vix3m.csv`, `data/vix9d.csv`, `data/vix6m.csv` |
+| Cboe (`cboe_vx`) | Monthly VX daily settles, expiry window from 400 calendar days ago through the fifth upcoming monthly | `data/vx_settle.csv` (`date,expiry,settle`; merged history) |
 | MacroMicro (`advance_decline`) | S&P 500 advancers, unchanged and decliners, chart 136200, stats 76090, 76092 and 76091 | `data/sp500_ad.csv` |
 
 Koyfin is called through its unauthenticated web API. The instrument IDs are
@@ -84,7 +88,8 @@ value outside the bounds, ends earlier than the stored data, or has fewer
 than 90% of the stored rows. Rolling-window sources can define a fixed minimum
 reply length instead. The advance/decline chart uses a 200-row minimum because
 MacroMicro serves only its latest year while the stored file grows by merging
-new windows. A rejected or failed series keeps its previous file, and the
+new windows. VX settles use the same 200-row floor and merge on both date
+and expiry. A rejected or failed series keeps its previous file, and the
 failure goes into `status.json`.
 
 Some upstream history is wrong and is filtered out on every write:
@@ -119,6 +124,40 @@ appears only when a series failed. `alerts.py` checks threshold crossings
 only for series whose date advanced in this run, so a second run on the same
 day does not repeat an alert.
 
+### VIX spread signals
+
+`vix_signals.py` replays all stored data on each run, with no saved position state.
+Default v2 ports `forex/qc/b1_main.py` and `DECISION_DEFAULT_V2.md`: the active
+near/far pair switches when fewer than 10 sessions remain, arming requires
+S > 1.50, and a 0.60 drop from that pair's high fires the signal. On switch
+days the old pair decides; the new pair inherits its own high since arming.
+At the next settle, choose the pair again, short near and buy the contract
+after far. Exits use near minus far: target −1.00, stop entry S + 3.00,
+return to entry S after touching zero, or 21 sessions. They fill at the next
+settle, except the reference's expiry exit at the last pre-expiry settle.
+Net trade points include the 0.20 round-trip cost.
+
+Z1 uses only `data/vix.csv`: when flat, a close above 30 after a close at or
+below 30 signals a 2%-of-equity UVXY short at the next close. Cover 84
+sessions after the fill and ignore triggers while short. The cover date is
+an estimate using regular exchange holidays; unscheduled closures can shift
+it. UVXY prices and returns are not inferred from VIX. Z1 ignores the
+author's discretionary event filter and option structures. These are rule
+outputs, not advice.
+
+The initial `vx_settle.csv` is a **fixture** from read-only cached Cboe files
+in `forex/data/vx`, through 2026-11-05. Sandbox DNS blocked the live fetch.
+`status.json` marks `cboe_vx` failed and the card labels the fixture; a
+successful daily refresh replaces that status. The recent VX window limits
+the replay's trade history; the backtest context refers to the full research
+sample, not just this file.
+
+Z1 reference parity starts flat on 2011-10-04, matching the research window.
+The continuous daily replay starts with the full VIX history: its August
+2011 position remains open until December 5, so it ignores the October 17
+trigger and next signals on December 8. This is a window-start difference,
+not a different trigger or hold rule.
+
 ### Commentary
 
 The masthead's "Today's read" is a template in `build_html.standfirst()`. It
@@ -139,6 +178,7 @@ calls the same proxy from the browser. No API key is involved.
 - A source that failed or is older than the P/E date.
 - Fear & Greed crossing 25 or 75.
 - VIX / VIX3M crossing above 1 into backwardation or returning to 1 or below.
+- v2 transitions into ARMED, SIGNAL or EXIT_DUE; Z1 into SIGNAL or COVER_DUE, only when the source date advances.
 - A sector's forward P/E five-year percentile crossing 5 or 95.
 
 With the `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` secrets set, it sends a
@@ -150,6 +190,7 @@ Telegram message. Without them, it prints the lines. It never fails the run.
 python -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python fetch.py          # refresh data/ (needs network)
 python3 build_html.py              # write index.html from data/
+python3 vix_signals.py             # daily states and next-session actions
 python3 -m unittest discover -s tests
 open index.html
 ```
@@ -165,6 +206,7 @@ fetch.py             sources, series catalog, validation, status.json
 build_html.py        page build: payload, rendered fragments, HTML/CSS/JS template
 commentary.py        section 01 findings (model, number-checked)
 alerts.py            Telegram alerts
+vix_signals.py       pure v2/Z1 replays and daily signal script
 tests/               unittest suite
 data/                committed CSVs, status.json, insights.json
 index.html           the built page, served by GitHub Pages

@@ -30,7 +30,8 @@ from build_html import (
     load_pe,
     ratio_series,
 )
-from fetch import VIX_CSV, VIX3M_CSV, load_status
+from fetch import VIX_CSV, VIX3M_CSV, VX_SETTLE_CSV, load_status
+from vix_signals import State, load_vx, load_vix, v2_replay, z1_replay
 
 FG_THRESHOLDS = (25, 75)
 PCT_THRESHOLDS = (5, 95)
@@ -41,7 +42,35 @@ def _crossed(prev: float, cur: float, thr: float) -> bool:
 
 
 def _advanced(entry: dict) -> bool:
-    return bool(entry.get("as_of")) and entry.get("as_of") != entry.get("prior_as_of")
+    return bool(entry.get("as_of")) and entry["as_of"] > (entry.get("prior_as_of") or "")
+
+
+def signal_alerts(sources: dict) -> list[str]:
+    lines = []
+    for name, source, watched in (
+        ("v2", "cboe_vx", {State.ARMED, State.SIGNAL, State.EXIT_DUE}),
+        ("Z1", "cboe_vix", {State.SIGNAL, State.COVER_DUE}),
+    ):
+        entry = sources.get(source, {})
+        if not _advanced(entry):
+            continue
+        if name == "v2":
+            days, px = load_vx(VX_SETTLE_CSV)
+            if not days or str(days[-1]) != entry["as_of"]:
+                continue
+            result = v2_replay(days, px)
+        else:
+            rows = load_vix(VIX_CSV)
+            if not rows or str(rows[-1][0]) != entry["as_of"]:
+                continue
+            result = z1_replay(rows)
+        for transition in result.transitions:
+            d = str(transition.date)
+            prior = entry.get("prior_as_of")
+            advanced = prior < d <= entry["as_of"] if prior else d == entry["as_of"]
+            if transition.state in watched and advanced:
+                lines.append(f"{name} → {transition.state.value} ({d})")
+    return lines
 
 
 def collect_alerts(status: dict) -> list[str]:
@@ -71,6 +100,8 @@ def collect_alerts(status: dict) -> list[str]:
             if (prev > 1) != (cur > 1):
                 state = "entered backwardation" if cur > 1 else "returned to contango"
                 lines.append(f"VIX / VIX3M {state}: {prev:.2f} → {cur:.2f} ({d})")
+
+    lines.extend(signal_alerts(sources))
 
     fresh_pe = _advanced(pe)
     for sid, pts in load_pe("forward").items():
