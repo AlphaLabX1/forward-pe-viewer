@@ -7,6 +7,7 @@ from bisect import bisect_left
 from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import Enum
+from functools import cache
 from pathlib import Path
 
 ARM, DROP, TARGET, STOP, HOLD, MIN_DAYS, COST = 1.50, 0.60, -1.00, 3.00, 21, 10, 0.20
@@ -31,6 +32,7 @@ def easter(y):
     return date(y, mo, dy + 1)
 
 
+@cache
 def holidays(y):
     def nth(m, wd, n):
         d = date(y, m, 1) + timedelta(days=(wd - date(y, m, 1).weekday()) % 7)
@@ -47,6 +49,22 @@ def holidays(y):
     if y >= 2022:
         out.add(observed(date(y, 6, 19)))
     return out
+
+
+@cache
+def monthly_expiry(y, m):
+    expiry = standard_expiry(y, m)
+    friday = expiry + timedelta(days=30)
+    if expiry in holidays(expiry.year) or friday in holidays(friday.year):
+        expiry -= timedelta(days=1)
+    return expiry
+
+
+def upcoming_monthlies(day, count=4):
+    expiries = [monthly_expiry(day.year + (day.month - 1 + k) // 12,
+                               (day.month - 1 + k) % 12 + 1)
+                for k in range(count + 1)]
+    return [e for e in expiries if e > day][:count]
 
 
 def sessions_between(a, b):
@@ -74,7 +92,9 @@ def load_vx(path):
                 settle = float(row["settle"])
                 if settle > 0:
                     px.setdefault(d, {})[e] = settle
-    days = sorted(d for d, prices in px.items() if sum(e > d for e in prices) >= 3)
+    px = {d: prices for d, prices in px.items()
+          if all(e in prices for e in upcoming_monthlies(d))}
+    days = sorted(px)
     return days, px
 
 
@@ -167,6 +187,10 @@ def v2_replay(days, px) -> V2Result:
 
     for i, day in enumerate(days):
         before = tag
+        if i > 0 and session_after(days[i - 1]) < day:
+            if position is not None:
+                raise ValueError(f"Missing VX sessions during an open trade before {day}")
+            armed, pending, tag = False, None, State.FLAT
         if pending == "entry":
             nr, fr = pair(i)
             lad = ladder(i)
@@ -257,6 +281,7 @@ def v2_replay(days, px) -> V2Result:
 
 def z1_replay(vix_rows) -> Z1Result:
     rows = [(date.fromisoformat(d) if isinstance(d, str) else d, float(v)) for d, v in vix_rows]
+    rows = [(d, v) for d, v in rows if d.weekday() < 5 and d not in holidays(d.year)]
     trades, transitions = [], []
     tag, position, pending, values = State.FLAT, None, None, {}
     action = "Wait for VIX to close above 30 after a close at or below 30."

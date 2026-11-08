@@ -127,6 +127,10 @@ day does not repeat an alert.
 ### VIX spread signals
 
 `vix_signals.py` replays all stored data on each run, with no saved position state.
+VX dates require the first four upcoming monthly contracts from the expiry
+calendar, including holiday shifts. Incomplete ladders are dropped. Missing
+sessions reset arming and cancel unfilled entries; a gap during an open trade
+reports an error rather than inventing a fill.
 Default v2 ports `forex/qc/b1_main.py` and `DECISION_DEFAULT_V2.md`: the active
 near/far pair switches when fewer than 10 sessions remain, arming requires
 S > 1.50, and a 0.60 drop from that pair's high fires the signal. On switch
@@ -138,25 +142,31 @@ settle, except the reference's expiry exit at the last pre-expiry settle.
 Net trade points include the 0.20 round-trip cost.
 
 Z1 uses only `data/vix.csv`: when flat, a close above 30 after a close at or
-below 30 signals a 2%-of-equity UVXY short at the next close. Cover 84
+below 30 signals a 2%-of-equity UVXY short at the next close. Only weekdays
+outside the v2 holiday calendar count for signals and the hold clock. Cover 84
 sessions after the fill and ignore triggers while short. The cover date is
 an estimate using regular exchange holidays; unscheduled closures can shift
 it. UVXY prices and returns are not inferred from VIX. Z1 ignores the
 author's discretionary event filter and option structures. These are rule
 outputs, not advice.
 
-The initial `vx_settle.csv` is a **fixture** from read-only cached Cboe files
-in `forex/data/vx`, through 2026-11-05. Sandbox DNS blocked the live fetch.
-`status.json` marks `cboe_vx` failed and the card labels the fixture; a
-successful daily refresh replaces that status. The recent VX window limits
-the replay's trade history; the backtest context refers to the full research
-sample, not just this file.
+`vx_settle.csv` contains live Cboe settles through 2026-11-06. The current
+expiry window starts at 2025-10-22, so its first complete ladder is
+2025-09-17. Backfill once with `python3 fetch.py --backfill-vx`: this fetches
+every monthly contract from June 2013 through the daily window's fifth
+upcoming contract and merges the result into the stored file. The daily run
+keeps its 400-day expiry window and merges, retaining older history. The
+backfill is still pending because sandbox DNS blocked `cdn.cboe.com`; no
+replacement fixture was created. Backtest context refers to the full research
+sample, not just the recent file.
 
 Z1 reference parity starts flat on 2011-10-04, matching the research window.
 The continuous daily replay starts with the full VIX history: its August
 2011 position remains open until December 5, so it ignores the October 17
-trigger and next signals on December 8. This is a window-start difference,
-not a different trigger or hold rule.
+trigger and next signals on December 8, exiting on 2012-04-12. Both replays
+are flat before the next trigger on 2015-08-24. From that trade onward, all
+12 reference trades match on signal, entry, and exit dates. Starting flat
+at the reference window matches all 13 trades on those dates.
 
 ### Commentary
 

@@ -116,6 +116,38 @@ class V2Test(unittest.TestCase):
         self.assertEqual(fire.values['near'], '2026-02-18')
         self.assertEqual(fire.values['third'], '2026-04-15')
 
+    def test_missing_front_is_dropped_and_gap_does_not_fire_a_switch(self):
+        days = sessions(3)
+        expiries = [date(2026, 1, 21), date(2026, 2, 18), date(2026, 3, 18),
+                    date(2026, 4, 15), date(2026, 5, 19)]
+        prices = [[24, 22, 20, 19, 18], [0, 21.3, 20, 19, 18], [22.3, 21.3, 20, 19, 18]]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'vx.csv'
+            path.write_text('date,expiry,settle\n' + ''.join(
+                f'{d},{e},{p}\n' for d, values in zip(days, prices)
+                for e, p in zip(expiries, values) if p > 0))
+            usable, px = s.load_vx(path)
+        self.assertEqual(usable, [days[0], days[2]])
+        self.assertNotIn(days[1], px)
+        result = s.v2_replay(usable, px)
+        self.assertEqual(result.state.tag, s.State.FLAT)
+        self.assertEqual(result.trades, [])
+        self.assertFalse(any(t.state == s.State.SIGNAL for t in result.transitions))
+
+    def test_gap_cancels_unfilled_signal_and_rejects_missing_open_trade_prices(self):
+        days, px = market([2, 1.3, 1.1, 1.0, 1.0])
+        self.assertEqual(s.v2_replay([*days[:2], days[3]], px).state.tag, s.State.FLAT)
+        with self.assertRaisesRegex(ValueError, 'Missing VX sessions during an open trade'):
+            s.v2_replay([*days[:3], days[4]], px)
+
+    def test_gap_across_pair_switch_resets_arming(self):
+        expiries = [date(2026, 1, 21), date(2026, 2, 18), date(2026, 3, 18), date(2026, 4, 15)]
+        days, px = market([2, 2, 2, 1.3], expiries=expiries)
+        result = s.v2_replay([days[0], days[1], days[3]], px)
+        self.assertEqual(result.state.values['near'], '2026-02-18')
+        self.assertEqual(result.state.tag, s.State.FLAT)
+        self.assertFalse(any(t.state == s.State.SIGNAL for t in result.transitions))
+
     def test_deterministic_no_future_prices_or_io(self):
         days, px = market([2, 1.3, 1.1, -1.2, -1.3])
         original = copy.deepcopy(px)
@@ -135,6 +167,20 @@ class V2Test(unittest.TestCase):
 
 
 class Z1Test(unittest.TestCase):
+    def test_holiday_rows_neither_trigger_fill_nor_advance_hold_clock(self):
+        holiday = date(2024, 11, 28)
+        rows = [(date(2024, 11, 27), 29), (holiday, 31), (date(2024, 11, 29), 29)]
+        self.assertEqual(s.z1_replay(rows).state.tag, s.State.FLAT)
+        rows[0] = (rows[0][0], 31)
+        rows.insert(0, (date(2024, 11, 26), 29))
+        self.assertEqual(s.z1_replay(rows).state.values['entry'], '2024-11-29')
+        days = sessions(88, date(2025, 4, 1))
+        regular = list(zip(days, [29, 31] + [25] * 86))
+        extra = sorted(regular + [(date(2025, 7, 4), 99), (date(2025, 7, 5), 99)])
+        result = s.z1_replay(extra)
+        self.assertEqual(result, s.z1_replay(regular))
+        self.assertEqual(result.trades[0]['exit'], str(days[86]))
+
     def test_cross_threshold_and_fill_next_close(self):
         days = sessions(4)
         self.assertEqual(s.z1_replay(list(zip(days, [30, 30, 29, 30]))).state.tag, s.State.FLAT)
@@ -182,6 +228,33 @@ class FetchTest(unittest.TestCase):
         self.assertEqual(sum(e > today for e in expiries), 5)
         self.assertTrue(all(e >= today - timedelta(days=400) for e in expiries))
 
+    def test_backfill_extends_monthlies_without_changing_daily_window(self):
+        today = date(2026, 11, 7)
+        daily = fetch.vx_monthlies(today)
+        backfill = fetch.vx_monthlies(today, date(2013, 6, 1))
+        self.assertEqual(backfill[0], date(2013, 6, 19))
+        self.assertEqual(backfill[-len(daily):], daily)
+        self.assertEqual(len(backfill), (2027 - 2013) * 12 + 3 - 6 + 1)
+        with mock.patch.object(fetch, 'vx_monthlies', return_value=[]) as monthlies:
+            self.assertEqual(fetch.fetch_cboe_vx(backfill=True), [])
+        self.assertEqual(monthlies.call_args.args[1], date(2013, 6, 1))
+
+    def test_loading_requires_four_calendar_contracts_with_holiday_expiry(self):
+        self.assertEqual(s.monthly_expiry(2019, 3), date(2019, 3, 19))
+        self.assertEqual(s.monthly_expiry(2026, 5), date(2026, 5, 19))
+        self.assertEqual(s.monthly_expiry(2027, 5), date(2027, 5, 18))
+        day = date(2026, 5, 1)
+        expected = s.upcoming_monthlies(day)
+        self.assertEqual(s.upcoming_monthlies(expected[0])[0], expected[1])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'vx.csv'
+            path.write_text('date,expiry,settle\n' + ''.join(f'{day},{e},20\n' for e in expected))
+            self.assertEqual(s.load_vx(path)[0], [day])
+            for missing in expected:
+                path.write_text('date,expiry,settle\n' + ''.join(
+                    f'{day},{e},20\n' for e in expected if e != missing))
+                self.assertEqual(s.load_vx(path), ([], {}))
+
     def test_settle_column_positive_only_and_both_date_formats(self):
         text = 'Trade Date,Close,Settle\n2026-11-05,99,20.25\n11/06/2026,99,21.0\n2026-11-07,99,0\n'
         self.assertEqual(fetch.parse_vx_csv(text, date(2026, 11, 18)), [
@@ -225,10 +298,11 @@ class FetchTest(unittest.TestCase):
             self.assertEqual(s.load_vix(path), [])
             path.write_text('date,expiry,settle\n2026-11-05,2026-11-18,20\n'
                             '2026-11-05,2026-12-16,21\n2026-11-05,2027-01-20,22\n'
+                            '2026-11-05,2027-02-17,23\n'
                             '2026-11-06,2026-11-18,0\n')
             days, px = s.load_vx(path)
             self.assertEqual(days, [date(2026, 11, 5)])
-            self.assertEqual(len(px[days[0]]), 3)
+            self.assertEqual(len(px[days[0]]), 4)
         self.assertIsNone(s.v2_replay([], {}).state.as_of)
         self.assertIsNone(s.z1_replay([]).state.as_of)
 

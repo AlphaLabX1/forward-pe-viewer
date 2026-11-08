@@ -30,6 +30,7 @@ build_html.py reads only these committed CSVs, through the paths defined here.
 
 from __future__ import annotations
 
+import argparse
 import csv
 import datetime
 import io
@@ -268,8 +269,8 @@ def fetch_cboe(symbol: str) -> list[list]:
     raise RuntimeError(f"Cboe {symbol} failed after {MAX_ATTEMPTS} attempts: {last_err}")
 
 
-def vx_monthlies(today: datetime.date) -> list[datetime.date]:
-    start = today - datetime.timedelta(days=400)
+def vx_monthlies(today: datetime.date, start: datetime.date | None = None) -> list[datetime.date]:
+    start = start or today - datetime.timedelta(days=400)
     candidates = [standard_expiry(y, m) for y in range(start.year, today.year + 2)
                   for m in range(1, 13)]
     end = [e for e in candidates if e > today][4]
@@ -283,10 +284,12 @@ def parse_vx_csv(text: str, expiry: datetime.date) -> list[list]:
             for r in csv.DictReader(io.StringIO(text)) if float(r["Settle"]) > 0]
 
 
-def fetch_cboe_vx() -> list[list]:
+def fetch_cboe_vx(backfill: bool = False) -> list[list]:
     base = "https://cdn.cboe.com/data/us/futures/market_statistics/historical_data/VX/VX_{}.csv"
     rows = []
-    for expiry in vx_monthlies(datetime.date.today()):
+    expiries = (vx_monthlies(datetime.date.today(), datetime.date(2013, 6, 1)) if backfill
+                else vx_monthlies(datetime.date.today()))
+    for expiry in expiries:
         last_err = None
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
@@ -667,6 +670,14 @@ def load_status() -> dict:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--backfill-vx", action="store_true",
+                        help="Merge monthly VX contracts from June 2013 through the daily window")
+    args = parser.parse_args()
+    if args.backfill_vx:
+        rows = store("vx_settle", fetch_cboe_vx(backfill=True))
+        print(f"vx_settle {len(rows)} rows, {rows[0][0]} through {rows[-1][0]}")
+        return
     _mm_run.reset()
     for d in LENS_DIRS.values():
         d.mkdir(parents=True, exist_ok=True)
