@@ -147,6 +147,11 @@ class U1Result:
     transitions: list[Transition]
 
 
+def leg_prices(px, day, pair):
+    """The two contracts a rule compares on `day`, with their settles."""
+    return dict(leg1=str(pair[0]), leg1_price=px[day][pair[0]], leg2=str(pair[1]), leg2_price=px[day][pair[1]])
+
+
 def v2_replay(days, px) -> V2Result:
     days = list(days)
     if not days:
@@ -170,6 +175,7 @@ def v2_replay(days, px) -> V2Result:
                    if all(e in px[days[a]] for e in legs))
 
     trades, transitions = [], []
+    legs = lambda day, pair: leg_prices(px, day, pair)
     tag, armed, arm_i, peak = State.FLAT, False, 0, 0.0
     position, pending, values = None, None, {}
     action = "Wait for S to rise above 1.50."
@@ -226,7 +232,7 @@ def v2_replay(days, px) -> V2Result:
                     reason = "time"
                 zero = zero or s <= 0.0
             unrealised = -(px[day][nr] - entry_prices[nr]) + (px[day][third] - entry_prices[third])
-            values = dict(position, current_s=s, target=TARGET,
+            values = dict(position, **legs(day, (nr, fr)), current_s=s, target=TARGET,
                           stop_level=position["s_entry"] if zero else position["s_entry"] + STOP,
                           trail_live=zero, sessions_held=i - entry_i, hold=HOLD,
                           unrealised=unrealised, reason=reason)
@@ -262,7 +268,7 @@ def v2_replay(days, px) -> V2Result:
             lad = ladder(i)
             n = remaining(i, lad[0])
             switch = n - MIN_DAYS + 1 if n >= MIN_DAYS else remaining(i, lad[1]) - MIN_DAYS + 1
-            values = dict(near=str(active[0]), far=str(active[1]), current_s=s,
+            values = dict(near=str(active[0]), far=str(active[1]), **legs(day, active), current_s=s,
                           sessions_to_switch=max(0, switch))
             tag = State.ARMED if armed else State.FLAT
             if armed:
@@ -304,6 +310,7 @@ def u1_replay(days, px, uvxy) -> U1Result:
     Backwardation compares the first two unexpired monthlies, with no switch before expiry."""
     days = [d for d in days if d in uvxy]
     trades, transitions = [], []
+    legs = lambda day, pair: leg_prices(px, day, pair)
     tag, position, pending, streak, values = State.FLAT, None, None, 0, {}
     action = "Wait for VX backwardation."
     if not days:
@@ -317,7 +324,8 @@ def u1_replay(days, px, uvxy) -> U1Result:
 
     for i, day in enumerate(days):
         before, price = tag, uvxy[day]
-        c1, c2 = (px[day][e] for e in sorted(e for e in px[day] if e > day)[:2])
+        front = sorted(e for e in px[day] if e > day)[:2]
+        c1, c2 = (px[day][e] for e in front)
         if pending == "entry":
             position = dict(signal=signal, entry=str(day), entry_price=price, size=U1_SIZE)
             entry_i = i
@@ -325,7 +333,7 @@ def u1_replay(days, px, uvxy) -> U1Result:
             close(day, price, pending)
         pending = None
         backwardation = c1 > c2
-        values = dict(c1=c1, c2=c2, backwardation=backwardation, uvxy=price)
+        values = dict(**legs(day, front), backwardation=backwardation, uvxy=price)
         tag = State.FLAT
         if position is not None and i > entry_i:
             target, stop = position["entry_price"] * (1 - U1_TARGET), position["entry_price"] * (1 + U1_STOP)
