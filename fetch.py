@@ -18,6 +18,7 @@ Outputs:
   data/rsp_price.csv              — equal-weight S&P 500 (RSP)
   data/qqq_forward_pe.csv, data/qqq_price.csv — QQQ valuation + price
   data/qqew_price.csv             — equal-weight Nasdaq-100 (QQEW)
+  data/uvxy_price.csv             UVXY split-adjusted close, for the U1 signal
   data/us10y.csv                  — US 10-year Treasury yield (%)
   data/fear_greed.csv             — CNN Fear & Greed Index
   data/sp500_breadth.csv          — % of S&P 500 above 50d / 200d MA
@@ -92,6 +93,8 @@ KOYFIN_RSP_KID = "et-wezwxf"    # RSP ETF — equal-weight S&P 500
 KOYFIN_QQQ_KID = "et-gpvivq"    # QQQ ETF — proxy for NDX (Nasdaq-100)
 KOYFIN_QQEW_KID = "et-hvil9v"   # QQEW ETF — equal-weight Nasdaq-100
 KOYFIN_US10Y_KID = "bn-dm6gok"  # US 10Y Treasury (close = yield in %)
+KOYFIN_UVXY_KID = "et-sw4wug"   # UVXY ETF, split-adjusted closes (found 2026-11-08 via tickers/search)
+UVXY_FROM = "2013-01-01"        # VX settles start 2013-05; U1 only replays from there
 
 DATA_DIR = Path(__file__).parent / "data"
 LENS_DIRS = {"forward": DATA_DIR, "trailing": DATA_DIR / "trailing"}
@@ -110,6 +113,7 @@ VIX3M_CSV = DATA_DIR / "vix3m.csv"
 VIX9D_CSV = DATA_DIR / "vix9d.csv"
 VIX6M_CSV = DATA_DIR / "vix6m.csv"
 VX_SETTLE_CSV = DATA_DIR / "vx_settle.csv"
+UVXY_PRICE_CSV = DATA_DIR / "uvxy_price.csv"
 STATUS_JSON = DATA_DIR / "status.json"
 
 
@@ -172,6 +176,9 @@ CATALOG: dict[str, Series] = {
     "vix3m": Series(VIX3M_CSV, ("close",), 5.0, 200.0),
     "vix9d": Series(VIX9D_CSV, ("close",), 5.0, 200.0),
     "vix6m": Series(VIX6M_CSV, ("close",), 5.0, 200.0),
+    # Reverse splits rescale every past close, so the file is replaced, never merged, and
+    # one-day jumps above 50% are real (2018-02-05, 2024-08-05), so no despiking.
+    "uvxy_price": Series(UVXY_PRICE_CSV, ("price",), 0.01, 1e12),
     "vx_settle": Series(VX_SETTLE_CSV, ("expiry", "settle"), 0.000001, 200.0,
                         merge=True, min_reply_rows=200, key_columns=2),
 }
@@ -614,6 +621,7 @@ SOURCES: dict[str, dict[str, Callable[[], list[list]]]] = {
         "qqq_pe": partial(koy_fundamental, KOYFIN_QQQ_KID, "f_pe"),
         "qqq_price": partial(koy_price, KOYFIN_QQQ_KID),
         "qqew_price": partial(koy_price, KOYFIN_QQEW_KID),
+        "uvxy_price": partial(koy_price, KOYFIN_UVXY_KID, UVXY_FROM),
     },
     "us10y": {"us10y": partial(koy_price, KOYFIN_US10Y_KID)},
     "fear_greed": {"fear_greed": fetch_fear_greed},

@@ -1,4 +1,4 @@
-"""Daily rule outputs, replayed from committed VX settles and VIX closes."""
+"""Daily rule outputs for v2 and U1, replayed from committed VX settles and UVXY closes."""
 
 from __future__ import annotations
 
@@ -11,7 +11,8 @@ from functools import cache
 from pathlib import Path
 
 ARM, DROP, TARGET, STOP, HOLD, MIN_DAYS, COST = 1.50, 0.60, -1.00, 3.00, 21, 10, 0.20
-Z1_THRESHOLD, Z1_HOLD, Z1_SIZE = 30.0, 84, 0.02
+V2_NEAR = 0.30
+U1_SIZE, U1_TARGET, U1_STOP, U1_HOLD, U1_NEAR = 0.05, 0.20, 1.00, 126, 0.05
 
 
 def standard_expiry(y, m):
@@ -98,17 +99,19 @@ def load_vx(path):
     return days, px
 
 
-def load_vix(path):
+def load_uvxy(path):
     if not Path(path).exists():
-        return []
+        return {}
     with Path(path).open() as f:
-        return sorted((date.fromisoformat(r["date"]), float(r["close"]))
-                      for r in csv.DictReader(f))
+        return {date.fromisoformat(r["date"]): float(r["price"]) for r in csv.DictReader(f)}
 
 
 class State(str, Enum):
     FLAT = "FLAT"
     ARMED = "ARMED"
+    NEAR_TRIGGER = "NEAR_TRIGGER"
+    WATCH = "WATCH"
+    NEAR_TARGET = "NEAR_TARGET"
     SIGNAL = "SIGNAL"
     IN_TRADE = "IN_TRADE"
     EXIT_DUE = "EXIT_DUE"
@@ -138,7 +141,7 @@ class V2Result:
 
 
 @dataclass(frozen=True)
-class Z1Result:
+class U1Result:
     trades: list[dict]
     state: Snapshot
     transitions: list[Transition]
@@ -234,7 +237,13 @@ def v2_replay(days, px) -> V2Result:
             if reason:
                 tag, pending = State.EXIT_DUE, "exit"
                 action = f"Cover short {nr} and sell long {third} at the next settle ({reason})."
+            elif nth_session(days, i, 2) >= nr:
+                # Display only: the expiry rule itself closes at the next settle, as in the reference.
+                tag = State.EXIT_DUE
+                values["reason"] = "expiry"
+                action = f"Cover short {nr} and sell long {third} at the next settle, the last before {nr} expires."
             else:
+                tag = State.IN_TRADE
                 action = f"Hold short {nr} / long {third}; check exits at the next settle."
         else:
             active = pair(i)
@@ -258,8 +267,12 @@ def v2_replay(days, px) -> V2Result:
             tag = State.ARMED if armed else State.FLAT
             if armed:
                 values.update(arm_date=str(days[arm_i]), high=peak, trigger=peak - DROP)
-            action = ("Wait for S to fall 0.60 from its own high since arming."
-                      if armed else "Wait for S to rise above 1.50.")
+                if s - (peak - DROP) <= V2_NEAR:
+                    tag = State.NEAR_TRIGGER
+            action = ("Wait for S to rise above 1.50." if not armed else
+                      f"Signal fires on a settle with S at or below {peak - DROP:.2f}; S is {s - (peak - DROP):.2f} above it."
+                      if tag == State.NEAR_TRIGGER else
+                      "Wait for S to fall 0.60 from its own high since arming.")
             if fire:
                 signal = str(day)
                 tag, pending = State.SIGNAL, "entry"
@@ -279,41 +292,79 @@ def v2_replay(days, px) -> V2Result:
     return V2Result(trades, Snapshot(tag, days[-1], values, action), transitions)
 
 
-def z1_replay(vix_rows) -> Z1Result:
-    rows = [(date.fromisoformat(d) if isinstance(d, str) else d, float(v)) for d, v in vix_rows]
-    rows = [(d, v) for d, v in rows if d.weekday() < 5 and d not in holidays(d.year)]
+def nth_session(days, i, k):
+    """The k-th session after days[i], from stored days first and the holiday calendar after them."""
+    if i + k < len(days):
+        return days[i + k]
+    return session_after(days[-1], i + k - len(days) + 1)
+
+
+def u1_replay(days, px, uvxy) -> U1Result:
+    """Short UVXY at the close after the first VX contango close that follows backwardation.
+    Backwardation compares the first two unexpired monthlies, with no switch before expiry."""
+    days = [d for d in days if d in uvxy]
     trades, transitions = [], []
-    tag, position, pending, values = State.FLAT, None, None, {}
-    action = "Wait for VIX to close above 30 after a close at or below 30."
-    for i, (day, vix) in enumerate(rows):
-        before = tag
+    tag, position, pending, streak, values = State.FLAT, None, None, 0, {}
+    action = "Wait for VX backwardation."
+    if not days:
+        return U1Result([], Snapshot(tag, None, {}, "No VX settles with UVXY closes available."), [])
+
+    def close(day, price, why):
+        nonlocal position
+        trades.append(dict(position, exit=str(day), exit_price=price, reason=why,
+                           return_pct=(1 - price / position["entry_price"]) * 100))
+        position = None
+
+    for i, day in enumerate(days):
+        before, price = tag, uvxy[day]
+        c1, c2 = (px[day][e] for e in sorted(e for e in px[day] if e > day)[:2])
         if pending == "entry":
-            position = dict(signal=signal, entry=str(day), vix_entry=vix)
+            position = dict(signal=signal, entry=str(day), entry_price=price, size=U1_SIZE)
             entry_i = i
-            tag, pending = State.SHORT, None
-        elif pending == "cover":
-            trades.append(dict(position, exit=str(day), vix_exit=vix, reason="time"))
-            tag, position, pending = State.FLAT, None, None
-        values = dict(vix=vix)
+        elif pending:
+            close(day, price, pending)
+        pending = None
+        backwardation = c1 > c2
+        values = dict(c1=c1, c2=c2, backwardation=backwardation, uvxy=price)
+        tag = State.FLAT
+        if position is not None and i > entry_i:
+            target, stop = position["entry_price"] * (1 - U1_TARGET), position["entry_price"] * (1 + U1_STOP)
+            if i + 1 - entry_i >= U1_HOLD:
+                pending = "time"
+            elif price <= target:
+                close(day, price, "target")
+                values.update(last_exit=str(day), reason="target")
+            elif price >= stop:
+                pending = "stop"
         if position is not None:
+            target, stop = position["entry_price"] * (1 - U1_TARGET), position["entry_price"] * (1 + U1_STOP)
             held = i - entry_i
-            values.update(position, sessions_held=held, hold=Z1_HOLD, size=Z1_SIZE,
-                          cover_estimate=str(session_after(day, Z1_HOLD - held)))
-            if held + 1 >= Z1_HOLD:
-                tag, pending = State.COVER_DUE, "cover"
-                action = "Cover the UVXY short at the next close (84 sessions from fill)."
+            values.update(position, target_price=target, stop_price=stop, sessions_held=held, hold=U1_HOLD,
+                          change_pct=(price / position["entry_price"] - 1) * 100,
+                          time_exit=str(nth_session(days, i, U1_HOLD - held)))
+            if pending:
+                tag = State.COVER_DUE
+                values["reason"] = pending
+                action = f"Cover the UVXY short at the next close ({pending})."
             else:
-                action = f"Hold the UVXY short; cover in {Z1_HOLD - held} sessions (estimated {values['cover_estimate']})."
-        elif i > 0 and rows[i - 1][1] <= Z1_THRESHOLD < vix:
+                tag = State.NEAR_TARGET if price <= target * (1 + U1_NEAR) else State.SHORT
+                action = (f"Hold. If UVXY is at or below {target:.2f} near the close, cover at that close; "
+                          f"a close at or above {stop:.2f} means cover at the following close.")
+        elif not backwardation and streak >= 1:
             signal = str(day)
             tag, pending = State.SIGNAL, "entry"
-            values.update(signal=signal, size=Z1_SIZE)
-            action = "Short UVXY at the next close with notional equal to 2% of equity."
+            values.update(signal=signal, size=U1_SIZE)
+            action = "Short UVXY at the next close, notional 5% of equity."
+        elif backwardation:
+            tag = State.WATCH
+            action = "VX is in backwardation. The first settle with C1 at or below C2 signals a short at the close after it."
         else:
-            action = "Wait for VIX to close above 30 after a close at or below 30."
+            action = ("Covered at today's close on the 20% target; wait for VX backwardation."
+                      if values.get("reason") == "target" else "Wait for VX backwardation.")
+        streak = streak + 1 if backwardation else 0
         if tag != before:
             transitions.append(Transition(day, tag))
-    return Z1Result(trades, Snapshot(tag, rows[-1][0] if rows else None, values, action), transitions)
+    return U1Result(trades, Snapshot(tag, days[-1], values, action), transitions)
 
 
 def format_state(name, result):
@@ -330,8 +381,8 @@ def format_state(name, result):
 def main():
     data = Path(__file__).parent / "data"
     print(format_state("v2", v2_replay(*load_vx(data / "vx_settle.csv"))))
-    print(format_state("Z1", z1_replay(load_vix(data / "vix.csv"))))
-    print("Rule outputs, not advice. Z1 excludes the author's discretionary event filter and option structures.")
+    print(format_state("U1", u1_replay(*load_vx(data / "vx_settle.csv"), load_uvxy(data / "uvxy_price.csv"))))
+    print("Rule outputs, not advice.")
 
 
 if __name__ == "__main__":

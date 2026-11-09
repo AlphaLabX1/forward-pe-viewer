@@ -106,7 +106,7 @@ class V2Test(unittest.TestCase):
 
     def test_boundary_old_pair_decides_and_new_pair_uses_own_history(self):
         no_fire = self.boundary(2.5, 0.2).state
-        self.assertEqual(no_fire.tag, s.State.ARMED)
+        self.assertEqual(no_fire.tag, s.State.NEAR_TRIGGER)
         self.assertEqual(no_fire.values['near'], '2026-02-18')
         self.assertEqual(no_fire.values['arm_date'], '2026-01-02')
         self.assertEqual(no_fire.values['high'], 0.5)
@@ -166,57 +166,82 @@ class V2Test(unittest.TestCase):
         self.assertEqual(first.trades, [])
 
 
-class Z1Test(unittest.TestCase):
-    def test_holiday_rows_neither_trigger_fill_nor_advance_hold_clock(self):
-        holiday = date(2024, 11, 28)
-        rows = [(date(2024, 11, 27), 29), (holiday, 31), (date(2024, 11, 29), 29)]
-        self.assertEqual(s.z1_replay(rows).state.tag, s.State.FLAT)
-        rows[0] = (rows[0][0], 31)
-        rows.insert(0, (date(2024, 11, 26), 29))
-        self.assertEqual(s.z1_replay(rows).state.values['entry'], '2024-11-29')
-        days = sessions(88, date(2025, 4, 1))
-        regular = list(zip(days, [29, 31] + [25] * 86))
-        extra = sorted(regular + [(date(2025, 7, 4), 99), (date(2025, 7, 5), 99)])
-        result = s.z1_replay(extra)
-        self.assertEqual(result, s.z1_replay(regular))
-        self.assertEqual(result.trades[0]['exit'], str(days[86]))
+def u1_market(spreads, prices, expiries=None):
+    days, px = market(spreads, expiries=expiries)
+    return days, px, dict(zip(days, prices))
 
-    def test_cross_threshold_and_fill_next_close(self):
-        days = sessions(4)
-        self.assertEqual(s.z1_replay(list(zip(days, [30, 30, 29, 30]))).state.tag, s.State.FLAT)
-        result = s.z1_replay(list(zip(days, [30, 31])))
+
+class U1Test(unittest.TestCase):
+    def test_watch_signal_and_fill_at_next_close(self):
+        self.assertEqual(s.u1_replay(*u1_market([-0.1, -0.1], [10, 10])).state.tag, s.State.FLAT)
+        self.assertEqual(s.u1_replay(*u1_market([0.5], [10])).state.tag, s.State.WATCH)
+        signal = s.u1_replay(*u1_market([0.5, -0.1], [10, 11]))
+        self.assertEqual(signal.state.tag, s.State.SIGNAL)
+        self.assertEqual(signal.state.values['size'], 0.05)
+        short = s.u1_replay(*u1_market([0.5, -0.1, -0.1], [10, 11, 12])).state
+        self.assertEqual(short.tag, s.State.SHORT)
+        self.assertEqual(short.values['entry_price'], 12)
+        self.assertAlmostEqual(short.values['target_price'], 9.6)
+        self.assertAlmostEqual(short.values['stop_price'], 24)
+        self.assertIn('9.60', short.action)
+
+    def test_target_fills_at_the_same_close_and_can_signal_again(self):
+        near = s.u1_replay(*u1_market([0.5, -0.1, -0.1, -0.1], [10, 10, 10, 8.3])).state
+        self.assertEqual(near.tag, s.State.NEAR_TARGET)
+        result = s.u1_replay(*u1_market([0.5, -0.1, -0.1, 0.5, -0.1], [10, 10, 10, 9, 7.9]))
+        trade = result.trades[0]
+        self.assertEqual((trade['exit'], trade['reason']), (trade['exit'], 'target'))
+        self.assertEqual(trade['exit_price'], 7.9)
+        self.assertAlmostEqual(trade['return_pct'], 21)
         self.assertEqual(result.state.tag, s.State.SIGNAL)
-        self.assertEqual(result.trades, [])
-        result = s.z1_replay(list(zip(days, [30, 31, 28])))
-        self.assertEqual(result.state.tag, s.State.SHORT)
-        self.assertEqual(result.state.values['vix_entry'], 28)
-        self.assertEqual(result.state.values['sessions_held'], 0)
-        self.assertEqual(result.state.values['size'], 0.02)
 
-    def test_hold_84_sessions_ignores_spikes_and_reenters_after_cover(self):
-        days = sessions(88)
-        values = [30, 31, 25] + [35 if i % 2 else 25 for i in range(85)]
-        rows = list(zip(days, values))
-        due = s.z1_replay(rows[:86])
+    def test_stop_waits_one_close_and_backwardation_does_not_cover(self):
+        days, px, uvxy = u1_market([0.5, -0.1, 0.5, 0.5, 0.5], [10, 10, 10, 20.5, 15])
+        due = s.u1_replay(days[:4], px, uvxy)
         self.assertEqual(due.state.tag, s.State.COVER_DUE)
-        self.assertEqual(due.state.values['sessions_held'], 83)
-        self.assertEqual(due.state.values['cover_estimate'], str(days[86]))
-        done = s.z1_replay(rows[:87])
-        self.assertEqual(len(done.trades), 1)
-        self.assertEqual(done.trades[0]['exit'], str(days[86]))
-        self.assertEqual(done.trades[0]['entry'], str(days[2]))
-        self.assertEqual(done.state.tag, s.State.SIGNAL)
-        self.assertEqual(s.z1_replay(rows).state.tag, s.State.SHORT)
+        self.assertEqual(due.state.values['reason'], 'stop')
+        done = s.u1_replay(days, px, uvxy)
+        self.assertEqual(done.trades[0]['exit'], str(days[4]))
+        self.assertEqual(done.trades[0]['reason'], 'stop')
+        self.assertAlmostEqual(done.trades[0]['return_pct'], -50)
+        self.assertEqual(done.state.tag, s.State.WATCH)
+        held = s.u1_replay(days[:3], px, uvxy).state
+        self.assertEqual(held.tag, s.State.SHORT)
+        self.assertTrue(held.values['backwardation'])
 
-    def test_deterministic_and_does_not_invent_future_fills(self):
-        rows = list(zip(sessions(3), [29, 31, 28]))
-        original = copy.deepcopy(rows)
-        self.assertEqual(s.z1_replay(rows), s.z1_replay(rows))
-        self.assertEqual(rows, original)
-        pending = s.z1_replay(rows[:2])
-        self.assertEqual(pending.state.as_of, rows[1][0])
-        self.assertEqual(pending.trades, [])
-        self.assertNotIn('entry', pending.state.values)
+    def test_time_exit_after_126_sessions(self):
+        n = 130
+        later = [date(2026, m, 16) for m in (9, 10, 11, 12)]
+        days, px, uvxy = u1_market([0.5] + [-0.1] * (n - 1), [10] * n, later)
+        first = s.u1_replay(days[:3], px, uvxy).state
+        self.assertEqual(first.values['time_exit'], str(days[128]))
+        due = s.u1_replay(days[:128], px, uvxy).state
+        self.assertEqual((due.tag, due.values['reason']), (s.State.COVER_DUE, 'time'))
+        self.assertEqual(s.u1_replay(days[:129], px, uvxy).trades[0]['exit'], str(days[128]))
+
+    def test_missing_uvxy_days_are_skipped_and_empty_inputs(self):
+        days, px, uvxy = u1_market([0.5, -0.1, -0.1], [10, 11, 12])
+        del uvxy[days[-1]]
+        self.assertEqual(s.u1_replay(days, px, uvxy).state.as_of, days[1])
+        self.assertIsNone(s.u1_replay([], {}, {}).state.as_of)
+
+
+class V2WarningTest(unittest.TestCase):
+    def test_near_trigger_within_030(self):
+        self.assertEqual(s.v2_replay(*market([2, 1.8])).state.tag, s.State.ARMED)
+        near = s.v2_replay(*market([2, 1.65])).state
+        self.assertEqual(near.tag, s.State.NEAR_TRIGGER)
+        self.assertIn('1.40', near.action)
+        self.assertEqual(s.v2_replay(*market([2, 1.3])).state.tag, s.State.SIGNAL)
+
+    def test_expiry_warning_the_session_before_without_moving_the_exit(self):
+        expiries = [date(2026, 1, 21), date(2026, 2, 18), date(2026, 3, 18), date(2026, 4, 15)]
+        days, px = market([2, 1.3] + [1.0] * 11, expiries=expiries)
+        last = days.index(date(2026, 1, 20))
+        before = s.v2_replay(days[:last], px).state
+        self.assertEqual((before.tag, before.values['reason']), (s.State.EXIT_DUE, 'expiry'))
+        self.assertEqual(s.v2_replay(days[:last], px).trades, [])
+        self.assertEqual(s.v2_replay(days, px).trades[0]['exit'], '2026-01-20')
 
 
 class FetchTest(unittest.TestCase):
@@ -295,7 +320,7 @@ class FetchTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'vx.csv'
             self.assertEqual(s.load_vx(path), ([], {}))
-            self.assertEqual(s.load_vix(path), [])
+            self.assertEqual(s.load_uvxy(path), {})
             path.write_text('date,expiry,settle\n2026-11-05,2026-11-18,20\n'
                             '2026-11-05,2026-12-16,21\n2026-11-05,2027-01-20,22\n'
                             '2026-11-05,2027-02-17,23\n'
@@ -304,7 +329,7 @@ class FetchTest(unittest.TestCase):
             self.assertEqual(days, [date(2026, 11, 5)])
             self.assertEqual(len(px[days[0]]), 4)
         self.assertIsNone(s.v2_replay([], {}).state.as_of)
-        self.assertIsNone(s.z1_replay([]).state.as_of)
+        self.assertIsNone(s.u1_replay([], {}, {}).state.as_of)
 
 
 class AlertTest(unittest.TestCase):
@@ -320,15 +345,18 @@ class AlertTest(unittest.TestCase):
                 source['prior_as_of'] = source['as_of']
                 self.assertEqual(alerts.signal_alerts({'cboe_vx': source}), [])
 
-    def test_z1_signal_and_cover_due(self):
-        days = sessions(86)
-        rows = list(zip(days, [30, 31] + [20] * 84))
-        for end, expected in ((2, 'SIGNAL'), (86, 'COVER_DUE')):
-            source = {'as_of': str(days[end - 1]), 'prior_as_of': str(days[end - 2])}
-            with mock.patch.object(alerts, 'load_vix', return_value=rows[:end]):
-                lines = alerts.signal_alerts({'cboe_vix': source})
-                self.assertEqual(len(lines), 1)
-                self.assertIn(expected, lines[0])
+    def test_u1_alerts_need_both_sources_and_carry_the_action(self):
+        days, px, uvxy = u1_market([0.5, -0.1, -0.1], [10, 11, 12])
+        sources = {'cboe_vx': {'as_of': str(days[2]), 'prior_as_of': str(days[1])},
+                   'koyfin_prices': {'as_of': str(days[2]), 'prior_as_of': str(days[1])}}
+        with mock.patch.object(alerts, 'load_vx', return_value=(days, px)), \
+                mock.patch.object(alerts, 'load_uvxy', return_value=uvxy):
+            lines = [x for x in alerts.signal_alerts(sources) if x.startswith('U1')]
+            self.assertEqual(len(lines), 1)
+            self.assertIn('SHORT', lines[0])
+            self.assertIn('9.60', lines[0])
+            sources['koyfin_prices'] = {'as_of': str(days[1]), 'prior_as_of': str(days[0])}
+            self.assertEqual([x for x in alerts.signal_alerts(sources) if x.startswith('U1')], [])
 
 
 class PageTest(unittest.TestCase):
@@ -337,7 +365,7 @@ class PageTest(unittest.TestCase):
             html = build_html.build().read_text()
         self.assertIn('id="vix-signals-card"', html)
         self.assertIn('id="signal-v2"', html)
-        self.assertIn('id="signal-z1"', html)
+        self.assertIn('id="signal-u1"', html)
         self.assertIn('Daily rule outputs, not advice', html)
         self.assertNotIn('__VIX_SIGNALS__', html)
         self.assertNotIn('__ASOF_14', html)
@@ -346,6 +374,9 @@ class PageTest(unittest.TestCase):
         panel = {'result': s.v2_replay(*market([2])), 'error': ''}
         self.assertIn('Data stale', build_html.render_signal_panel('v2', panel, fresh))
         self.assertIn('Fixture', build_html.render_signal_panel('v2', panel, fresh))
+        u1 = {'result': s.u1_replay(*u1_market([0.5, -0.1, -0.1], [10, 11, 12])), 'error': ''}
+        fresh['koyfin_prices'] = {'as_of': '2026-01-06', 'stale': False}
+        self.assertIn('Target · cover at that close', build_html.render_signal_panel('u1', u1, fresh))
         missing = {'result': s.v2_replay([], {}), 'error': 'Data unavailable.'}
         self.assertIn('Data unavailable', build_html.render_signal_panel('v2', missing, fresh))
 
