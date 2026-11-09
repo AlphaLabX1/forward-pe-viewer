@@ -369,16 +369,25 @@ class PageTest(unittest.TestCase):
         self.assertIn('Daily rule outputs, not advice', html)
         self.assertNotIn('__VIX_SIGNALS__', html)
         self.assertNotIn('__ASOF_14', html)
-        fresh = {'cboe_vx': {'as_of': '2026-11-05', 'stale': True, 'fixture': True},
-                 'cboe_vix': {'as_of': '2026-11-06', 'stale': False}}
-        panel = {'result': s.v2_replay(*market([2])), 'error': ''}
-        self.assertIn('Data stale', build_html.render_signal_panel('v2', panel, fresh))
-        self.assertIn('Fixture', build_html.render_signal_panel('v2', panel, fresh))
+        self.assertIn('id="signal-uvxy"', html)
+        days, px = market([2, 1.65])
+        fresh = {'cboe_vx': {'as_of': str(days[-1]), 'stale': False, 'fixture': True},
+                 'koyfin_prices': {'as_of': str(days[-1]), 'stale': False}}
+        row, action = build_html.signal_row('v2', {'result': s.v2_replay(days, px), 'error': ''}, fresh)
+        self.assertIn('<td>Mar 18 / Apr 18</td><td>21.65 / 20.00</td><td>+1.65</td>', row)
+        self.assertIn('NEAR_TRIGGER', row)
+        self.assertNotIn('stale', row)
+        self.assertIn('1.40', action)
         u1 = {'result': s.u1_replay(*u1_market([0.5, -0.1, -0.1], [10, 11, 12])), 'error': ''}
-        fresh['koyfin_prices'] = {'as_of': '2026-01-06', 'stale': False}
-        self.assertIn('Target · cover at that close', build_html.render_signal_panel('u1', u1, fresh))
-        missing = {'result': s.v2_replay([], {}), 'error': 'Data unavailable.'}
-        self.assertIn('Data unavailable', build_html.render_signal_panel('v2', missing, fresh))
+        row, action = build_html.signal_row('u1', u1, fresh)
+        self.assertIn('<td>19.90 / 20.00</td><td>-0.10</td>', row)
+        self.assertIn('9.60', action)
+        fresh['cboe_vx']['as_of'] = '2026-01-09'
+        self.assertIn('stale', build_html.signal_row('v2', {'result': s.v2_replay(days, px), 'error': ''}, fresh)[0])
+        missing = build_html.signal_row('v2', {'result': s.v2_replay([], {}), 'error': 'Data unavailable.'}, fresh)
+        self.assertIn('Data unavailable', missing[0])
+        self.assertIn('Fixture', build_html.render_vix_signals(
+            {'v2': {'result': s.v2_replay(days, px), 'error': ''}, 'u1': u1}, fresh))
 
 
 if __name__ == '__main__':

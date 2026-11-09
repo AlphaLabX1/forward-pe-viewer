@@ -1280,82 +1280,37 @@ def vix_signals_payload():
     return panels
 
 
-def render_signal_panel(key, panel, fresh):
-    title = "Default v2 · VX calendar spread" if key == "v2" else "U1 · short UVXY after VX backwardation ends"
+def signal_row(key, panel, fresh):
+    """One table row for a rule: its two contracts, their settles and the difference, then its state."""
     result = panel["result"]
     sources = CARD_SOURCES[f"14_{key}"]
-    source = sources[0]
     replay_as_of = str(result.state.as_of) if result and result.state.as_of else None
-    panel_fresh = dict(fresh)
-    for name in sources:
-        panel_fresh[name] = {**fresh[name], "as_of": replay_as_of}
-        if not replay_as_of or (fresh[name]["as_of"] and replay_as_of < fresh[name]["as_of"]):
-            panel_fresh[name]["stale"] = True
-    asof = render_asof(f"14_{key}", panel_fresh)
-    if panel["error"]:
-        return f'<article class="signal-panel"><h3>{title}</h3><p class="asof stale">{html_escape(panel["error"])}</p>{asof}</article>'
-    state = result.state
-    labels = {"near": "Near expiry", "far": "Far expiry", "third": "Long expiry",
-              "current_s": "S · near minus far", "sessions_to_switch": "Sessions until pair switch",
-              "arm_date": "Armed since", "high": "High since arming", "trigger": "Trigger · high − 0.60",
-              "signal": "Signal date", "entry": "Entry date", "s_entry": "S at entry",
-              "target": "Target S", "stop_level": "Stop S", "trail_live": "Trail live · S touched zero",
-              "sessions_held": "Sessions held", "hold": "Hold limit", "unrealised": "Unrealised L1 points · before costs",
-              "vix": "VIX close", "vix_entry": "VIX at entry", "size": "Equity at entry",
-              "reason": "Exit reason", "last_exit": "Last exit",
-              "c1": "C1 settle", "c2": "C2 settle", "backwardation": "Backwardation · C1 above C2",
-              "uvxy": "UVXY close", "entry_price": "UVXY at entry",
-              "target_price": "Target · cover at that close", "stop_price": "Stop · cover at the next close",
-              "change_pct": "UVXY since entry, %", "time_exit": "Time exit · estimate"}
-    numbers = []
-    for field, value in state.values.items():
-        if value == "":
-            continue
-        if isinstance(value, bool):
-            value = "Yes" if value else "No"
-        elif field == "size":
-            value = f"{value:.0%}"
-        elif isinstance(value, float):
-            value = f"{value:.2f}"
-        numbers.append(f'<div><dt>{html_escape(labels.get(field, field))}</dt><dd>{html_escape(str(value))}</dd></div>')
-    stale = any(panel_fresh[name]["stale"] for name in sources)
-    warning = '<p class="asof stale">Data stale; this output describes the stored date.</p>' if stale else ""
-    if fresh[source].get("fixture"):
-        warning += '<p class="asof stale">Fixture from cached research Cboe files; live fetch blocked by sandbox DNS.</p>'
-    if key == "v2":
-        rule = ("S = near − far. Use C2/C3 when fewer than 10 sessions remain before C1 expiry; otherwise C1/C2. "
-                "Arm above 1.50; fire on a 0.60 drop from the pair’s high since arming. On a switch day, the old pair decides. "
-                "Short near, long the contract after far; choose legs at the next settle. Exit on S ≤ −1.00, "
-                "S ≥ entry S + 3.00, return to entry S after touching zero, or 21 sessions; fill at the next settle. "
-                "Expiry exception: close at the last pre-expiry settle. Round-trip cost: 0.20 points. "
-                "Size: 3 VXM spreads per $20,000 of equity at each entry, rounded down; 1 VX replaces 10 VXM. "
-                "Early warnings: NEAR_TRIGGER when S is within 0.30 of the trigger, and EXIT_DUE the session before an expiry close.")
-        columns = ("Signal", "Entry", "Exit", "Short / long expiry", "Reason", "Net points")
-        rows = [[t["signal"], t["entry"], t["exit"], f'{t["near"]} / {t["third"]}', t["reason"], f'{t["net"]:+.2f}']
-                for t in result.trades[-5:]]
-    else:
-        rule = ("Backwardation means the first unexpired monthly VX settle is above the second, with no switch before expiry. "
-                "When flat, the first settle with C1 at or below C2 after a backwardation settle signals a UVXY short at the "
-                "next close, notional 5% of equity. Cover at the same close once UVXY is 20% below entry, so watch the target "
-                "price before the close. Cover at the next close after a close at or above twice the entry, or after 126 sessions. "
-                "New backwardation does not cover. Borrow cost and slippage are excluded from the return column.")
-        columns = ("Signal", "Entry", "Exit", "UVXY entry / exit", "Reason", "Return on notional")
-        rows = [[t["signal"], t["entry"], t["exit"], f'{t["entry_price"]:.2f} / {t["exit_price"]:.2f}', t["reason"],
-                 f'{t["return_pct"]:+.1f}%'] for t in result.trades[-5:]]
-    body = "".join('<tr>' + "".join(f'<td>{html_escape(str(v))}</td>' for v in row) + '</tr>' for row in rows)
-    if not body:
-        body = f'<tr><td colspan="{len(columns)}">No closed trades in stored history.</td></tr>'
-    return (f'<article class="signal-panel" id="signal-{key}"><div class="signal-heading"><h3>{title}</h3>'
-            f'<span class="signal-badge signal-{state.tag.value.lower()}">{state.tag.value}</span></div>{asof}{warning}'
-            f'<dl class="signal-numbers">{"".join(numbers)}</dl><p class="signal-action">Next session: {html_escape(state.action)}</p>'
-            f'<p class="signal-rules">{html_escape(rule)}</p><p class="div-note">Last 5 closed trades · stored history</p>'
-            '<div class="sig-wrap"><table class="sig-table"><thead><tr>'
-            + "".join(f'<th scope="col">{c}</th>' for c in columns)
-            + f'</tr></thead><tbody>{body}</tbody></table></div></article>')
+    stale = not replay_as_of or any(fresh[n]["as_of"] and replay_as_of < fresh[n]["as_of"] or fresh[n]["stale"]
+                                    for n in sources)
+    name = key.upper() if key == "u1" else key
+    if panel["error"] or "leg1" not in result.state.values:
+        error = panel["error"] or "Data unavailable."
+        return (f'<tr id="signal-{key}"><td>{name}</td><td colspan="4" class="stale">{html_escape(error)}</td></tr>', "")
+    v, state = result.state.values, result.state
+    month = lambda e: datetime.fromisoformat(e).strftime("%b %d")
+    note = " · stale" if stale else ""
+    row = (f'<tr id="signal-{key}"><td>{name}</td><td>{month(v["leg1"])} / {month(v["leg2"])}</td>'
+           f'<td>{v["leg1_price"]:.2f} / {v["leg2_price"]:.2f}</td><td>{v["leg1_price"] - v["leg2_price"]:+.2f}</td>'
+           f'<td><span class="signal-badge signal-{state.tag.value.lower()}">{state.tag.value}</span>{note}</td></tr>')
+    return row, f'<p class="signal-action"><strong>{name}</strong> · {state.as_of} · next session: {html_escape(state.action)}</p>'
 
 
 def render_vix_signals(payload, fresh):
-    return "".join(render_signal_panel(key, payload[key], fresh) for key in ("v2", "u1"))
+    uvxy = _load_csv_points(UVXY_PRICE_CSV)
+    rows, actions = zip(*(signal_row(key, payload[key], fresh) for key in ("v2", "u1")))
+    price = (f'<tr id="signal-uvxy"><td>UVXY</td><td>close {uvxy[-1][0]}</td><td>{float(uvxy[-1][1]):.2f}</td><td></td><td></td></tr>'
+             if uvxy else '<tr id="signal-uvxy"><td>UVXY</td><td colspan="4" class="stale">Data unavailable.</td></tr>')
+    warning = ('<p class="asof stale">Fixture from cached research Cboe files; live fetch blocked by sandbox DNS.</p>'
+               if fresh["cboe_vx"].get("fixture") else "")
+    return ('<div class="sig-wrap"><table class="sig-table signal-table"><thead><tr><th scope="col">Rule</th>'
+            '<th scope="col">Contracts</th><th scope="col">Settles</th><th scope="col">Difference</th>'
+            f'<th scope="col">State</th></tr></thead><tbody>{price}{"".join(rows)}</tbody></table></div>'
+            f'{warning}{"".join(actions)}')
 
 
 def build() -> Path:
@@ -2200,19 +2155,11 @@ TEMPLATE = r"""<!doctype html>
     margin-top: 16px;
   }
   .vix-readout { grid-template-columns: repeat(4, 1fr); }
-  .signal-panels { display: grid; gap: 24px; }
-  .signal-panel { border: 1px solid var(--hair); border-radius: 12px; padding: 20px; min-width: 0; }
-  .signal-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-  .signal-heading h3 { margin: 0; font-size: 17px; }
   .signal-badge { font: 12px var(--font-mono); border: 1px solid var(--hair); border-radius: 20px; padding: 6px 12px; }
   .signal-armed { color: var(--cold); }
   .signal-signal, .signal-exit_due, .signal-cover_due, .signal-near_trigger, .signal-near_target { color: var(--hot); border-color: currentColor; }
   .signal-watch, .signal-short { color: var(--cold); }
-  .signal-numbers { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin: 20px 0; }
-  .signal-numbers dt { font: 10px var(--font-mono); color: var(--dim); }
-  .signal-numbers dd { margin: 5px 0 0; font: 15px var(--font-mono); color: var(--text); }
   .signal-action { color: var(--text); line-height: 1.6; }
-  .signal-rules { color: var(--dim); font-size: 12px; line-height: 1.7; }
   .vix-readout .vix-episode { font-size: 13px; line-height: 1.6; }
   #vix-stats caption { text-align: left; caption-side: bottom; padding-top: 12px; line-height: 1.6; }
   .ad-readout > div {
@@ -2770,13 +2717,12 @@ TEMPLATE = r"""<!doctype html>
           <span class="card-num">14</span>
           <div>
             <h2>VIX spread signals</h2>
-            <p class="lede">Daily rule outputs, not advice. Signals use the settle or close; orders fill at the next settle or close, with the v2 expiry exception below.</p>
+            <p class="lede">Daily rule outputs, not advice. Difference is the first contract minus the second.</p>
           </div>
         </div>
         <div class="card-aside">VX · Cboe · UVXY · Koyfin__ASOF_14__</div>
       </div>
-      <div class="signal-panels">__VIX_SIGNALS__</div>
-      <p class="div-note">Backtest context: v2 2004 to 2026 · 22 trades, 17 winners, +53.0 points per spread, worst −7.61. U1 2011-10 to 2026-11 · 46 closed trades, 44 winners, +$9,799 on $20,000 at 5% per trade, worst −89% of notional. Daily P&amp;L correlation 0.04. Historical results, not a forecast.</p>
+      __VIX_SIGNALS__
     </section>
 
     <!-- ═══ Footer ═══ -->
