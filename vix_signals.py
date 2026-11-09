@@ -10,7 +10,7 @@ from enum import Enum
 from functools import cache
 from pathlib import Path
 
-ARM, DROP, TARGET, STOP, HOLD, MIN_DAYS, COST = 1.50, 0.60, -1.00, 3.00, 21, 10, 0.20
+ARM, DROP, TARGET, STOP, HOLD, MIN_DAYS, COST = 1.20, 0.60, -1.00, 3.00, 21, 10, 0.20
 V2_NEAR = 0.30
 U1_SIZE, U1_TARGET, U1_STOP, U1_HOLD, U1_NEAR = 0.05, 0.20, 1.00, 126, 0.05
 
@@ -178,7 +178,7 @@ def v2_replay(days, px) -> V2Result:
     legs = lambda day, pair: leg_prices(px, day, pair)
     tag, armed, arm_i, peak = State.FLAT, False, 0, 0.0
     position, pending, values = None, None, {}
-    action = "Wait for S to rise above 1.50."
+    action = f"Wait for S to rise above {ARM:.2f}."
 
     def close(j, why):
         nonlocal position, armed, tag, pending, values, action
@@ -191,7 +191,7 @@ def v2_replay(days, px) -> V2Result:
                            net_b1legs=round(position["s_entry"] - s1 - COST, 4)))
         position, armed, tag, pending = None, False, State.FLAT, None
         values = dict(last_exit=str(days[j]), reason=why)
-        action = "Stay flat; resume checking for S above 1.50 at the next settle."
+        action = f"Stay flat; resume checking for S above {ARM:.2f} at the next settle."
         transitions.append(Transition(days[j], tag))
 
     for i, day in enumerate(days):
@@ -275,7 +275,7 @@ def v2_replay(days, px) -> V2Result:
                 values.update(arm_date=str(days[arm_i]), high=peak, trigger=peak - DROP)
                 if s - (peak - DROP) <= V2_NEAR:
                     tag = State.NEAR_TRIGGER
-            action = ("Wait for S to rise above 1.50." if not armed else
+            action = (f"Wait for S to rise above {ARM:.2f}." if not armed else
                       f"Signal fires on a settle with S at or below {peak - DROP:.2f}; S is {s - (peak - DROP):.2f} above it."
                       if tag == State.NEAR_TRIGGER else
                       "Wait for S to fall 0.60 from its own high since arming.")

@@ -30,7 +30,8 @@ class V2Test(unittest.TestCase):
         return s.v2_replay(*market(spreads))
 
     def test_arm_threshold_peak_and_next_settle_entry(self):
-        self.assertEqual(self.replay([1.5]).state.tag, s.State.FLAT)
+        self.assertEqual(self.replay([1.2]).state.tag, s.State.FLAT)
+        self.assertEqual(self.replay([1.25]).state.tag, s.State.ARMED)
         armed = self.replay([1.6, 2.0]).state
         self.assertEqual(armed.tag, s.State.ARMED)
         self.assertEqual(armed.values['arm_date'], '2026-01-02')
