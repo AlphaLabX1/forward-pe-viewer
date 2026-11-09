@@ -18,6 +18,7 @@ Outputs:
   data/rsp_price.csv              — equal-weight S&P 500 (RSP)
   data/qqq_forward_pe.csv, data/qqq_price.csv — QQQ valuation + price
   data/qqew_price.csv             — equal-weight Nasdaq-100 (QQEW)
+  data/uvxy_price.csv             UVXY split-adjusted close, for the U1 signal
   data/us10y.csv                  — US 10-year Treasury yield (%)
   data/fear_greed.csv             — CNN Fear & Greed Index
   data/sp500_breadth.csv          — % of S&P 500 above 50d / 200d MA
@@ -30,6 +31,7 @@ build_html.py reads only these committed CSVs, through the paths defined here.
 
 from __future__ import annotations
 
+import argparse
 import csv
 import datetime
 import io
@@ -45,6 +47,8 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Callable
+
+from vix_signals import standard_expiry
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Series catalog
@@ -89,6 +93,8 @@ KOYFIN_RSP_KID = "et-wezwxf"    # RSP ETF — equal-weight S&P 500
 KOYFIN_QQQ_KID = "et-gpvivq"    # QQQ ETF — proxy for NDX (Nasdaq-100)
 KOYFIN_QQEW_KID = "et-hvil9v"   # QQEW ETF — equal-weight Nasdaq-100
 KOYFIN_US10Y_KID = "bn-dm6gok"  # US 10Y Treasury (close = yield in %)
+KOYFIN_UVXY_KID = "et-sw4wug"   # UVXY ETF, split-adjusted closes (found 2026-11-08 via tickers/search)
+UVXY_FROM = "2013-01-01"        # VX settles start 2013-05; U1 only replays from there
 
 DATA_DIR = Path(__file__).parent / "data"
 LENS_DIRS = {"forward": DATA_DIR, "trailing": DATA_DIR / "trailing"}
@@ -106,6 +112,8 @@ VIX_CSV = DATA_DIR / "vix.csv"
 VIX3M_CSV = DATA_DIR / "vix3m.csv"
 VIX9D_CSV = DATA_DIR / "vix9d.csv"
 VIX6M_CSV = DATA_DIR / "vix6m.csv"
+VX_SETTLE_CSV = DATA_DIR / "vx_settle.csv"
+UVXY_PRICE_CSV = DATA_DIR / "uvxy_price.csv"
 STATUS_JSON = DATA_DIR / "status.json"
 
 
@@ -125,6 +133,7 @@ class Series:
     valid_from: str = ""    # rows dated earlier are broken upstream and never stored
     despike: bool = False   # drop isolated one-day spikes that revert
     min_reply_rows: int | None = None  # fixed floor for rolling-window replies
+    key_columns: int = 1
 
 
 # Trailing P/E legitimately runs into the hundreds when earnings collapse
@@ -167,6 +176,11 @@ CATALOG: dict[str, Series] = {
     "vix3m": Series(VIX3M_CSV, ("close",), 5.0, 200.0),
     "vix9d": Series(VIX9D_CSV, ("close",), 5.0, 200.0),
     "vix6m": Series(VIX6M_CSV, ("close",), 5.0, 200.0),
+    # Reverse splits rescale every past close, so the file is replaced, never merged, and
+    # one-day jumps above 50% are real (2018-02-05, 2024-08-05), so no despiking.
+    "uvxy_price": Series(UVXY_PRICE_CSV, ("price",), 0.01, 1e12),
+    "vx_settle": Series(VX_SETTLE_CSV, ("expiry", "settle"), 0.000001, 200.0,
+                        merge=True, min_reply_rows=200, key_columns=2),
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -260,6 +274,56 @@ def fetch_cboe(symbol: str) -> list[list]:
             print(f"[retry] Cboe {symbol} attempt {attempt}: {last_err}", file=sys.stderr)
             time.sleep(RETRY_BACKOFF_SEC)
     raise RuntimeError(f"Cboe {symbol} failed after {MAX_ATTEMPTS} attempts: {last_err}")
+
+
+def vx_monthlies(today: datetime.date, start: datetime.date | None = None) -> list[datetime.date]:
+    start = start or today - datetime.timedelta(days=400)
+    candidates = [standard_expiry(y, m) for y in range(start.year, today.year + 2)
+                  for m in range(1, 13)]
+    end = [e for e in candidates if e > today][4]
+    return [e for e in candidates if start <= e <= end]
+
+
+def parse_vx_csv(text: str, expiry: datetime.date) -> list[list]:
+    return [[(datetime.date.fromisoformat(r["Trade Date"]) if "-" in r["Trade Date"] else
+              datetime.datetime.strptime(r["Trade Date"], "%m/%d/%Y").date()).isoformat(),
+             expiry.isoformat(), float(r["Settle"])]
+            for r in csv.DictReader(io.StringIO(text)) if float(r["Settle"]) > 0]
+
+
+def fetch_cboe_vx(backfill: bool = False) -> list[list]:
+    base = "https://cdn.cboe.com/data/us/futures/market_statistics/historical_data/VX/VX_{}.csv"
+    rows = []
+    expiries = (vx_monthlies(datetime.date.today(), datetime.date(2013, 6, 1)) if backfill
+                else vx_monthlies(datetime.date.today()))
+    for expiry in expiries:
+        last_err = None
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            try:
+                for actual in (expiry, expiry - datetime.timedelta(days=1)):
+                    req = urllib.request.Request(base.format(actual), headers={"User-Agent": "Mozilla/5.0"})
+                    try:
+                        with urllib.request.urlopen(req, timeout=30) as r:
+                            body = r.read().decode("utf-8-sig")
+                    except urllib.error.HTTPError as exc:
+                        if exc.code in (403, 404):
+                            continue
+                        raise
+                    if body.startswith("Trade Date"):
+                        points = parse_vx_csv(body, actual)
+                        if not points:
+                            raise ValueError(f"Empty VX contract {actual}")
+                        rows.extend(points)
+                        break
+                else:
+                    raise ValueError(f"No monthly VX file for {expiry} or the day before")
+                break
+            except Exception as exc:
+                last_err = str(exc)
+                if attempt == MAX_ATTEMPTS:
+                    raise RuntimeError(f"Cboe VX {expiry}: {last_err}") from exc
+                time.sleep(RETRY_BACKOFF_SEC)
+    return sorted(rows)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -524,12 +588,16 @@ def store(name: str, reply: list[list]) -> list[list]:
     reply = clean_rows(spec, [[str(r[0]), *r[1:]] for r in reply])
     floor = (int(len(prior) * 0.9) if spec.min_reply_rows is None
              else spec.min_reply_rows)
-    check_series(name, reply, spec.lo, spec.hi, prior[-1][0] if prior else None, floor)
-    by_date: dict[str, list] = {r[0]: r[1:] for r in prior} if spec.merge else {}
-    for d, *cells in reply:
-        old = by_date.get(d, [""] * len(cells))
-        by_date[d] = [new if new not in (None, "") else o for new, o in zip(cells, old)]
-    rows = clean_rows(spec, [[d, *by_date[d]] for d in sorted(by_date)])
+    check_series(name, [[r[0], *r[spec.key_columns:]] for r in reply],
+                 spec.lo, spec.hi, prior[-1][0] if prior else None, floor)
+    by_date = {tuple(r[:spec.key_columns]): r[spec.key_columns:] for r in prior} if spec.merge else {}
+    for row in reply:
+        key, cells = tuple(row[:spec.key_columns]), row[spec.key_columns:]
+        if spec.key_columns == 2:
+            datetime.date.fromisoformat(key[1])
+        old = by_date.get(key, [""] * len(cells))
+        by_date[key] = [new if new not in (None, "") else o for new, o in zip(cells, old)]
+    rows = clean_rows(spec, [[*key, *by_date[key]] for key in sorted(by_date)])
     with spec.path.open("w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["date", *spec.columns])
@@ -553,6 +621,7 @@ SOURCES: dict[str, dict[str, Callable[[], list[list]]]] = {
         "qqq_pe": partial(koy_fundamental, KOYFIN_QQQ_KID, "f_pe"),
         "qqq_price": partial(koy_price, KOYFIN_QQQ_KID),
         "qqew_price": partial(koy_price, KOYFIN_QQEW_KID),
+        "uvxy_price": partial(koy_price, KOYFIN_UVXY_KID, UVXY_FROM),
     },
     "us10y": {"us10y": partial(koy_price, KOYFIN_US10Y_KID)},
     "fear_greed": {"fear_greed": fetch_fear_greed},
@@ -563,6 +632,7 @@ SOURCES: dict[str, dict[str, Callable[[], list[list]]]] = {
     "advance_decline": {"sp500_ad": fetch_sp500_ad},
     "cboe_vix": {name: partial(fetch_cboe, name.upper())
                  for name in ("vix", "vix3m", "vix9d", "vix6m")},
+    "cboe_vx": {"vx_settle": fetch_cboe_vx},
 }
 
 
@@ -608,6 +678,14 @@ def load_status() -> dict:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--backfill-vx", action="store_true",
+                        help="Merge monthly VX contracts from June 2013 through the daily window")
+    args = parser.parse_args()
+    if args.backfill_vx:
+        rows = store("vx_settle", fetch_cboe_vx(backfill=True))
+        print(f"vx_settle {len(rows)} rows, {rows[0][0]} through {rows[-1][0]}")
+        return
     _mm_run.reset()
     for d in LENS_DIRS.values():
         d.mkdir(parents=True, exist_ok=True)

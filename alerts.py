@@ -5,6 +5,11 @@ Reads data/status.json and reports:
   - Fear & Greed crossing 25 (extreme fear) or 75 (extreme greed), either way
   - VIX / VIX3M entering backwardation above 1 or returning to 1 or below
   - Any sector's forward-P/E 5y percentile crossing 95 (rich) or 5 (cheap)
+  - v2 and U1 state changes, with the next-session action on the newest date.
+    v2 warns on ARMED, NEAR_TRIGGER (S within 0.30 of its trigger), SIGNAL and EXIT_DUE,
+    including the day before an expiry close. U1 warns on WATCH (VX backwardation),
+    SIGNAL, SHORT (with target and stop prices), NEAR_TARGET (within 5% of the target,
+    which fills at the same close), COVER_DUE and FLAT.
 
 Crossings compare the last two observations, so they are checked only for a
 series that gained a new date this run; a re-run never repeats them.
@@ -30,7 +35,8 @@ from build_html import (
     load_pe,
     ratio_series,
 )
-from fetch import VIX_CSV, VIX3M_CSV, load_status
+from fetch import UVXY_PRICE_CSV, VIX_CSV, VIX3M_CSV, VX_SETTLE_CSV, load_status
+from vix_signals import State, load_uvxy, load_vx, u1_replay, v2_replay
 
 FG_THRESHOLDS = (25, 75)
 PCT_THRESHOLDS = (5, 95)
@@ -41,7 +47,40 @@ def _crossed(prev: float, cur: float, thr: float) -> bool:
 
 
 def _advanced(entry: dict) -> bool:
-    return bool(entry.get("as_of")) and entry.get("as_of") != entry.get("prior_as_of")
+    return bool(entry.get("as_of")) and entry["as_of"] > (entry.get("prior_as_of") or "")
+
+
+V2_ALERTS = {State.ARMED, State.NEAR_TRIGGER, State.SIGNAL, State.EXIT_DUE}
+U1_ALERTS = {State.WATCH, State.SIGNAL, State.SHORT, State.NEAR_TARGET, State.COVER_DUE, State.FLAT}
+
+
+def _window(sources: dict, names: tuple[str, ...]) -> tuple[str | None, str]:
+    """(prior, as_of) across the sources a signal reads: it is current only as far as the slowest one."""
+    entries = [sources.get(n, {}) for n in names]
+    if not all(e.get("as_of") for e in entries):
+        return None, ""
+    priors = [e.get("prior_as_of") for e in entries]
+    return (None if None in priors else min(priors)), min(e["as_of"] for e in entries)
+
+
+def signal_alerts(sources: dict) -> list[str]:
+    lines = []
+    for name, names, watched in (("v2", ("cboe_vx",), V2_ALERTS),
+                                 ("U1", ("cboe_vx", "koyfin_prices"), U1_ALERTS)):
+        prior, as_of = _window(sources, names)
+        if not as_of or (prior and as_of <= prior):
+            continue
+        days, px = load_vx(VX_SETTLE_CSV)
+        result = v2_replay(days, px) if name == "v2" else u1_replay(days, px, load_uvxy(UVXY_PRICE_CSV))
+        if str(result.state.as_of) != as_of:
+            continue
+        for transition in result.transitions:
+            d = str(transition.date)
+            if transition.state not in watched or not (prior < d <= as_of if prior else d == as_of):
+                continue
+            detail = f": {result.state.action}" if d == as_of else ""
+            lines.append(f"{name} → {transition.state.value} ({d}){detail}")
+    return lines
 
 
 def collect_alerts(status: dict) -> list[str]:
@@ -71,6 +110,8 @@ def collect_alerts(status: dict) -> list[str]:
             if (prev > 1) != (cur > 1):
                 state = "entered backwardation" if cur > 1 else "returned to contango"
                 lines.append(f"VIX / VIX3M {state}: {prev:.2f} → {cur:.2f} ({d})")
+
+    lines.extend(signal_alerts(sources))
 
     fresh_pe = _advanced(pe)
     for sid, pts in load_pe("forward").items():

@@ -43,6 +43,7 @@ jobs:
           python -m unittest discover -s tests
           python commentary.py || echo "::warning::commentary step failed — section 01 keeps the previous findings or none."
           python build_html.py
+          python vix_signals.py || echo "::warning::vix_signals.py failed; card 14 shows the replay error."
           python alerts.py
           git add -A data/ index.html
           if git diff --cached --quiet; then
