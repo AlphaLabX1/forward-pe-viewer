@@ -2,10 +2,11 @@ name: Daily data update
 
 on:
   schedule:
-    # 03:30 UTC Tue–Sat ≈ 11:30 Asia/Shanghai, after each US trading day.
-    # Cboe rewrites VIX_History.csv around 02:10 UTC, hours after VIX3M, VIX9D
-    # and VIX6M (about 22:30 UTC), so an earlier run gets a VIX a day behind.
-    - cron: "30 3 * * 2-6"
+    # 07:00 UTC Tue–Sat = 23:00 PST (00:00 PDT), after each US trading day.
+    # VIX3M, VIX9D and VIX6M land around 22:30 UTC and VIX_History.csv around
+    # 02:10 UTC, but the VX settle files come last (Friday 2026-11-06 landed
+    # at 06:05 UTC), so an earlier run reads a day-old VX ladder.
+    - cron: "0 7 * * 2-6"
   workflow_dispatch: {}
 
 permissions:

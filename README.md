@@ -37,8 +37,8 @@ banner says so.
 
 ## Pipeline
 
-The workflow `.github/workflows/daily.yml` runs at 03:30 UTC, Tuesday to
-Saturday, after each US trading day. Each step reads the committed files
+The workflow `.github/workflows/daily.yml` runs at 07:00 UTC, Tuesday to
+Saturday, after each US trading day and after Cboe posts the VX settles. Each step reads the committed files
 that the previous step wrote.
 
 1. `fetch.py` downloads every series, validates it, and writes it to
