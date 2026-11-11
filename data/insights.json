@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 52-point lens gap signals distress",
-      "body": "Materials trades at 16.96x forward but 35.71x trailing, a 52-point percentile gap — the widest in the table. The market is pricing an 111 percent earnings rebound, which is a bet on a sharp cyclical recovery rather than a reflection of current profitability."
+      "title": "Financials' trailing lens screams full price",
+      "body": "Financials trade at 15.45x forward estimates while its trailing P/E sits at the 98th percentile of its five-year range. The 42-point gap between lenses is the widest in the table, meaning the market is assigning very little credibility to the 28 percent earnings growth analysts project for next year."
     },
     {
-      "title": "Health Care hits all-time forward richness",
-      "body": "Health Care's forward multiple sits at the 100th percentile of its five-year range, yet its trailing multiple is only at the 82nd. The 45 percent compression between lenses implies analysts expect 80 percent earnings growth, an aggressive underwriting that leaves no room for disappointment."
+      "title": "Real Estate's surge ignores flat earnings",
+      "body": "Real Estate's forward multiple jumped 40 percentile points in a month yet its implied next-12-month earnings are expected to decline 1 percent. The sector now sits at the 49th percentile from both lenses, so the repricing is purely multiple expansion with no fundamental support on the horizon."
     },
     {
-      "title": "Utilities' trailing percentile collapses to 2",
-      "body": "Utilities' forward P/E of 17.51 is at the 28th percentile, but its trailing multiple of 18.24 sits at the 2nd percentile — a 26-point gap. That near-floor trailing reading suggests reported earnings have been unusually strong, making the forward multiple look less cheap than its own history implies."
+      "title": "Information Technology now cheapest in five years",
+      "body": "Information Technology's forward P/E sits at the 0 percentile — the cheapest it has been in five years — after falling 18 percentile points in a month. The trailing multiple at the 20th percentile is still far above, and the 61 percent implied earnings growth suggests the market is pricing in a very sharp recovery that hasn't shown up in reported results yet."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-11-09"
+  "as_of": "2026-11-10"
 }
