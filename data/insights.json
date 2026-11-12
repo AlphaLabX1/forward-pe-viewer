@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Financials' trailing lens screams full price",
-      "body": "Financials trade at 15.45x forward estimates while its trailing P/E sits at the 98th percentile of its five-year range. The 42-point gap between lenses is the widest in the table, meaning the market is assigning very little credibility to the 28 percent earnings growth analysts project for next year."
+      "title": "Materials' earnings rebound is being ignored",
+      "body": "Materials trades at a forward P/E of 17.15 but a trailing P/E of 35.85, a 52 percent compression implying 109 percent earnings growth. The forward percentile is only 37 while trailing sits at 86, so the market is not paying up for the rebound — it is discounting that the surge is transient."
     },
     {
-      "title": "Real Estate's surge ignores flat earnings",
-      "body": "Real Estate's forward multiple jumped 40 percentile points in a month yet its implied next-12-month earnings are expected to decline 1 percent. The sector now sits at the 49th percentile from both lenses, so the repricing is purely multiple expansion with no fundamental support on the horizon."
+      "title": "Utilities' trailing cheapness is a red flag",
+      "body": "Utilities has a forward P/E of 17.50 at percentile 28 versus a trailing percentile of 2. The 26-point gap between the lenses is driven by a mere 4 percent expected earnings growth, meaning analysts see little earnings power ahead despite the historically depressed reported figures."
     },
     {
-      "title": "Information Technology now cheapest in five years",
-      "body": "Information Technology's forward P/E sits at the 0 percentile — the cheapest it has been in five years — after falling 18 percentile points in a month. The trailing multiple at the 20th percentile is still far above, and the 61 percent implied earnings growth suggests the market is pricing in a very sharp recovery that hasn't shown up in reported results yet."
+      "title": "Health Care hits a valuation ceiling",
+      "body": "Health Care's forward P/E of 20.35 sits at the 100th percentile of its five-year range, yet the market still assumes 80 percent earnings growth. The 45 percent compression from trailing to forward shows analysts underwriting a margin expansion that has no room left to be rewarded at this multiple."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-11-10"
+  "as_of": "2026-11-11"
 }
