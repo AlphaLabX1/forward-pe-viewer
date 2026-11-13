@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' earnings rebound is being ignored",
-      "body": "Materials trades at a forward P/E of 17.15 but a trailing P/E of 35.85, a 52 percent compression implying 109 percent earnings growth. The forward percentile is only 37 while trailing sits at 86, so the market is not paying up for the rebound — it is discounting that the surge is transient."
+      "title": "Materials' 52-point lens gap",
+      "body": "Materials trades at 16.91x forward but 35.32x trailing, a 52-point percentile gap between the two lenses. That gap implies analysts expect 109 percent earnings growth next year, a bet that current depressed earnings are a trough, not a new normal."
     },
     {
-      "title": "Utilities' trailing cheapness is a red flag",
-      "body": "Utilities has a forward P/E of 17.50 at percentile 28 versus a trailing percentile of 2. The 26-point gap between the lenses is driven by a mere 4 percent expected earnings growth, meaning analysts see little earnings power ahead despite the historically depressed reported figures."
+      "title": "Health Care's extreme forward percentile",
+      "body": "Health Care's forward P/E sits at the 99th percentile of its five-year range, yet the multiple compressed 45 percent from trailing earnings. The market is underwriting an 81 percent earnings surge, a level of optimism that leaves no room for disappointment."
     },
     {
-      "title": "Health Care hits a valuation ceiling",
-      "body": "Health Care's forward P/E of 20.35 sits at the 100th percentile of its five-year range, yet the market still assumes 80 percent earnings growth. The 45 percent compression from trailing to forward shows analysts underwriting a margin expansion that has no room left to be rewarded at this multiple."
+      "title": "Utilities' trailing percentile collapse",
+      "body": "Utilities' trailing P/E is at the 2nd percentile of its five-year range while its forward P/E is at the 28th, a 26-point gap. With only 4 percent implied earnings growth, the forward lens is not rescuing the sector—it is merely reflecting that reported earnings have already cratered."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-11-11"
+  "as_of": "2026-11-12"
 }
