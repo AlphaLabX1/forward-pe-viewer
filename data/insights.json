@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 52-point lens gap",
-      "body": "Materials trades at 16.91x forward but 35.32x trailing, a 52-point percentile gap between the two lenses. That gap implies analysts expect 109 percent earnings growth next year, a bet that current depressed earnings are a trough, not a new normal."
+      "title": "Materials: 52-point lens gap, 108% growth bet",
+      "body": "Materials' trailing P/E sits at the 84th percentile while its forward multiple is at the 32nd, a 52-point split that is the widest in the table. The market is underwriting 108 percent earnings growth, which would be an extraordinary repricing if it materializes."
     },
     {
-      "title": "Health Care's extreme forward percentile",
-      "body": "Health Care's forward P/E sits at the 99th percentile of its five-year range, yet the multiple compressed 45 percent from trailing earnings. The market is underwriting an 81 percent earnings surge, a level of optimism that leaves no room for disappointment."
+      "title": "Health Care: forward percentile at absolute ceiling",
+      "body": "Health Care's forward P/E has reached the 100th percentile of its five-year range, a level no other sector touches. The 45 percent compression from trailing to forward implies analysts expect an 80 percent earnings surge, a bet that leaves no room for disappointment."
     },
     {
-      "title": "Utilities' trailing percentile collapse",
-      "body": "Utilities' trailing P/E is at the 2nd percentile of its five-year range while its forward P/E is at the 28th, a 26-point gap. With only 4 percent implied earnings growth, the forward lens is not rescuing the sector—it is merely reflecting that reported earnings have already cratered."
+      "title": "Real Estate: rich percentile jump, flat lenses",
+      "body": "Real Estate's forward percentile surged 37 points in a month to 46, yet its forward and trailing P/Es are nearly identical at 36.83 and 36.44. The re-rating is purely sentiment-driven, with implied earnings growth of just 1 percent decline, so the multiple is not backed by any fundamental improvement."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-11-12"
+  "as_of": "2026-11-13"
 }
