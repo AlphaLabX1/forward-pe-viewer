@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials: 52-point lens gap, 108% growth bet",
-      "body": "Materials' trailing P/E sits at the 84th percentile while its forward multiple is at the 32nd, a 52-point split that is the widest in the table. The market is underwriting 108 percent earnings growth, which would be an extraordinary repricing if it materializes."
+      "title": "Materials' 57-point lens gap signals earnings cliff",
+      "body": "Materials trades at 16.54x forward but 34.77x trailing, a 57-point percentile gap — the widest in the table. The market is pricing a 110 percent earnings surge, which would be a historic reversal for a sector whose trailing multiple sits at the 83rd percentile."
     },
     {
-      "title": "Health Care: forward percentile at absolute ceiling",
-      "body": "Health Care's forward P/E has reached the 100th percentile of its five-year range, a level no other sector touches. The 45 percent compression from trailing to forward implies analysts expect an 80 percent earnings surge, a bet that leaves no room for disappointment."
+      "title": "Utilities' forward optimism clashes with trailing floor",
+      "body": "Utilities' forward P/E sits at the 32nd percentile while its trailing multiple is at the 3rd — a 29-point gap. Analysts expect only 4 percent earnings growth, yet the forward lens is far richer, suggesting the market is paying up for stability rather than expansion."
     },
     {
-      "title": "Real Estate: rich percentile jump, flat lenses",
-      "body": "Real Estate's forward percentile surged 37 points in a month to 46, yet its forward and trailing P/Es are nearly identical at 36.83 and 36.44. The re-rating is purely sentiment-driven, with implied earnings growth of just 1 percent decline, so the multiple is not backed by any fundamental improvement."
+      "title": "Information Technology's forward multiple hits zero",
+      "body": "Information Technology's forward P/E of 17.72 is at the 0th percentile of its five-year range, while its trailing multiple is at the 18th. The 63 percent implied earnings growth is the second-highest in the table, but the market is refusing to pay for it — a stark disconnect between estimates and price."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-11-13"
+  "as_of": "2026-11-16"
 }
