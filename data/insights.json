@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 57-point lens gap signals earnings cliff",
-      "body": "Materials trades at 16.54x forward but 34.77x trailing, a 57-point percentile gap — the widest in the table. The market is pricing a 110 percent earnings surge, which would be a historic reversal for a sector whose trailing multiple sits at the 83rd percentile."
+      "title": "Materials' 62-point lens gap is extreme",
+      "body": "Materials sits at the 21st percentile on forward earnings but the 83rd on trailing, a 62-point gap that dwarfs every other sector. The market is underwriting 113 percent earnings growth, which would be a remarkable turnaround from the depressed trailing base."
     },
     {
-      "title": "Utilities' forward optimism clashes with trailing floor",
-      "body": "Utilities' forward P/E sits at the 32nd percentile while its trailing multiple is at the 3rd — a 29-point gap. Analysts expect only 4 percent earnings growth, yet the forward lens is far richer, suggesting the market is paying up for stability rather than expansion."
+      "title": "Utilities' forward view ignores trailing collapse",
+      "body": "Utilities' trailing P/E is at the 1st percentile of its five-year range, yet the forward multiple sits at the 26th. The 25-point gap implies analysts expect earnings to recover, but the implied growth of only 4 percent looks inconsistent with that optimism."
     },
     {
-      "title": "Information Technology's forward multiple hits zero",
-      "body": "Information Technology's forward P/E of 17.72 is at the 0th percentile of its five-year range, while its trailing multiple is at the 18th. The 63 percent implied earnings growth is the second-highest in the table, but the market is refusing to pay for it — a stark disconnect between estimates and price."
+      "title": "Health Care's 44 percent compression is a bet",
+      "body": "Health Care's forward P/E is 19.95 at the 98th percentile, while its trailing multiple is 35.91 at the 78th. The 44 percent compression implies 80 percent earnings growth, an unusually aggressive assumption for a sector already priced at the top of its range."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-11-16"
+  "as_of": "2026-11-17"
 }
