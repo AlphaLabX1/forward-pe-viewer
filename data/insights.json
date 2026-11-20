@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 62-point lens gap is extreme",
-      "body": "Materials sits at the 21st percentile on forward earnings but the 83rd on trailing, a 62-point gap that dwarfs every other sector. The market is underwriting 113 percent earnings growth, which would be a remarkable turnaround from the depressed trailing base."
+      "title": "Materials' 100% growth bet is extreme",
+      "body": "Materials shows a 46-point percentile gap between its trailing and forward lenses, with the forward multiple at the 14th percentile while trailing sits at the 60th. The market is underwriting a 100 percent earnings jump, a level of optimism that appears disconnected from the sector's own five-year history."
     },
     {
-      "title": "Utilities' forward view ignores trailing collapse",
-      "body": "Utilities' trailing P/E is at the 1st percentile of its five-year range, yet the forward multiple sits at the 26th. The 25-point gap implies analysts expect earnings to recover, but the implied growth of only 4 percent looks inconsistent with that optimism."
+      "title": "Health Care's 44% compression defies its percentile",
+      "body": "Health Care's forward multiple has dropped 19 percentile points in both the past week and month, yet still sits at the 81st percentile. The 44 percent compression between trailing and forward earnings implies an 80 percent growth surge, a bet that seems unusually aggressive for a sector already priced near its five-year peak."
     },
     {
-      "title": "Health Care's 44 percent compression is a bet",
-      "body": "Health Care's forward P/E is 19.95 at the 98th percentile, while its trailing multiple is 35.91 at the 78th. The 44 percent compression implies 80 percent earnings growth, an unusually aggressive assumption for a sector already priced at the top of its range."
+      "title": "Utilities' forward price ignores trailing reality",
+      "body": "Utilities trades at the 23rd percentile on a forward basis but at the 1st percentile on trailing earnings, a 22-point gap. The forward multiple is barely cheaper than trailing, implying just 4 percent growth, which suggests the market is not rewarding the sector's cheap trailing valuation at all."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-11-17"
+  "as_of": "2026-11-19"
 }
