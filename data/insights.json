@@ -2,17 +2,17 @@
   "findings": [
     {
       "title": "Materials' 100% growth bet is extreme",
-      "body": "Materials shows a 46-point percentile gap between its trailing and forward lenses, with the forward multiple at the 14th percentile while trailing sits at the 60th. The market is underwriting a 100 percent earnings jump, a level of optimism that appears disconnected from the sector's own five-year history."
+      "body": "Materials trades at 15.24x forward versus 30.46x trailing, a 50 percent compression that implies 100 percent earnings growth. That is the widest lens gap in the table, and it puts the forward multiple at the 12th percentile of its five-year range while the trailing sits near the middle. The market is pricing a doubling of earnings that the trailing record does not support."
     },
     {
-      "title": "Health Care's 44% compression defies its percentile",
-      "body": "Health Care's forward multiple has dropped 19 percentile points in both the past week and month, yet still sits at the 81st percentile. The 44 percent compression between trailing and forward earnings implies an 80 percent growth surge, a bet that seems unusually aggressive for a sector already priced near its five-year peak."
+      "title": "Health Care's 80% growth assumption is aggressive",
+      "body": "Health Care's forward multiple is 19.08x, 45 percent below its trailing 34.43x, implying 80 percent earnings growth. The forward percentile has dropped 19 points in both the past week and month, yet the multiple still sits at the 81st percentile. Analysts are underwriting a sharp margin expansion that has no visible basis in reported earnings."
     },
     {
-      "title": "Utilities' forward price ignores trailing reality",
-      "body": "Utilities trades at the 23rd percentile on a forward basis but at the 1st percentile on trailing earnings, a 22-point gap. The forward multiple is barely cheaper than trailing, implying just 4 percent growth, which suggests the market is not rewarding the sector's cheap trailing valuation at all."
+      "title": "Utilities' forward premium is a warning",
+      "body": "Utilities' trailing P/E sits at the 0th percentile of its five-year range, the cheapest it has been, while the forward multiple is at the 19th percentile. The 19-point gap between lenses is entirely a bet on 4 percent earnings growth, which is hardly a catalyst. The sector looks cheap on reported earnings, but the forward lens says the market is not rewarding it."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-11-19"
+  "as_of": "2026-11-20"
 }
