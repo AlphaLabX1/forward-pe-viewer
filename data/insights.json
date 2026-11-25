@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 53-point lens gap",
-      "body": "Materials trades at 15.82x forward but 32.14x trailing, a 53-point percentile gap — the widest in the table. The market is underwriting 103 percent earnings growth, an extraordinary bet that the current earnings trough is about to reverse violently."
+      "title": "Materials' 51-point lens gap signals earnings cliff",
+      "body": "Materials trades at 16.21x forward but 32.47x trailing, a 51-point percentile gap — the widest in the table. Analysts are pricing in 100 percent earnings growth, which would be a historic rebound from a depressed base, not a steady-state outlook."
     },
     {
-      "title": "Health Care's 44 percent compression",
-      "body": "Health Care's forward multiple sits at 19.22x, 44 percent below its trailing 34.58x, with the forward percentile 12 points richer than trailing. That compression implies 80 percent earnings growth, a level of optimism that seems detached from the sector's modest one-week and one-month percentile moves."
+      "title": "Health Care's forward percentile near peak despite compression",
+      "body": "Health Care's forward P/E sits at the 97th percentile of its five-year range even after a 44 percent multiple compression versus trailing. The market is underwriting 78 percent earnings growth, a bet that margins expand sharply from already-rich levels."
     },
     {
-      "title": "Utilities' trailing percentile is 1",
-      "body": "Utilities' forward P/E of 17.34 sits at the 24th percentile, but its trailing multiple of 17.99 is at the 1st percentile — a 23-point gap. The forward lens sees a sector near mid-range, while the trailing lens says reported earnings have never been this cheap in five years, a disconnect that hinges on only 4 percent expected growth."
+      "title": "Information Technology at all-time cheap forward multiple",
+      "body": "Information Technology's forward P/E of 16.69 is at percentile 0 — the cheapest it has been in five years — while its trailing multiple sits at percentile 14. The 38 percent compression implies analysts expect 62 percent earnings growth, yet the market is still unwilling to pay up."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-11-23"
+  "as_of": "2026-11-24"
 }
