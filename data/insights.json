@@ -2,15 +2,15 @@
   "findings": [
     {
       "title": "Materials' 55-point lens gap signals distress",
-      "body": "Materials sits at the 30th percentile on forward earnings but the 85th on trailing, the widest split in the table. The market is pricing a 112 percent earnings rebound that would justify the compression, yet the forward percentile barely moved this month — analysts are not confirming the recovery."
+      "body": "Materials trades at 16.76x forward but 35.49x trailing, a 53 percent compression that implies 112 percent earnings growth. That gap is the widest in the table and suggests the market is pricing a dramatic earnings recovery that has not yet appeared in reported results."
     },
     {
-      "title": "Health Care's forward price is a bet on margins",
-      "body": "Health Care's forward multiple is at its 97th percentile while the trailing sits at the 76th, a 21-point gap that implies 79 percent earnings growth. That compression is extreme even for a sector at a five-year high, underwriting margin expansion that has not shown up in reported results."
+      "title": "Health Care's rich forward multiple defies history",
+      "body": "Health Care's forward P/E sits at the 97th percentile of its five-year range while its trailing multiple is only at the 76th. The 44 percent compression implies 79 percent earnings growth, a bet that margins will expand sharply from already elevated levels."
     },
     {
-      "title": "Utilities' forward richness clashes with flat growth",
-      "body": "Utilities trades at the 27th percentile forward but the 2nd percentile trailing, a 25-point gap despite only 4 percent implied earnings growth. The forward multiple is nearly as rich as the trailing one, so the market is paying a premium for a sector with no earnings acceleration in sight."
+      "title": "Utilities' forward multiple outruns its earnings",
+      "body": "Utilities trades at 17.45x forward versus 18.12x trailing, a mere 4 percent compression that implies just 4 percent earnings growth. Yet its forward percentile is 27 while its trailing percentile is 2, meaning the market has re-rated the sector on expectations that reported earnings have not yet justified."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
