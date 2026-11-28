@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "title": "Materials' 55-point lens gap signals distress",
-      "body": "Materials trades at 16.76x forward but 35.49x trailing, a 53 percent compression that implies 112 percent earnings growth. That gap is the widest in the table and suggests the market is pricing a dramatic earnings recovery that has not yet appeared in reported results."
+      "title": "Materials' 50-point lens gap signals earnings cliff",
+      "body": "Materials sits at the 36th percentile on forward earnings but the 87th on trailing, a 50-point split that implies 110 percent earnings growth. The market is pricing a near-doubling of profits that would make today's trailing multiple look like a bargain."
     },
     {
-      "title": "Health Care's rich forward multiple defies history",
-      "body": "Health Care's forward P/E sits at the 97th percentile of its five-year range while its trailing multiple is only at the 76th. The 44 percent compression implies 79 percent earnings growth, a bet that margins will expand sharply from already elevated levels."
+      "title": "Health Care's 97th percentile forward multiple defies history",
+      "body": "Health Care's forward P/E of 19.81 is at the 97th percentile of its five-year range, yet the trailing multiple is only at the 76th. Analysts are underwriting 79 percent earnings growth — a bet that margins expand sharply from an already rich starting point."
     },
     {
-      "title": "Utilities' forward multiple outruns its earnings",
-      "body": "Utilities trades at 17.45x forward versus 18.12x trailing, a mere 4 percent compression that implies just 4 percent earnings growth. Yet its forward percentile is 27 while its trailing percentile is 2, meaning the market has re-rated the sector on expectations that reported earnings have not yet justified."
+      "title": "Utilities' forward optimism clashes with trailing reality",
+      "body": "Utilities' forward P/E sits at the 28th percentile while its trailing multiple is at the 2nd, a 26-point gap despite just 4 percent expected earnings growth. The market is paying up for stability at a time when the sector's reported earnings are near historic lows."
     }
   ],
   "model": "~deepseek/deepseek-v4-flash-latest",
-  "as_of": "2026-11-25"
+  "as_of": "2026-11-27"
 }
